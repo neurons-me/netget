@@ -3,8 +3,8 @@ import chalk from 'chalk';
 let gState = {};
 
 /**
- * Initializes the X State with the provided data.
- * @param {Object} data - The data to initialize the X State with.
+ *
+ * @param {Object} data 
  * @category Gateways
  * @subcategory Main
  * @module gState
@@ -16,7 +16,7 @@ export const initializeState = (data) => {
 };
 
 /**
- * Returns the current X State.
+ * 
  * @returns {Object} - The current X State.
  */
 export const getState = () => {

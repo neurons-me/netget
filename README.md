@@ -22,7 +22,6 @@ netget
 Serves as a **front face to the public.** Provides an efficient, centralized solution for managing and directing public traffic to the correct internal services.
 Is particularly useful in environments where multiple services or applications must be accessible through a single entry point. 
 <img src="https://suign.github.io/assets/imgs/netgetX.png" alt="netgetX" width="377">
-
 - **Public Interface**: Serves as the front face to the public by acting as a reverse proxy that redirects all traffic to a specific port.
 - **Optimal NGINX Configuration**: Ensures that NGINX is set up as a robust and efficient channel, directing incoming traffic to the appropriate internal endpoints automatically.
 - **Reverse Proxy Setup**: Ideal for environments where multiple services or applications need to be accessible through a single entry point. This setup simplifies traffic management by centralizing the routing process.
@@ -34,7 +33,6 @@ Is particularly useful in environments where multiple services or applications m
 A **Gateway** in NetGet is a key component that manages incoming traffic in a more granular level.
 Here are the key points about its functionality:
 <img src="https://suign.github.io/assets/imgs/netgetGateways.png" alt="netgetX" width="377">
-
 - **Traffic Reception**: Gateways receive traffic through an input port. Typically plugged in after a **NetGetX** to handle all public requests.
 - **Request Management**: The gateway identifies the requester, domain, subdomain, or path of the incoming request.
 - **Route Handling**: Based on predefined routes, the gateway determines how to handle each request.
@@ -47,7 +45,6 @@ Here are the key points about its functionality:
 ## **Port Management**:
 "I traced the *cord back to the wall*, *no wonder* it was ever plugged in at all ... ♪ ♪ ♪
 <img src="https://suign.github.io/assets/imgs/port_management.png" alt="netgetX" width="377">
-
 - **Check Port Activity**: Users can check what processes are running on a specific port.
 - **Kill Processes**: Facilitates the termination of processes running on a selected port by converting port numbers to PIDs.
   **In summary**, the **Port Management** menu offers comprehensive control over port configurations and process management, streamlining the process of monitoring and managing network traffic and making the right connections easy.

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
+import packageJson from './package.json'; // Import the package.json file to access the version
+
 import NetGetX_CLI from './modules/NetGetX/NetGetX.cli.js';
 import { Gateways_CLI } from './modules/Gateways/gateways.cli.js';
 import { handleGets } from './modules/Gets/Gets.js';

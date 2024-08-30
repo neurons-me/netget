@@ -1,4 +1,5 @@
-![netget](https://suign.github.io/assets/imgs/netget.png){: style="width: 420px; float: right; margin-left: 20px;"}
+<img src="https://suign.github.io/assets/imgs/netget.png" alt="netget" width="377px" style="display: block; margin: 0 auto;"/>
+
 # NetGet
 > [netget.me](https://netget.me)
 
@@ -114,5 +115,5 @@ Combined with authentication layers, NetGet can control access to various parts 
 - **License**: MIT License (see LICENSE for details).
 - **Privacy Policy**: Respects user privacy; no collection/storage of personal data.
 - **Terms of Usage**: Use responsibly. No guarantees/warranties provided. 
-[Terms](https://www.neurons.me/terms-of-use) | [Privacy](https://www.neurons.me/privacy-policy)
+  [Terms](https://www.neurons.me/terms-of-use) | [Privacy](https://www.neurons.me/privacy-policy)
   <img src="https://suign.github.io/neurons.me/neurons_logo.png" alt="neurons.me logo" width="123" height="123" style="width123px; height:123px;">

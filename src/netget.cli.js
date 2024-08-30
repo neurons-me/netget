@@ -9,6 +9,7 @@ import { manageGateway } from './modules/Gateways/gatewayPM2.js';
 // Entry Points Options and Commands
 program
   .description('NetGet Command Line Interface')
+  .version(packageJson.version) 
   .action(NetGetMainMenu);
 
 program.command('x')

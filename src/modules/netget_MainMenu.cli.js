@@ -17,7 +17,7 @@ Welcome to:
 ║║║├┤  │ ║ ╦├┤  │ 
 ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
 `);
-console.log(`v2.4.6`);
+console.log(`v2.4.7`);
 export default async function NetGetMainMenu() {
     const answers = await inquirer.prompt([
     {

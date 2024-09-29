@@ -43,7 +43,8 @@
         "morgan": "^1.10.0",
         "node-fetch": "^3.3.2",
         "pm2": "^5.3.1",
-        "sudo-prompt": "^9.2.1"
+        "sudo-prompt": "^9.2.1",
+        "uuid": "^10.0.0"
     },
     "repository": {
         "type": "git",

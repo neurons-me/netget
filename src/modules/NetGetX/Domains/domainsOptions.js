@@ -1,9 +1,11 @@
 //netget/src/modules/NetGetX/Domains/domainsOptions.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import fs from 'fs';
 import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
+import { addDomain, deleteDomain } from '../../../sqlite/utils_sqlite3.js';
 
 const logDomainInfo = (domainConfig, domain) => {
     console.log(chalk.blue('\nDomain Information:'));
@@ -100,9 +102,42 @@ const addNewDomain = async () => {
         // Save only the new domain configuration
         xConfig.domains[domain] = newDomainConfig;
         await saveXConfig({ domains: xConfig.domains });
+        await addDomain(domain, email, 'letsencrypt', '', '', '');
 
         console.log(chalk.green(`Domain ${domain} added successfully.`));
         return;  // Exit the loop after successful addition
+    }
+};
+
+const addNewSubDomain = async (domain) => {
+    while (true) {
+        const domainAnswer = await inquirer.prompt([
+            {
+                type: 'input',
+                name: 'subdomain',
+                message: 'Enter the new subdomain (e.g., sub.example.com) (type /b to go back):',
+                validate: input => {
+                    if (input === '/b') return true;
+                    return validateDomain(input);
+                }
+            }
+        ]);
+
+        if (domainAnswer.subdomain === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
+
+        const path = '/etc/nginx/XBlocks-available/' + domain;
+
+        try {
+            const data = await fs.readFile(path, 'utf8');
+            console.log(chalk.green(`Content of ${path}:`));
+            console.log(data);
+        } catch (error) {
+            console.error(chalk.red(`Error reading file ${path}:`, error.message));
+        }
+
     }
 };
 
@@ -141,6 +176,7 @@ const editOrDeleteDomain = async (domain) => {
             case 'deleteDomain':
                 // Implement delete domain functionality
                 delete xConfig.domains[domain];
+                await deleteDomain(domain);
                 await saveXConfig({ domains: xConfig.domains });
                 console.log(chalk.green(`Domain ${domain} deleted successfully.`));
                 return;

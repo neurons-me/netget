@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { program } from 'commander';
-import packageJson from './package.json'; // Import the package.json file to access the version
 
 import NetGetX_CLI from './modules/NetGetX/NetGetX.cli.js';
 import { Gateways_CLI } from './modules/Gateways/gateways.cli.js';
@@ -10,8 +9,7 @@ import { manageGateway } from './modules/Gateways/gatewayPM2.js';
 
 // Entry Points Options and Commands
 program
-  .description('NetGet Command Line Interface')
-  .version(packageJson.version) 
+  .description('NetGet Command Line Interface') 
   .action(NetGetMainMenu);
 
 program.command('x')

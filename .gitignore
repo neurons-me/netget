@@ -43,3 +43,6 @@ dist-ssr/
 *.sln
 *.sw?
 ```
+src/modules/NetGetX/XBlocks/sq_access
+src/routes/handlers.js
+domains.db

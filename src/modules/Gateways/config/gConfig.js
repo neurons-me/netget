@@ -72,5 +72,21 @@ async function addGateway(newGateway) {
     }
 }
 
-export { loadOrCreateGConfig, saveGConfig, addGateway };
+async function deleteGateway(gatewayName) {
+    try {
+        const config = await loadOrCreateGConfig();
+        const index = config.gateways.findIndex(gateway => gateway.name === gatewayName);
+        if (index === -1) {
+            console.log(chalk.yellow(`Gateway "${gatewayName}" not found.`));
+            return;
+        }
+        config.gateways.splice(index, 1);
+        await saveGConfig(config);
+    } catch (error) {
+        console.error(chalk.red('Failed to delete gateway:'), error);
+        throw error;
+    }
+}
+
+export { loadOrCreateGConfig, saveGConfig, addGateway, deleteGateway };
 

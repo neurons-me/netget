@@ -3,6 +3,7 @@ import inquirer from 'inquirer';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
 import { manageGateway } from './gatewayPM2.js';
 import { addNewGateway } from './addGateway.cli.js';
+import { deleteGateway, loadOrCreateGConfig } from './config/gConfig.js';
 import pm2 from 'pm2';
 
 export async function Gateways_CLI(g) {
@@ -75,7 +76,33 @@ async function showGatewayActions(gateway) {
 
         console.clear();  // Clear the console before performing an action
         try {
-            const result = await manageGateway(gateway.name, action);  // Pass the gateway name and action to manageGateway
+
+            if (action === 'delete') {
+                const { confirmDelete } = await inquirer.prompt({
+                    type: 'confirm',
+                    name: 'confirmDelete',
+                    message: `Are you sure you want to delete ${gateway.name}?`,
+                    default: false,
+                });
+    
+                if (!confirmDelete) {
+                    console.log(chalk.blue('Gateway deletion canceled.'));
+                    continue;  // Skip the rest of the loop and prompt for another action
+                } else {
+                    try {
+                        console.log(chalk.blue(`Deleting gateway ${gateway.name}...`));
+                        // Remove the gateway from the configuration
+                        deleteGateway(gateway.name);
+                        console.log(chalk.green(`Gateway ${gateway.name} deleted successfully.`));
+                        return;  // Exit the loop after deleting the gateway
+                    } catch (error) {
+                        console.error(chalk.red(`Error deleting gateway ${gateway.name}: ${error}`));
+                    }
+                }
+            }
+    
+
+            // const result = await manageGateway(gateway.name, action);  // Pass the gateway name and action to manageGateway
 
             // Display the result of the action
             console.log(chalk.blue(`Result of ${action} action:`));
@@ -85,10 +112,10 @@ async function showGatewayActions(gateway) {
         }
 
         // Clear the console and redisplay the status after performing an action
-        if (action !== 'status' && action !== 'logs') {
-            console.clear();
-            await displayGatewayStatus(gateway.name);
-        }
+        // if (action !== 'status' && action !== 'logs') {
+        //     console.clear();
+        //     await displayGatewayStatus(gateway.name);
+        // }
     }
 }
 

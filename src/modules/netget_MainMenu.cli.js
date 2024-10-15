@@ -11,20 +11,30 @@ import { PortManagement_CLI } from './PortManagement/portManagement.cli.js';
 /**
  * the NetGet CLI.
  */
-console.log(`
-Welcome to:
-╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
-║║║├┤  │ ║ ╦├┤  │ 
-╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-`);
-console.log(`v2.4.7`);
+// console.log(`v2.4.7`);
 export default async function NetGetMainMenu() {
+    console.clear();
+    console.log(`
+    Welcome to:
+    ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
+    ║║║├┤  │ ║ ╦├┤  │ 
+    ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
+        v2.4.7`);
     const answers = await inquirer.prompt([
     {
         type: 'list',
         name: 'action',
-        message: 'Main Menu:',
-        choices: ['NetGetX', 'Gateways', 'Gets', 'AccessPoints',  new inquirer.Separator(), 'Port Management', new inquirer.Separator(), 'Exit', new inquirer.Separator()],
+        message: 'Main Menu',
+        choices: [
+            'NetGetX',
+            'Gateways',
+            'Gets',
+            'AccessPoints',
+            new inquirer.Separator(),
+            'Port Management',
+            new inquirer.Separator(),
+            'Exit',
+            new inquirer.Separator()],
     },
     ]);
 

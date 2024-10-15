@@ -1,13 +1,16 @@
 // netget/src/modules/Gateways/config/gConfig.js
 import fs from 'fs';
 import path from 'path';
-import { getDirectoryPaths } from '../../utils/GETDirs.js';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
+import { getDirectoryPaths } from '../../utils/GETDirs.js';
+
 const CONFIG_FILE = path.join(getDirectoryPaths().getPath, 'gConfig.json');
 const defaultConfig = {
     gateways: [
         {
             name: 'netget-gateway',
+            script: '',
             port: 3432,
             fallbackPort: 3433,
             status: 'stopped'
@@ -73,6 +76,18 @@ async function addGateway(newGateway) {
 }
 
 async function deleteGateway(gatewayName) {
+    const { confirmDelete } = await inquirer.prompt({
+        type: 'confirm',
+        name: 'confirmDelete',
+        message: `Are you sure you want to delete ${gatewayName}?`,
+        default: false,
+    });
+
+    if (!confirmDelete) {
+        console.log(chalk.blue('Gateway deletion canceled.'));
+        return;  // Exit the loop if the user cancels the deletion  
+    }
+
     try {
         const config = await loadOrCreateGConfig();
         const index = config.gateways.findIndex(gateway => gateway.name === gatewayName);

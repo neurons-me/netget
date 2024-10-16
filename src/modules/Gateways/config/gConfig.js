@@ -75,6 +75,14 @@ async function addGateway(newGateway) {
     }
 }
 
+/**
+ * Deletes a gateway from the configuration.
+ * @param {string} gatewayName - The name of the gateway to delete.
+ * @category Gateways
+ * @subcategory Config
+ * @module gConfig
+ */
+
 async function deleteGateway(gatewayName) {
     const { confirmDelete } = await inquirer.prompt({
         type: 'confirm',

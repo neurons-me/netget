@@ -1,9 +1,9 @@
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import pm2 from 'pm2';
+import { spawn } from 'child_process';
 import { manageGateway } from './gatewayPM2.js';
-import { deleteGateway, saveGConfig, loadOrCreateGConfig } from './config/gConfig.js';
-import NetGetMainMenu from '../netget_MainMenu.cli.js';
+import { deleteGateway, loadOrCreateGConfig } from './config/gConfig.js';
 import { Gateways_CLI } from './gateways.cli.js';
 
 
@@ -16,9 +16,12 @@ async function showGatewayActions(gateway) {
         'stop', 
         'restart', 
         'delete', 
-        'status', 
-        'logs', 
-        'Go Back']; 
+        //'status', 
+        //'logs',
+        new inquirer.Separator(),
+        'Dev Mode', 
+        'Go Back',
+        new inquirer.Separator()]; 
         
         const { action } = await inquirer.prompt({
             type: 'list',
@@ -42,8 +45,11 @@ async function showGatewayActions(gateway) {
                 return;
             }
 
-            manageGateway(gateway.name, action);
+            if (action === 'Dev Mode') {
+                await startAppInDevMode(gateway);
+            }
 
+            manageGateway(gateway.name, action);
 
             if (action !== 'status' && action !== 'logs' && action !== 'delete') {
                 console.clear();
@@ -58,6 +64,39 @@ async function showGatewayActions(gateway) {
         }
     }
 };
+
+// Function to start the app in Development Mode using pm2
+async function startAppInDevMode(gateway) {
+    return new Promise((resolve, reject) => {
+        pm2.connect((err) => {
+            if (err) {
+                console.error(chalk.red('PM2 connection error:'), err);
+                return reject(err);
+            }
+
+            const devCommand = `pm2-dev ${gateway.script}`;
+            const child = spawn(devCommand, { shell: true });
+
+            child.stdout.on('data', (data) => {
+                console.log(chalk.green(data.toString()));
+            });
+
+            child.stderr.on('data', (data) => {
+                console.error(chalk.red(data.toString()));
+            });
+
+            child.on('close', async (code) => {
+                pm2.disconnect();
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`pm2-dev process exited with code ${code}`));
+                }
+                await Gateways_CLI(); // Return to the Gateways_CLI menu once the process ends
+            });
+        });
+    });
+}
 
 
 async function displayGatewayStatus(gatewayName) {

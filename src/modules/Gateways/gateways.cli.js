@@ -5,8 +5,15 @@ import { addNewGateway } from './addGateway.cli.js';
 import { showGatewayActions, } from './utils.js';
 import { loadOrCreateGConfig } from './config/gConfig.js';
 
+/**
+ * Displays the Gateways Menu and handles user input.
+ * @category Gateways
+ * @subcategory Main    
+ * @module Gateways_CLI
+ */
+
 export async function Gateways_CLI() {
-    console.clear();  // Clear the console when entering the Gateways menu
+    console.clear();
     console.log(chalk.green('Gateways Menu'));
     try{
         const gConfig = await loadOrCreateGConfig();
@@ -33,13 +40,13 @@ export async function Gateways_CLI() {
 
         switch (mainMenuSelection) {
             case 'Go Back':
-                console.clear();  // Clear the console when going back to the main menu
+                console.clear();
                 console.log(chalk.blue('Returning to the main menu...'));
                 await NetGetMainMenu();
                 return;
 
             case 'Add Gateway':
-                console.clear();  // Clear the console when adding a new gateway
+                console.clear();
                 console.log(chalk.blue('Adding a new gateway...'));
                 await addNewGateway();
                 await Gateways_CLI();
@@ -48,7 +55,7 @@ export async function Gateways_CLI() {
             default:
                 const selectedGateway = gateways.find(gateway => gateway.name === mainMenuSelection);
                 if (selectedGateway) {
-                    console.clear();  // Clear the console before showing gateway actions
+                    console.clear();
                     await showGatewayActions(selectedGateway);
                 };
                 

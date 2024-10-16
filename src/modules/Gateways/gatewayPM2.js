@@ -71,7 +71,8 @@ const manageGateway = async (gatewayName, action) => {
 
             switch (action) {
                 case 'start':
-                    startGateway(gateway.port, gateway.fallbackPort, gateway.script || gatewayScript);
+                    handlePM2Action('start', `${gatewayName} started successfully.`, `Failed to start ${gatewayName}`);
+                    startGateway(gateway.port, gateway.fallbackPort, gateway.script);
                     break;
                 case 'status':
                     pm2.describe(gatewayName, (err, desc) => {

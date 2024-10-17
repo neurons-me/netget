@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { program } from 'commander';
+
 import NetGetX_CLI from './modules/NetGetX/NetGetX.cli.js';
 import { Gateways_CLI } from './modules/Gateways/gateways.cli.js';
 import { handleGets } from './modules/Gets/Gets.js';
@@ -8,7 +9,7 @@ import { manageGateway } from './modules/Gateways/gatewayPM2.js';
 
 // Entry Points Options and Commands
 program
-  .description('NetGet Command Line Interface')
+  .description('NetGet Command Line Interface') 
   .action(NetGetMainMenu);
 
 program.command('x')

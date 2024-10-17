@@ -63,7 +63,7 @@ const createXBlock = async (domain, xConfig) => {
             type: 'input',
             name: 'staticPath',
             message: 'Enter the static path for the domain:',
-            default: `/var/www/${domain}/html`
+            default: `/var/www/${domain}`
         },
         {
             type: 'input',
@@ -97,10 +97,10 @@ const createXBlock = async (domain, xConfig) => {
     const sslCertificateKey = `/etc/letsencrypt/live/${responses.sslDomain}/privkey.pem`;
 
     const xBlockContent = `
-                server {
+        server {
             listen 80;
             listen [::]:80;
-            server_name *.${domain}
+            server_name *.${domain};
             return 301 https://$host$request_uri;
 
             location /{
@@ -110,63 +110,51 @@ const createXBlock = async (domain, xConfig) => {
             }
         }
 
-            ${responses.enforceSSL ? `
+    ${responses.enforceSSL ? `
 
-                server {
-                    listen 443 ssl http2;
-                    listen [::]:443 ssl http2;
-    
-                    server_name *.${domain};
-    
-                    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
-                    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+        server {
+            listen 443 ssl http2;
+            listen [::]:443 ssl http2;
 
-                    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    
-                    # root /home/bongi/.get/static/default;
-                    # index index.html index.htm index.nginx-debian.html;
-    
-                    location / {
-                        proxy_pass http://localhost:${xMainOutPutPort};
-                        proxy_set_header Host $host;
-    
-                        proxy_http_version                 1.1;
-                        proxy_cache_bypass                 $http_upgrade;
-    
-                        # Proxy SSL
-                        proxy_ssl_server_name              on;
-    
-                        # Proxy headers
-                        # proxy_set_header Upgrade         $http_upgrade;
-                        # proxy_set_header Connection      $connection_upgrade;
-                        # proxy_set_header Forwarded       $proxy_add_forwarded;
-                        proxy_set_header X-Real-IP         $remote_addr;
-                        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-                        proxy_set_header X-Forwarded-Proto $scheme;
-                        proxy_set_header X-Forwarded-Host  $host;
-                        proxy_set_header X-Forwarded-Port  $server_port;
-    
-                        # Proxy timeouts
-                        proxy_connect_timeout              60s;
-                        proxy_send_timeout                 60s;
-                    }
-    
-    
-                    # location @fallback {
-                    #    try_files $uri $uri/ =404;
-                    # } 
-       
-                       error_page 404 /404.html;
-                       location = /404.html {
-                           internal;
-                       }
-       
-                       error_page 500 502 503 504 /50x.html;
-                       location = /50x.html {
-                           internal;
-                       }       
-               }` : ''}
-        `;
+            server_name *.${domain};
+
+            ssl_certificate ${sslCertificate};
+            ssl_certificate_key ${sslCertificateKey};
+
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+            location / {
+                proxy_pass http://localhost:${xMainOutPutPort};
+                proxy_set_header Host $host;
+
+                proxy_http_version                 1.1;
+                proxy_cache_bypass                 $http_upgrade;
+
+                # Proxy SSL
+                proxy_ssl_server_name              on;
+
+                # Proxy headers
+                proxy_set_header X-Real-IP         $remote_addr;
+                proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_set_header X-Forwarded-Host  $host;
+                proxy_set_header X-Forwarded-Port  $server_port;
+
+                # Proxy timeouts
+                proxy_connect_timeout              60s;
+                proxy_send_timeout                 60s;
+            }
+
+            error_page 404 /404.html;
+            location = /404.html {
+                internal;
+            }
+
+            error_page 500 502 503 504 /50x.html;
+            location = /50x.html {
+                internal;
+            }       
+        }` : ''}`;
 
     const xBlockPath = path.join(XBlocksAvailable, `${domain}.conf`);
 

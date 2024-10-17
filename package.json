@@ -44,7 +44,9 @@
         "node-fetch": "^3.3.2",
         "pm2": "^5.3.1",
         "sudo-prompt": "^9.2.1",
-        "uuid": "^10.0.0"
+        "uuid": "^10.0.0",
+        "sqlite": "^5.1.1",
+        "sqlite3": "^5.1.7"
     },
     "repository": {
         "type": "git",

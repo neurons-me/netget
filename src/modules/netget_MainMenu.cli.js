@@ -19,7 +19,7 @@ export default async function NetGetMainMenu() {
     ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
     ║║║├┤  │ ║ ╦├┤  │ 
     ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.4.7`);
+        v2.4.71`);
     const answers = await inquirer.prompt([
     {
         type: 'list',

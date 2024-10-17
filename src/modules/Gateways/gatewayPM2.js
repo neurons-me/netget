@@ -46,17 +46,17 @@ const manageGateway = async (gatewayName, action) => {
                 });
             };
 
-            const startGateway = (port, fallbackPort) => {
+            const startGateway = (port, fallbackPort, gatewayscript) => {
                 pm2.start(
                     {
-                        script: gatewayScript,
+                        script: gatewayscript,
                         name: gatewayName,
                         env: { PORT: port }
                     },
                     (err, apps) => {
                         if (err) {
                             if (fallbackPort) {
-                                return startGateway(fallbackPort, null);
+                                return startGateway(fallbackPort, null, gatewayScript || gateway.script);
                             } else {
                                 pm2.disconnect();
                                 return reject(`Failed to start ${gatewayName} on port ${port}: ${err.message}`);
@@ -71,7 +71,8 @@ const manageGateway = async (gatewayName, action) => {
 
             switch (action) {
                 case 'start':
-                    startGateway(gateway.port, gateway.fallbackPort);
+                    handlePM2Action('start', `${gatewayName} started successfully.`, `Failed to start ${gatewayName}`);
+                    startGateway(gateway.port, gateway.fallbackPort, gateway.script);
                     break;
                 case 'status':
                     pm2.describe(gatewayName, (err, desc) => {

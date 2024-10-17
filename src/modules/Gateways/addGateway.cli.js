@@ -79,11 +79,18 @@ async function addNewGateway() {
             }
             return 'Please enter a valid port number (1-65535) or leave it blank for no fallback port.';
         },
-        filter: (input) => (input === '' ? null : input), // Convert empty string to null
+        filter: (input) => (input === ' ' ? null : input), // Convert empty string to null
     });
+
+    const { script } = await inquirer.prompt({
+        type: 'input',
+        name: 'script',
+        message: 'Enter the script path for the new gateway:',
+        default: '',});
 
     const newGateway = {
         name,
+        script,
         port,
         fallbackPort,
         status: 'stopped',

@@ -11,13 +11,6 @@ import { PortManagement_CLI } from './PortManagement/portManagement.cli.js';
 /**
  * the NetGet CLI.
  */
-console.log(`
-Welcome to:
-╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
-║║║├┤  │ ║ ╦├┤  │ 
-╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-`);
-console.log(`v2.4.7`);
 export default async function NetGetMainMenu() {
     console.clear();
     console.log(`

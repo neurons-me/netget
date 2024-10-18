@@ -101,6 +101,12 @@ const addNewDomain = async () => {
 
         // Save only the new domain configuration
         xConfig.domains[domain] = newDomainConfig;
+        // Sort the domains alphabetically
+        const sortedDomains = Object.keys(xConfig.domains).sort().reduce((acc, key) => {
+            acc[key] = xConfig.domains[key];
+            return acc;
+        }, {});
+        xConfig.domains = sortedDomains;
         await saveXConfig({ domains: xConfig.domains });
         await addDomain(domain, email, 'letsencrypt', '', '', '');
 

@@ -12,7 +12,6 @@ import { addGateway, loadOrCreateGConfig } from './config/gConfig.js';
 async function addNewGateway() {
     // Load the existing configuration
     const config = await loadOrCreateGConfig();
-
     let name;
     let isNameUnique = false;
 

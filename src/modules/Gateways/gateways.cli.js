@@ -1,3 +1,4 @@
+// netget/src/modules/Gateways/gateways.cli.js
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
@@ -61,7 +62,7 @@ export async function Gateways_CLI() {
                 
         }
     }
-    catch (error) {
+   catch (error) {
         console.error(chalk.red('An error occurred in the Gateways Menu:', error.message));
     }
 };

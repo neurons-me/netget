@@ -5,6 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import chalk from 'chalk';
 import { loadOrCreateGConfig } from './config/gConfig.js';
+import { App_CLI } from './gateways.cli.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,19 +13,19 @@ const __dirname = path.dirname(__filename);
 /**
  * Manages PM2 actions for a specified gateway.
  * 
- * @param {string} gatewayName - The name of the gateway to manage.
+ * @param {string} appName - The name of the gateway to manage.
  * @param {string} action - The action to perform (start, stop, restart, delete, status, logs).
  * @returns {Promise<string>} - A promise that resolves to a status message or logs.
  * @category Gateways
  * @subcategory Main
  * @module gatewayPM2
  */
-const manageGateway = async (gatewayName, action) => {
+const manageApp = async (appName, action) => {
     const config = await loadOrCreateGConfig();
-    const gateway = config.gateways.find(gw => gw.name === gatewayName);
+    const app = config.gateways.find(gw => gw.name === appName);
 
-    if (!gateway) {
-        return `Gateway "${gatewayName}" not found.`;
+    if (!app) {
+        return `App "${appName}" not found.`;
     }
 
     const gatewayScript = path.join(__dirname, 'startGateway.js');
@@ -36,7 +37,7 @@ const manageGateway = async (gatewayName, action) => {
             }
 
             const handlePM2Action = (pm2Method, successMessage, errorMessage) => {
-                pm2[pm2Method](gatewayName, (err, proc) => {
+                pm2[pm2Method](appName, (err, proc) => {
                     pm2.disconnect();
                     if (err) {
                         return reject(`${errorMessage}: ${err}`);
@@ -46,24 +47,24 @@ const manageGateway = async (gatewayName, action) => {
                 });
             };
 
-            const startGateway = (port, fallbackPort, gatewayscript) => {
+            const startApp = (port, fallbackPort, appscript) => {
                 pm2.start(
                     {
-                        script: gatewayscript,
-                        name: gatewayName,
+                        script: appscript,
+                        name: appName,
                         env: { PORT: port }
                     },
                     (err, apps) => {
                         if (err) {
                             if (fallbackPort) {
-                                return startGateway(fallbackPort, null, gatewayScript || gateway.script);
+                                return startApp(fallbackPort, null, gatewayScript || app.script);
                             } else {
                                 pm2.disconnect();
-                                return reject(`Failed to start ${gatewayName} on port ${port}: ${err.message}`);
+                                return reject(`Failed to start ${appName} on port ${port}: ${err.message}`);
                             }
                         } else {
                             pm2.disconnect();
-                            return resolve(`${gatewayName} started successfully on port ${port}.`);
+                            return resolve(`${appName} started successfully on port ${port}.`);
                         }
                     }
                 );
@@ -71,20 +72,20 @@ const manageGateway = async (gatewayName, action) => {
 
             switch (action) {
                 case 'start':
-                    handlePM2Action('start', `${gatewayName} started successfully.`, `Failed to start ${gatewayName}`);
-                    startGateway(gateway.port, gateway.fallbackPort, gateway.script);
+                    handlePM2Action('start', `${appName} started successfully.`, `Failed to start ${appName}`);
+                    startApp(app.port, app.fallbackPort, app.script);
                     break;
                 case 'status':
-                    pm2.describe(gatewayName, (err, desc) => {
+                    pm2.describe(appName, (err, desc) => {
                         if (err) {
                             pm2.disconnect();
-                            return reject(`Failed to get status for ${gatewayName}: ${err}`);
+                            return reject(`Failed to get status for ${appName}: ${err}`);
                         } else if (desc && desc.length > 0) {
                             const statusInfo = desc[0].pm2_env;
                             const procInfo = desc[0].monit; // Contains CPU and memory usage
                             const additionalInfo = statusInfo.axm_monitor; // Contains heap and other information
 
-                            let statusOutput = `Current status of ${gatewayName}:\n`;
+                            let statusOutput = `Current status of ${appName}:\n`;
 
                             const formatLine = (label, value) => `${label.padEnd(20, ' ')}: ${value || 'N/A'}`;
 
@@ -117,42 +118,48 @@ const manageGateway = async (gatewayName, action) => {
                             return resolve(statusOutput.trim());
                         } else {
                             pm2.disconnect();
-                            return resolve(`${gatewayName} is not currently managed by PM2.`);
+                            return resolve(`${appName} is not currently managed by PM2.`);
                         }
                     });
                     break;
                 case 'logs':
-                    const logPathOut = path.join(os.homedir(), `.pm2/logs/${gatewayName}-out.log`);
-                    const logPathErr = path.join(os.homedir(), `.pm2/logs/${gatewayName}-error.log`);
-                    fs.readFile(logPathOut, 'utf8', (err, dataOut) => {
-                        if (err) {
-                            dataOut = 'No output log found.';
-                        }
-                        fs.readFile(logPathErr, 'utf8', (err, dataErr) => {
+                    try {
+                        const logPathOut = path.join(os.homedir(), `.pm2/logs/${appName}-out.log`);
+                        const logPathErr = path.join(os.homedir(), `.pm2/logs/${appName}-error.log`);
+                        fs.readFile(logPathOut, 'utf8', (err, dataOut) => {
                             if (err) {
-                                dataErr = 'No error log found.';
+                                dataOut = 'No output log found.';
                             }
-                            const logOutput = `Logs for ${gatewayName}:\n\n--- OUT LOG ---\n${dataOut.split('\n').slice(-15).join('\n')}\n\n--- ERROR LOG ---\n${dataErr.split('\n').slice(-15).join('\n')}`;
-                            pm2.disconnect();
-                            return resolve(logOutput);
+                            fs.readFile(logPathErr, 'utf8', async (err, dataErr) => {
+                                if (err) {
+                                    dataErr = 'No error log found.';
+                                }
+                                const logOutput = `Logs for ${appName}:\n\n--- OUT LOG ---\n${dataOut.split('\n').slice(-15).join('\n')}\n\n--- ERROR LOG ---\n${dataErr.split('\n').slice(-15).join('\n')}`;
+                                pm2.disconnect();
+                                await App_CLI();
+                                return resolve(logOutput);
+                            });
                         });
-                    });
+                    } catch (error) {
+                        pm2.disconnect();
+                        return reject(`Error retrieving logs for ${appName}: ${error.message}`);
+                    }
                     break;
                 case 'stop':
-                    handlePM2Action('stop', `${gatewayName} stopped successfully.`, `Failed to stop ${gatewayName}`);
+                    handlePM2Action('stop', `${appName} stopped successfully.`, `Failed to stop ${appName}`);
                     break;
                 case 'restart':
-                    handlePM2Action('restart', `${gatewayName} restarted successfully.`, `Failed to restart ${gatewayName}`);
+                    handlePM2Action('restart', `${appName} restarted successfully.`, `Failed to restart ${appName}`);
                     break;
                 case 'delete':
-                    handlePM2Action('delete', `${gatewayName} deleted successfully.`, `Failed to delete ${gatewayName}`);
+                    handlePM2Action('delete', `${appName} deleted successfully.`, `Failed to delete ${appName}`);
                     break;
                 default:
                     pm2.disconnect();
-                    return reject('Invalid action for manageGateway');
+                    return reject('Invalid action for manageApp');
             }
         });
     });
 };
 
-export { manageGateway };
+export { manageApp };

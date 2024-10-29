@@ -1,20 +1,21 @@
 /**
  * Entry point of netGet node module.
  * default exports NetGet
- * defaultHandler exports defaultHandler
- * @example
- * import NetGet, { defaultHandler } from 'netget';
- * const netget = new NetGet();
- * const gateway = netget.Gateway({ host: 'localhost', port: 3000 });
- * gateway.listen();
- * gateway.addRoute('example.com', defaultHandler);
- * gateway.addRoute('sub.example.com', (req, res) => { 
- * res.send('Hello from sub.example.com!'); }
- * );
  * @module index
  */
 
 import NetGet from './src/netget.js';
+import { verifyInitialization } from './src/scripts/init_dirs.js';
 export { defaultHandler } from './src/routes/defaultHandlers.js';
+// Verify directory initialization
+const getInit = verifyInitialization();
+let get = "undefined";
+if (!getInit) {
+    get = "undefined";
+    console.error("no .get set.");
+} else {
+    get = "getset"
+    console.log(".get set.");
+}
 export default NetGet;
-console.log("NetGet Loaded v2.5");
+console.log("NetGet Loaded v2.5;");

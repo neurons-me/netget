@@ -12,7 +12,6 @@ import { addApp, loadOrCreateGConfig } from './config/gConfig.js';
 async function addNewApp() {
     // Load the existing configuration
     const config = await loadOrCreateGConfig();
-
     let name;
     let isNameUnique = false;
 

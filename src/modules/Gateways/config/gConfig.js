@@ -13,7 +13,8 @@ const defaultConfig = {
             script: '',
             port: 3432,
             fallbackPort: 3433,
-            status: 'stopped'
+            status: 'stopped',
+            count: 0
         
         }
     ]

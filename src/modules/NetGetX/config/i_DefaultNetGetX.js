@@ -108,16 +108,6 @@ if (!xConfig.nginxExecutable) {
 •┗┛┗┛ ┻ 
 Verify .get Paths  
  */
-// // Verify if /etc has 755 permissions if not try handlePermissionErrorForEnsureDir
-// const etcPath = '/etc';
-// const etcPermissions = await fs.promises.access(etcPath, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)
-//     .then(() => true)
-//     .catch(() => false);
-//     console.log(`Permissions for /etc: ${etcPermissions ? 'Read, Write, Execute' : 'No access'}`);
-//     console.log('Attempting to handle permission error for /etc directory');
-// if (!etcPermissions) {
-//     await handlePermissionErrorForEnsureDir(etcPath);
-// }
 
 if(!xConfig.getPath){
 const getDefaultPath = DEFAULT_DIRECTORIES.getPath;

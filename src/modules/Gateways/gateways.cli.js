@@ -66,3 +66,5 @@ export async function App_CLI() {
         console.error(chalk.red('An error occurred in the Gateways Menu:', error.message));
     }
 };
+
+export default App_CLI;

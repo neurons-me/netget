@@ -9,7 +9,7 @@ const CONFIG_FILE = path.join(getDirectoryPaths().getPath, 'gConfig.json');
 const defaultConfig = {
     gateways: [
         {
-            name: 'netget-gateway',
+            name: 'netget-app',
             script: '',
             port: 3432,
             fallbackPort: 3433,
@@ -35,7 +35,7 @@ async function loadOrCreateGConfig() {
         const configData = fs.readFileSync(CONFIG_FILE, 'utf-8');
         return JSON.parse(configData);
     } catch (error) {
-        console.error(chalk.red('Failed to load or create gateway configuration:'), error);
+        console.error(chalk.red('Failed to load or create app configuration:'), error);
         throw error;
     }
 }
@@ -50,66 +50,66 @@ async function loadOrCreateGConfig() {
 async function saveGConfig(config) {
     try {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-        console.log(chalk.green('Gateway configuration saved successfully.'));
+        console.log(chalk.green('App configuration saved successfully.'));
     } catch (error) {
-        console.error(chalk.red('Failed to save gateway configuration:'), error);
+        console.error(chalk.red('Failed to save app configuration:'), error);
         throw error;
     }
 }
 
 /**
  * Adds a new gateway to the configuration.
- * @param {object} newGateway - The new gateway to add.
+ * @param {object} newApp - The new gateway to add.
  * @category Gateways
  * @subcategory Config
  * @module gConfig
  */
-async function addGateway(newGateway) {
+async function addApp(newApp) {
     try {
         const config = await loadOrCreateGConfig();
-        config.gateways.push(newGateway);
+        config.gateways.push(newApp);
         await saveGConfig(config);
     } catch (error) {
-        console.error(chalk.red('Failed to add new gateway:'), error);
+        console.error(chalk.red('Failed to add new app:'), error);
         throw error;
     }
 }
 
 /**
  * Deletes a gateway from the configuration.
- * @param {string} gatewayName - The name of the gateway to delete.
+ * @param {string} appName - The name of the gateway to delete.
  * @category Gateways
  * @subcategory Config
  * @module gConfig
  */
 
-async function deleteGateway(gatewayName) {
+async function deleteApp(appName) {
     const { confirmDelete } = await inquirer.prompt({
         type: 'confirm',
         name: 'confirmDelete',
-        message: `Are you sure you want to delete ${gatewayName}?`,
+        message: `Are you sure you want to delete ${appName}?`,
         default: false,
     });
 
     if (!confirmDelete) {
-        console.log(chalk.blue('Gateway deletion canceled.'));
+        console.log(chalk.blue('App deletion canceled.'));
         return;  // Exit the loop if the user cancels the deletion  
     }
 
     try {
         const config = await loadOrCreateGConfig();
-        const index = config.gateways.findIndex(gateway => gateway.name === gatewayName);
+        const index = config.gateways.findIndex(gateway => gateway.name === appName);
         if (index === -1) {
-            console.log(chalk.yellow(`Gateway "${gatewayName}" not found.`));
+            console.log(chalk.yellow(`Gateway "${appName}" not found.`));
             return;
         }
         config.gateways.splice(index, 1);
         await saveGConfig(config);
     } catch (error) {
-        console.error(chalk.red('Failed to delete gateway:'), error);
+        console.error(chalk.red('Failed to delete app:'), error);
         throw error;
     }
 }
 
-export { loadOrCreateGConfig, saveGConfig, addGateway, deleteGateway };
+export { loadOrCreateGConfig, saveGConfig, addApp, deleteApp };
 

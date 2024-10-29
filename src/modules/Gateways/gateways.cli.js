@@ -62,7 +62,7 @@ export async function Gateways_CLI() {
                 
         }
     }
-   catch (error) {
+    catch (error) {
         console.error(chalk.red('An error occurred in the Gateways Menu:', error.message));
     }
 };

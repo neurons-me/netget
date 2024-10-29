@@ -1,34 +1,34 @@
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
-import { addNewGateway } from './addGateway.cli.js';
-import { showGatewayActions, } from './utils.js';
+import { addNewApp } from './addGateway.cli.js';
+import { showAppActions, } from './utils.js';
 import { loadOrCreateGConfig } from './config/gConfig.js';
 
 /**
  * Displays the Gateways Menu and handles user input.
  * @category Gateways
  * @subcategory Main    
- * @module Gateways_CLI
+ * @module App_CLI
  */
 
-export async function Gateways_CLI() {
+export async function App_CLI() {
     console.clear();
-    console.log(chalk.green('Gateways Menu'));
+    console.log(chalk.green('App Menu'));
     try{
         const gConfig = await loadOrCreateGConfig();
         const gateways = gConfig.gateways;
 
         if (gateways.length === 0) {
-            console.log(chalk.red('No gateways configured.'));
+            console.log(chalk.red('No apps configured.'));
         }
         
         const mainMenuOptions = [
             new inquirer.Separator(),
             ...gateways.map(gateway => gateway.name),
             new inquirer.Separator(),
-            'Add Gateway',
-            'Go Back'
+            'Add App',
+            'Go Back',
         ];
 
         const { mainMenuSelection } = await inquirer.prompt({
@@ -45,18 +45,18 @@ export async function Gateways_CLI() {
                 await NetGetMainMenu();
                 return;
 
-            case 'Add Gateway':
+            case 'Add App':
                 console.clear();
-                console.log(chalk.blue('Adding a new gateway...'));
-                await addNewGateway();
-                await Gateways_CLI();
+                console.log(chalk.blue('Adding a new app...'));
+                await addNewApp();
+                await App_CLI();
                 return;
 
             default:
-                const selectedGateway = gateways.find(gateway => gateway.name === mainMenuSelection);
-                if (selectedGateway) {
+                const selectedApp = gateways.find(gateway => gateway.name === mainMenuSelection);
+                if (selectedApp) {
                     console.clear();
-                    await showGatewayActions(selectedGateway);
+                    await showAppActions(selectedApp);
                 };
                 
         }

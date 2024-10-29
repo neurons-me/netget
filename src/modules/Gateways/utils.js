@@ -2,13 +2,14 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import pm2 from 'pm2';
 import { spawn } from 'child_process';
-import { manageGateway } from './gatewayPM2.js';
-import { deleteGateway, loadOrCreateGConfig } from './config/gConfig.js';
-import { Gateways_CLI } from './gateways.cli.js';
+import { manageApp } from './gatewayPM2.js';
+import { deleteApp, loadOrCreateGConfig } from './config/gConfig.js';
+import { App_CLI } from './gateways.cli.js';
+import NetGetMainMenu from '../netget_MainMenu.cli.js';
 
 
-async function showGatewayActions(gateway) {
-    await displayGatewayStatus(gateway.name);
+async function showAppActions(app) {
+    await displayAppStatus(app.name);
     const gConfig = await loadOrCreateGConfig();
     while(true) {
         const actions = [
@@ -16,8 +17,6 @@ async function showGatewayActions(gateway) {
         'stop', 
         'restart', 
         'delete', 
-        //'status', 
-        //'logs',
         new inquirer.Separator(),
         'Dev Mode', 
         'Go Back',
@@ -26,34 +25,36 @@ async function showGatewayActions(gateway) {
         const { action } = await inquirer.prompt({
             type: 'list',
             name: 'action',
-            message: `Select an action for ${gateway.name}:`,
+            message: `Select an action for ${app.name}:`,
             choices: actions,
         });
         
         console.clear();
         try{
-            if (action === 'Go Back') {
-                console.clear(); 
-                await Gateways_CLI();
-                return; 
-            }
-
             if (action === 'delete') {
                 console.clear();
-                await deleteGateway(gateway.name);
-                await Gateways_CLI();
+                await deleteApp(app.name);
+                manageApp(app.name, 'delete');
+                await App_CLI();
                 return;
             }
 
-            if (action === 'Dev Mode') {
-                await startAppInDevMode(gateway);
+            if (action === 'Go Back') {
+                console.clear(); 
+                await App_CLI();
+                return; 
             }
 
-            manageGateway(gateway.name, action);
-
-            if (action !== 'status' && action !== 'logs' && action !== 'delete') {
+            if (action === 'Dev Mode') {
                 console.clear();
-                await displayGatewayStatus(gateway.name);
+                await startAppInDevMode(app);
+            }
+
+            
+            if (action !== 'delete' && action !== 'Dev Mode') {
+                console.clear();
+                manageApp(app.name, action);
+                await displayAppStatus(app.name);
             }
             
             // console.log(chalk.blue(`Result of ${action} action:`));
@@ -66,7 +67,8 @@ async function showGatewayActions(gateway) {
 };
 
 // Function to start the app in Development Mode using pm2
-async function startAppInDevMode(gateway) {
+async function startAppInDevMode(app) {
+    manageApp(app.name, 'stop');
     return new Promise((resolve, reject) => {
         pm2.connect((err) => {
             if (err) {
@@ -74,8 +76,18 @@ async function startAppInDevMode(gateway) {
                 return reject(err);
             }
 
-            const devCommand = `pm2-dev ${gateway.script}`;
-            const child = spawn(devCommand, { shell: true });
+            const devCommand = `pm2-dev ${app.script}`;
+            let terminalCommand;
+
+            if (process.platform === 'darwin') {
+                terminalCommand = `osascript -e 'tell application "Terminal" to do script "${devCommand}"'`;
+            } else if (process.platform === 'win32') {
+                terminalCommand = `start cmd.exe /K "${devCommand}"`;
+            } else {
+                terminalCommand = `x-terminal-emulator -e "${devCommand}"`;
+            }
+
+            const child = spawn(terminalCommand, { shell: true });
 
             child.stdout.on('data', (data) => {
                 console.log(chalk.green(data.toString()));
@@ -90,16 +102,14 @@ async function startAppInDevMode(gateway) {
                 if (code === 0) {
                     resolve();
                 } else {
-                    reject(new Error(`pm2-dev process exited with code ${code}`));
+                    await App_CLI()
                 }
-                await Gateways_CLI(); // Return to the Gateways_CLI menu once the process ends
             });
         });
     });
 }
 
-
-async function displayGatewayStatus(gatewayName) {
+async function displayAppStatus(gatewayName) {
     return new Promise((resolve) => {
         pm2.connect((err) => {
             if (err) {
@@ -149,4 +159,4 @@ async function displayGatewayStatus(gatewayName) {
     });
 }
 
-export { showGatewayActions, displayGatewayStatus };
+export { showAppActions, displayAppStatus };

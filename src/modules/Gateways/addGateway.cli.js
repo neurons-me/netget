@@ -96,7 +96,7 @@ async function addNewApp() {
         type: 'input',
         name: 'script',
         message: 'Enter the script path for the new app:',
-        default: '',});
+        default: ''});
 
     const newGateway = {
         name,

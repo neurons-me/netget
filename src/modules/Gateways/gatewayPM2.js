@@ -36,17 +36,6 @@ const manageApp = async (appName, action) => {
                 return reject(`PM2 connection error: ${err}`);
             }
 
-            const handlePM2Action = (pm2Method, successMessage, errorMessage) => {
-                pm2[pm2Method](appName, (err, proc) => {
-                    pm2.disconnect();
-                    if (err) {
-                        return reject(`${errorMessage}: ${err}`);
-                    } else {
-                        return resolve(successMessage);
-                    }
-                });
-            };
-
             const startApp = (port, fallbackPort, appscript) => {
                 pm2.start(
                     {
@@ -57,7 +46,7 @@ const manageApp = async (appName, action) => {
                     (err, apps) => {
                         if (err) {
                             if (fallbackPort) {
-                                return startApp(fallbackPort, null, gatewayScript || app.script);
+                                return startApp(fallbackPort, null, appscript);
                             } else {
                                 pm2.disconnect();
                                 return reject(`Failed to start ${appName} on port ${port}: ${err.message}`);
@@ -70,9 +59,24 @@ const manageApp = async (appName, action) => {
                 );
             };
 
+            const handlePM2Action = (pm2Method, successMessage, errorMessage) => {
+                if (pm2Method === 'start') {
+                    startApp(app.port, app.fallbackPort, app.script);
+                } else {
+                    pm2[pm2Method](appName, (err, proc) => {
+                        pm2.disconnect();
+                        if (err) {
+                            return reject(`${errorMessage}: ${err}`);
+                        } else {
+                            return resolve(successMessage);
+                        }
+                    });
+                }
+            };
+
             switch (action) {
                 case 'start':
-                    handlePM2Action('start', `${appName} started successfully.`, `Failed to start ${appName}`);
+                    // handlePM2Action('start', `${appName} started successfully.`, `Failed to start ${appName}`);
                     startApp(app.port, app.fallbackPort, app.script);
                     break;
                 case 'status':

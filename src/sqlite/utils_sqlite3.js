@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import os from 'os';
 
-const CONFIG_DIR = path.join(os.homedir(), '.get');
+const CONFIG_DIR = path.join('/home/bongi/','.get');
 const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'domains.db');
 
 async function generateID(domain) {

@@ -1,15 +1,15 @@
 // netget/src/modules/Gateways/addGateway.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { addGateway, loadOrCreateGConfig } from './config/gConfig.js';
+import { addApp, loadOrCreateGConfig } from './config/gConfig.js';
 
 /**
  * Prompts the user to add a new gateway and updates the configuration.
  * @category Gateways
  * @subcategory Main
- * @module addGateway
+ * @module addApp
  */
-async function addNewGateway() {
+async function addNewApp() {
     // Load the existing configuration
     const config = await loadOrCreateGConfig();
     let name;
@@ -19,8 +19,19 @@ async function addNewGateway() {
         const { name: inputName } = await inquirer.prompt({
             type: 'input',
             name: 'name',
-            message: 'Enter the name of the new gateway:',
+            message: 'Enter the name of the new app (type /b to go back): ',
+            validate: (input) => {
+                if (input.length < 1) {
+                    return 'Please enter a valid app name.';
+                }
+                return true;
+            }
         });
+
+        if (inputName === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
 
         // Check if the gateway name already exists
         if (config.gateways.some(gateway => gateway.name === inputName)) {
@@ -38,7 +49,7 @@ async function addNewGateway() {
         const { port: inputPort } = await inquirer.prompt({
             type: 'number',
             name: 'port',
-            message: 'Enter the port for the new gateway:',
+            message: 'Enter the port for the new app:',
             validate: (input) => {
                 if (Number.isNaN(input) || input <= 0 || input > 65535) {
                     return 'Please enter a valid port number (1-65535).';
@@ -48,9 +59,9 @@ async function addNewGateway() {
         });
 
         // Check if the port is already in use
-        const existingGateway = config.gateways.find(gateway => gateway.port === inputPort);
-        if (existingGateway) {
-            console.log(chalk.yellow(`Port ${inputPort} is already used by gateway "${existingGateway.name}".`));
+        const existingApp = config.gateways.find(gateway => gateway.port === inputPort);
+        if (existingApp) {
+            console.log(chalk.yellow(`Port ${inputPort} is already used by app "${existingApp.name}".`));
             const { keepPort } = await inquirer.prompt({
                 type: 'confirm',
                 name: 'keepPort',
@@ -84,8 +95,8 @@ async function addNewGateway() {
     const { script } = await inquirer.prompt({
         type: 'input',
         name: 'script',
-        message: 'Enter the script path for the new gateway:',
-        default: '',});
+        message: 'Enter the script path for the new app:',
+        default: ''});
 
     const newGateway = {
         name,
@@ -95,12 +106,12 @@ async function addNewGateway() {
         status: 'stopped',
     };
 
-    await addGateway(newGateway);
-    console.log(chalk.green(`Gateway "${name}" added successfully on port ${port} with fallback port ${fallbackPort || 'none'}.`));
+    await addApp(newGateway);
+    console.log(chalk.green(`App "${name}" added successfully on port ${port} with fallback port ${fallbackPort || 'none'}.`));
 
     // Reload the updated configuration
     const updatedConfig = await loadOrCreateGConfig();
     return updatedConfig;
 }
 
-export { addNewGateway };
+export { addNewApp };

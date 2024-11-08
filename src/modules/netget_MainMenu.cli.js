@@ -4,7 +4,7 @@ import chalk from 'chalk';
 import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.js';
 import  NetGetX_CLI  from './NetGetX/NetGetX.cli.js';
 import { i_DefaultGateway } from './Gateways/config/i_DefaultGateway.js';
-import { Gateways_CLI } from './Gateways/gateways.cli.js';
+import { App_CLI } from './Gateways/gateways.cli.js';
 import { PortManagement_CLI } from './PortManagement/portManagement.cli.js';
 //import { handleAccessPoints } from './AccessPoints/AccessPoints.js';
 //import { handleGets } from './Gets/Gets.js';
@@ -26,7 +26,7 @@ export default async function NetGetMainMenu() {
         message: 'Main Menu',
         choices: [
             'NetGetX',
-            'Gateways',
+            'Apps',
             'Gets',
             'AccessPoints',
             new inquirer.Separator(),
@@ -47,7 +47,7 @@ export default async function NetGetMainMenu() {
                     }
             break;
 
-            case 'Gateways':
+            case 'Apps':
                 const g = await i_DefaultGateway(); //Load production configuration
                 if (g) {
                     console.log(`
@@ -58,7 +58,7 @@ export default async function NetGetMainMenu() {
                       |_______...________|---->>>
                       |_______...________|---->>>
                     `);
-                    await Gateways_CLI(g);  // Pass the development flag to the CLI
+                    await App_CLI(g);  // Pass the development flag to the CLI
                 } else {
                     console.log(chalk.red('Setup verification failed. Please resolve any issues before proceeding.'));
                 }

@@ -2,7 +2,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-const CONFIG_DIR = path.join('/home/bongi/','.get');
+const CONFIG_DIR = path.join('/opt/','.get');
 const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'xConfig.json');
 
 async function getConfig() {

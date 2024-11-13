@@ -1,7 +1,7 @@
 //netget/src/modules/NetGetX/Domains/domainsOptions.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import fs from 'fs';
+import fs, { stat } from 'fs';
 import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
@@ -39,7 +39,10 @@ const domainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
         Domain: domain,
-        SSLCertificateName: domainsConfig[domain].SSLCertificateName || 'N/A'
+        // Email: domainsConfig[domain].email,
+        // SSLCertificateName: domainsConfig[domain].SSLCertificateName || 'N/A',
+        ForwardPort: domainsConfig[domain].forwardPort,
+        SSLMode: domainsConfig[domain].sslMode,
     }));
     console.table(domainTable);
 };
@@ -51,6 +54,53 @@ const validateDomain = (domain) => {
 
 const addNewDomain = async () => {
     while (true) {
+        const serviceTypeAnswer = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'serviceType',
+                message: 'Select the type of service for this domain:',
+                choices: [
+                    { name: 'Serve Static Content', value: 'static' },
+                    { name: 'Forward Port', value: 'forward' }
+                ]
+            }
+        ]);
+
+        let proxyRedirect = '';
+        if (serviceTypeAnswer.serviceType === 'forward') {
+            const forwardPortAnswer = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'forwardPort',
+                    message: 'Enter the forward port for this domain (type /b to go back):',
+                    validate: input => input ? true : 'Forward port is required.'
+                }
+            ]);
+
+            if (forwardPortAnswer.forwardPort === '/b') {
+                console.log(chalk.blue('Going back to the previous menu...'));
+                return;
+            }
+
+            proxyRedirect = forwardPortAnswer.forwardPort;
+        } else if (serviceTypeAnswer.serviceType === 'static') {
+            const staticPathAnswer = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'staticPath',
+                    message: 'Enter the path to the static file you want to serve (type /b to go back):',
+                    validate: input => input ? true : 'Static file path is required.'
+                }
+            ]);
+
+            if (staticPathAnswer.staticPath === '/b') {
+                console.log(chalk.blue('Going back to the previous menu...'));
+                return;
+            }
+
+            proxyRedirect = staticPathAnswer.staticPath;
+        }
+
         const domainAnswer = await inquirer.prompt([
             {
                 type: 'input',
@@ -96,7 +146,8 @@ const addNewDomain = async () => {
 
         const newDomainConfig = {
             sslMode: 'letsencrypt',
-            email: email
+            email: email,
+            forwardPort: proxyRedirect,
         };
 
         // Save only the new domain configuration
@@ -108,7 +159,7 @@ const addNewDomain = async () => {
         }, {});
         xConfig.domains = sortedDomains;
         await saveXConfig({ domains: xConfig.domains });
-        await addDomain(domain, email, 'letsencrypt', '', '', '');
+        await addDomain(domain, email, 'letsencrypt', '', '', proxyRedirect);
 
         console.log(chalk.green(`Domain ${domain} added successfully.`));
         return;  // Exit the loop after successful addition

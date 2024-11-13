@@ -19,7 +19,7 @@ const selectedDomain = async (domain) => {
         const options = [
             { name: 'Edit/Delete Domain', value: 'editOrDelete' },
             { name: 'SSL Configuration', value: 'sslConfig' },
-            { name: 'Add New SubDomain', value: 'addNewSubDomain' },
+            // { name: 'Add New SubDomain', value: 'addNewSubDomain' },
             { name: 'Set Up Server Block', value: 'setupServerBlock' },
             { name: 'Back to Domains Menu', value: 'back' },
             { name: 'Exit', value: 'exit' }

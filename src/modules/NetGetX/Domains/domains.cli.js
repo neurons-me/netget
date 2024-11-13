@@ -9,6 +9,7 @@ import {scanAndLogCertificates} from './SSL/SSLCertificates.js';
 
 const domainsMenu = async () => {
     try {
+        console.clear();
         const xConfig = await loadOrCreateXConfig();
         const domains = Object.keys(xConfig.domains || {});
 

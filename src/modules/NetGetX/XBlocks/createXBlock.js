@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { checkCertificates, obtainSSLCertificates } from '../Domains/SSL/SSLCertificates.js';
 import { handlePermission } from '../../utils/handlePermissions.js';
+import { storeConfig } from '../../../sqlite/utils_sqlite3.js';
 
 /**
  * Parses the server_name directive from an NGINX configuration file.
@@ -99,29 +100,25 @@ const createXBlock = async (domain, xConfig) => {
     const xBlockContent = `
         server {
             listen 80;
-            listen [::]:80;
-            server_name *.${domain};
+            server_name ${domain} *.${domain};
             return 301 https://$host$request_uri;
 
-            location /{
+            location / {
                 root ${responses.staticPath};
                 index index.html index.htm index.nginx-debian.html;
-                try_files / = 404;
+                try_files $uri $uri/ =404;
             }
         }
 
     ${responses.enforceSSL ? `
 
         server {
-            listen 443 ssl http2;
-            listen [::]:443 ssl http2;
-
-            server_name *.${domain};
+            listen 443 ssl;
+            listen [::]:443 ssl;
+            server_name ${domain} *.${domain};
 
             ssl_certificate ${sslCertificate};
             ssl_certificate_key ${sslCertificateKey};
-
-            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
             location / {
                 proxy_pass http://localhost:${xMainOutPutPort};
@@ -156,11 +153,9 @@ const createXBlock = async (domain, xConfig) => {
             }       
         }` : ''}`;
 
-    const xBlockPath = path.join(XBlocksAvailable, `${domain}.conf`);
-
     try {
-        fs.writeFileSync(xBlockPath, xBlockContent);
-        console.log(chalk.green(`XBlock for ${domain} created successfully at ${xBlockPath}.`));
+        await storeConfig(domain, xBlockContent);
+        console.log(chalk.green(`XBlock for ${domain} stored successfully in the database.`));
     } catch (error) {
         if (error.code === 'EACCES') {
             await handlePermission(

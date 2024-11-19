@@ -1,11 +1,12 @@
 //netget/src/modules/NetGetX/Domains/domainsOptions.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import fs, { stat } from 'fs';
 import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
-import { addDomain, deleteDomain } from '../../../sqlite/utils_sqlite3.js';
+import { addDomain, deleteDomain, storeConfig } from '../../../sqlite/utils_sqlite3.js';
+import viewNginxConfig from './viewNginxConfig.js';
+import selectedDomain from './selectedDomain.cli.js';
 
 const logDomainInfo = (domainConfig, domain) => {
     console.log(chalk.blue('\nDomain Information:'));
@@ -29,8 +30,7 @@ const logAllDomainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
         Domain: domain,
-        Email: domainsConfig[domain].email,
-        SSLCertificatesPath: domainsConfig[domain].SSLCertificatesPath || 'N/A'
+        
     }));
     console.table(domainTable);
 };
@@ -39,10 +39,9 @@ const domainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
         Domain: domain,
-        // Email: domainsConfig[domain].email,
-        // SSLCertificateName: domainsConfig[domain].SSLCertificateName || 'N/A',
-        ForwardPort: domainsConfig[domain].forwardPort,
-        SSLMode: domainsConfig[domain].sslMode,
+        Port: domainsConfig[domain].port,
+        Type: domainsConfig[domain].type
+
     }));
     console.table(domainTable);
 };
@@ -61,28 +60,28 @@ const addNewDomain = async () => {
                 message: 'Select the type of service for this domain:',
                 choices: [
                     { name: 'Serve Static Content', value: 'static' },
-                    { name: 'Forward Port', value: 'forward' }
+                    { name: 'Forward Port', value: 'proxy' }
                 ]
             }
         ]);
 
-        let proxyRedirect = '';
-        if (serviceTypeAnswer.serviceType === 'forward') {
+        let port = '';
+        if (serviceTypeAnswer.serviceType === 'proxy') {
             const forwardPortAnswer = await inquirer.prompt([
                 {
                     type: 'input',
-                    name: 'forwardPort',
+                    name: 'proxy',
                     message: 'Enter the forward port for this domain (type /b to go back):',
                     validate: input => input ? true : 'Forward port is required.'
                 }
             ]);
 
-            if (forwardPortAnswer.forwardPort === '/b') {
+            if (forwardPortAnswer.proxy === '/b') {
                 console.log(chalk.blue('Going back to the previous menu...'));
                 return;
             }
 
-            proxyRedirect = forwardPortAnswer.forwardPort;
+            port = forwardPortAnswer.forwardPort;
         } else if (serviceTypeAnswer.serviceType === 'static') {
             const staticPathAnswer = await inquirer.prompt([
                 {
@@ -98,7 +97,7 @@ const addNewDomain = async () => {
                 return;
             }
 
-            proxyRedirect = staticPathAnswer.staticPath;
+            port = staticPathAnswer.staticPath;
         }
 
         const domainAnswer = await inquirer.prompt([
@@ -132,7 +131,7 @@ const addNewDomain = async () => {
             return;
         }
 
-        const { domain, email } = { ...domainAnswer, ...emailAnswer };
+        const { domain, email, type } = { ...domainAnswer, ...emailAnswer, ...serviceTypeAnswer };
         const xConfig = await loadOrCreateXConfig();
 
         if (!xConfig.domains) {
@@ -147,7 +146,7 @@ const addNewDomain = async () => {
         const newDomainConfig = {
             sslMode: 'letsencrypt',
             email: email,
-            forwardPort: proxyRedirect,
+            type: type
         };
 
         // Save only the new domain configuration
@@ -159,47 +158,15 @@ const addNewDomain = async () => {
         }, {});
         xConfig.domains = sortedDomains;
         await saveXConfig({ domains: xConfig.domains });
-        await addDomain(domain, email, 'letsencrypt', '', '', proxyRedirect);
+        await addDomain(domain, email, 'letsencrypt', '', '', '', port, type);
 
         console.log(chalk.green(`Domain ${domain} added successfully.`));
         return;  // Exit the loop after successful addition
     }
 };
 
-const addNewSubDomain = async (domain) => {
-    while (true) {
-        const domainAnswer = await inquirer.prompt([
-            {
-                type: 'input',
-                name: 'subdomain',
-                message: 'Enter the new subdomain (e.g., sub.example.com) (type /b to go back):',
-                validate: input => {
-                    if (input === '/b') return true;
-                    return validateDomain(input);
-                }
-            }
-        ]);
-
-        if (domainAnswer.subdomain === '/b') {
-            console.log(chalk.blue('Going back to the previous menu...'));
-            return;
-        }
-
-        const path = '/etc/nginx/XBlocks-available/' + domain;
-
-        try {
-            const data = await fs.readFile(path, 'utf8');
-            console.log(chalk.green(`Content of ${path}:`));
-            console.log(data);
-        } catch (error) {
-            console.error(chalk.red(`Error reading file ${path}:`, error.message));
-        }
-
-    }
-};
-
-
 const editOrDeleteDomain = async (domain) => {
+    console.clear();
     try {
         const xConfig = await loadOrCreateXConfig();
         const domainConfig = xConfig.domains[domain];
@@ -226,12 +193,44 @@ const editOrDeleteDomain = async (domain) => {
 
         switch (answer.action) {
             case 'editDomain':
-                // Implement edit domain functionality
-                console.log(chalk.green(`Editing domain ${domain}...`));
-                // Add your edit domain logic here
-                break;
+                console.clear();
+                await viewNginxConfig(domain);
+                const newConfig = await inquirer.prompt([
+                    {
+                        type: 'input',
+                        name: 'nginxConfig',
+                        message: 'Enter the new NGINX configuration: (type /b to go back)',
+                        
+                        // validate: input => input ? false : 'NGINX configuration is required.'
+                    }
+                ]);
+
+                const nginxConfig = newConfig.nginxConfig;
+
+                if (newConfig.nginxConfig === '/b') {
+                    console.log(chalk.blue('Going back to the previous menu...'));
+                    return;
+                }
+
+                await inquirer.prompt([{ type: 'input', name: 'continue', message: 'Press Enter to continue...' }]);
+                await storeConfig(domain, nginxConfig);
+                console.log(chalk.green(`Domain ${domain} configuration updated successfully.`));
+                return;
+
             case 'deleteDomain':
-                // Implement delete domain functionality
+                const confirmDelete = await inquirer.prompt([
+                    {
+                    type: 'confirm',
+                    name: 'confirm',
+                    message: `Are you sure you want to delete the domain ${domain}?`,
+                    default: false
+                    }
+                ]);
+
+                if (!confirmDelete.confirm) {
+                    console.log(chalk.blue('Domain deletion was cancelled.'));
+                    return;
+                }
                 delete xConfig.domains[domain];
                 await deleteDomain(domain);
                 await saveXConfig({ domains: xConfig.domains });
@@ -239,8 +238,6 @@ const editOrDeleteDomain = async (domain) => {
                 return;
             case 'back':
                 return;
-            default:
-                console.log(chalk.red('Invalid selection. Please try again.'));
         }
 
         // After an action, redisplay the menu

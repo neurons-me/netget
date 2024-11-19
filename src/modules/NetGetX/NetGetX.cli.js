@@ -41,7 +41,6 @@ console.log(`
             message: 'Select an action:',
             choices: [
                 'Main Server',
-                'XBlocks',
                 'Domains and Certificates',
                 'Settings',
                 'NGINX Menu',
@@ -58,17 +57,15 @@ console.log(`
             case 'Main Server':
                 await mainServerMenu(x);
                 break;
-            case 'XBlocks':
-                await XBlocksMenu(x);
-                break;
             case 'Domains and Certificates':
+                console.clear();
                 await domainsMenu();
-                break;
-            case 'Settings':
-                await netGetXSettingsMenu(x);
                 break;
             case 'NGINX Menu':
                 await nginxMenu();
+                break;
+            case 'Settings':
+                await netGetXSettingsMenu(x);
                 break;
             case 'xConfig/xState':
                 await displayStateAndConfig(x); // Call the function to display the state and config

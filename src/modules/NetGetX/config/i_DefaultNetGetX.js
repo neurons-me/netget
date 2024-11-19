@@ -322,11 +322,11 @@ if (!nginxVerified) {
     ╔═╗╔═╗╦═╗╦  ╦╔═╗╦═╗  ╔╗ ╦  ╔═╗╔═╗╦╔═
     ╚═╗║╣ ╠╦╝╚╗╔╝║╣ ╠╦╝  ╠╩╗║  ║ ║║  ╠╩╗
     ╚═╝╚═╝╩╚═ ╚╝ ╚═╝╩╚═  ╚═╝╩═╝╚═╝╚═╝╩ ╩*/
-const serverBlockVerified = await verifyServerBlock(xConfig);
-if (!serverBlockVerified) {
-    console.log(chalk.yellow('Default Server block is not as NetGetX Default.'));
-    return false;
-    }
+// const serverBlockVerified = await verifyServerBlock(xConfig);
+// if (!serverBlockVerified) {
+//     console.log(chalk.yellow('Default Server block is not as NetGetX Default.'));
+//     return false;
+//     }
 
 const publicIP = await getPublicIP();  // Properly await the asynchronous call
 const localIP = getLocalIP();

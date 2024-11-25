@@ -90,8 +90,6 @@ export async function updateDomain(domain, port) {
     } catch (error) {
         console.error(`Error updating the domain ${domain}:`, error);
         throw error;
-    } finally {
-        await db.close();
     }
 }
 

@@ -204,12 +204,12 @@ const addSubdomain = async (domain) => {
 
     console.log(newDomainConfig);
     console.log(xConfig.domains[domain].subDomains);
-    // const sortedSubdomains = xConfig.domains[domain].subDomains.sort().reduce((acc, key) => {
-    //     acc[key] = xConfig.domains[domain].subDomains[key];
-    //     return acc;
-    // }, {});
+    const sortedSubdomains = Object.keys(xConfig.domains[domain].subDomains).sort().reduce((acc, key) => {
+        acc[key] = xConfig.domains[domain].subDomains[key];
+        return acc;
+    }, {});
 
-    // xConfig.domains[domain].subDomains = sortedSubdomains;
+    xConfig.domains[domain].subDomains = sortedSubdomains;
 
     // Save the updated configuration
     await saveXConfig({ domains: xConfig.domains });

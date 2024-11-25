@@ -8,13 +8,19 @@ import { addDomain, deleteDomain, storeConfig } from '../../../sqlite/utils_sqli
 import viewNginxConfig from './viewNginxConfig.js';
 import selectedDomain from './selectedDomain.cli.js';
 
+// Used to log the domain information to the console in the selected domain.
 const logDomainInfo = (domainConfig, domain) => {
-    console.log(chalk.blue('\nDomain Information:'));
-    console.table([{
-        Domain: domain,
-        Email: domainConfig.email,
-        SSLCertificatesPath: domainConfig.SSLCertificatesPath
-    }]);
+    if (domainConfig.subDomains && Object.keys(domainConfig.subDomains).length > 0) {
+        console.log(chalk.blue('\nDomain Information:'));
+        const subDomainsTable = Object.keys(domainConfig.subDomains).map(subDomain => ({
+            Subdomain: subDomain,
+            Type: domainConfig.subDomains[subDomain].type,
+            Port: domainConfig.subDomains[subDomain].forwardPort
+        }));
+        console.table(subDomainsTable);
+    } else {
+        console.log(chalk.yellow('No subdomains configured.'));
+    }
 };
 
 const displayDomains = (domains) => {
@@ -183,6 +189,53 @@ const addSubdomain = async (domain) => {
         return;
     }
 
+    const serviceTypeAnswer = await inquirer.prompt([
+        {
+            type: 'list',
+            name: 'serviceType',
+            message: 'Select the type of service for this domain:',
+            choices: [
+                { name: 'Serve Static Content', value: 'static' },
+                { name: 'Forward Port', value: 'proxy' }
+            ]
+        }
+    ]);
+
+    let port = '';
+    if (serviceTypeAnswer.serviceType === 'proxy') {
+        const forwardPortAnswer = await inquirer.prompt([
+            {
+                type: 'input',
+                name: 'proxy',
+                message: 'Enter the forward port for this domain (type /b to go back):',
+                validate: input => input ? true : 'Forward port is required.'
+            }
+        ]);
+
+        if (forwardPortAnswer.proxy === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
+
+        port = forwardPortAnswer.proxy;
+    } else if (serviceTypeAnswer.serviceType === 'static') {
+        const staticPathAnswer = await inquirer.prompt([
+            {
+                type: 'input',
+                name: 'staticPath',
+                message: 'Enter the path to the static file you want to serve (type /b to go back):',
+                validate: input => input ? true : 'Static file path is required.'
+            }
+        ]);
+
+        if (staticPathAnswer.staticPath === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
+
+        port = staticPathAnswer.staticPath;
+    }
+
     const xConfig = await loadOrCreateXConfig();
 
     if (!xConfig.domains[domain].subDomains) {
@@ -197,7 +250,8 @@ const addSubdomain = async (domain) => {
     const newDomainConfig = {
         "sslMode": "letsencrypt",
         "email": xConfig.domains[domain].email,
-        "forwardPort": ""
+        "forwardPort": port,
+        "type": serviceTypeAnswer.serviceType
     }
 
     xConfig.domains[domain].subDomains[subdomain] = newDomainConfig;
@@ -210,6 +264,7 @@ const addSubdomain = async (domain) => {
     }, {});
 
     xConfig.domains[domain].subDomains = sortedSubdomains;
+
 
     // Save the updated configuration
     await saveXConfig({ domains: xConfig.domains });
@@ -232,6 +287,7 @@ const editOrDeleteDomain = async (domain) => {
         const options = [
             { name: 'Edit Domain', value: 'editDomain' },
             { name: 'Delete Domain', value: 'deleteDomain' },
+            { name: 'Delete Subdomain', value: 'deleteSubdomain' },
             { name: 'Back to Domains Menu', value: 'back' }
         ];
 
@@ -289,6 +345,45 @@ const editOrDeleteDomain = async (domain) => {
                 await saveXConfig({ domains: xConfig.domains });
                 console.log(chalk.green(`Domain ${domain} deleted successfully.`));
                 return;
+
+            case 'deleteSubdomain':
+                const subdomainAnswer = await inquirer.prompt([
+                    {
+                        type: 'input',
+                        name: 'subdomain',
+                        message: 'Enter the subdomain to delete:',
+                    }
+                ]);
+
+                if (!subdomainAnswer.subdomain) {
+                    console.log(chalk.red('Subdomain name cannot be empty.'));
+                    return;
+                }
+
+                if (!xConfig.domains[domain].subDomains[subdomainAnswer.subdomain]) {
+                    console.log(chalk.red(`Subdomain ${subdomainAnswer.subdomain} not found for domain ${domain}.`));
+                    return;
+                }
+
+                const confirmSubdomainDelete = await inquirer.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'confirm',
+                        message: `Are you sure you want to delete the subdomain ${subdomainAnswer.subdomain} for domain ${domain}?`,
+                        default: false
+                    }
+                ]);
+
+                if (!confirmSubdomainDelete.confirm) {
+                    console.log(chalk.blue('Subdomain deletion was cancelled.'));
+                    return;
+                }
+
+                delete xConfig.domains[domain].subDomains[subdomainAnswer.subdomain];
+                await saveXConfig({ domains: xConfig.domains });
+                console.log(chalk.green(`Subdomain ${subdomainAnswer.subdomain} deleted successfully from domain ${domain}.`));
+                return;
+
             case 'back':
                 return;
         }

@@ -248,8 +248,6 @@ const addSubdomain = async (domain) => {
     }
 
     const newDomainConfig = {
-        "sslMode": "letsencrypt",
-        "email": xConfig.domains[domain].email,
         "forwardPort": port,
         "type": serviceTypeAnswer.serviceType
     }
@@ -271,7 +269,6 @@ const addSubdomain = async (domain) => {
     
     console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
 };
-
 
 const editOrDeleteDomain = async (domain) => {
     console.clear();

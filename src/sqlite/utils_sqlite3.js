@@ -54,8 +54,9 @@ export async function addDomain(domain, email, sslMode, sslCertificate, sslCerti
         await db.run(
             'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type]);
-    } finally {
-        await db.close();
+    }catch (error) {
+        console.error(`Error adding domain ${domain}:`, error);
+        throw error;
     }
 }
 
@@ -89,8 +90,6 @@ export async function updateDomain(domain, port) {
     } catch (error) {
         console.error(`Error updating the domain ${domain}:`, error);
         throw error;
-    } finally {
-        await db.close();
     }
 }
 
@@ -140,8 +139,6 @@ export async function writeExistingNginxConfigs() {
     } catch (error) {
         console.error('Error writing existing nginx configs:', error);
         throw error;
-    } finally {
-        await db.close();
     }
 }
 
@@ -156,8 +153,9 @@ async function generateNginxConfig() {
         });
 
         fs.writeFileSync('/etc/nginx/conf.d/custom.conf', nginxConfig);
-    } finally {
-        await db.close();
+    } catch (error) {
+        console.error('Error generating nginx config:', error);
+        throw error;
     }
 }
 
@@ -171,7 +169,6 @@ function getConfig(domain) {
             } else {
                 resolve(row);
             }
-            db.close();
         });
     });
 }

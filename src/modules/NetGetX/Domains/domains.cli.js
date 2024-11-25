@@ -8,8 +8,8 @@ import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js
 import {scanAndLogCertificates} from './SSL/SSLCertificates.js';
 
 const domainsMenu = async () => {
-    console.clear();
     try {
+        console.clear();
         const xConfig = await loadOrCreateXConfig();
         const domains = Object.keys(xConfig.domains || {});
 
@@ -21,7 +21,14 @@ const domainsMenu = async () => {
         
         const options = [
             new inquirer.Separator(),
-            ...domains.map(domain => ({ name: domain, value: domain })),
+            ...domains.map(domain => {
+                const subDomains = xConfig.domains[domain].subDomains || {};
+                const subDomainNames = Object.keys(subDomains);
+                return {
+                    name: `${domain} ${subDomainNames.length > 0 ? `(${subDomainNames.join(', ')})` : ''}`,
+                    value: domain
+                };
+            }),
             new inquirer.Separator(),
             { name: 'Add New Domain', value: 'addNewDomain' },
             { name: 'Advance Domain Settings', value: 'advance'},

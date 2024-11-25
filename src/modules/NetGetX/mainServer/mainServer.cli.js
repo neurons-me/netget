@@ -35,11 +35,19 @@ async function mainServerMenu(x) {
                 console.log(chalk.blue('Displaying current main server configuration...'));
                 console.log(chalk.blue('Main Server Output Port:', x.xMainOutPutPort));
                 console.log(chalk.blue('Static Path:', x.static));
-                const domainNames = Object.keys(x.domains);
-                if (!x.domains || Object.keys(x.domains).length === 0) {
+                
+                const mainDomain = x.domains[mainServerName];
+                if (!mainDomain) {
                     console.log(chalk.blue('No available domains.'));
                 } else {
-                    console.log(chalk.blue('Domains Name:', domainNames));
+                    console.log(chalk.blue('Main Domain:', mainServerName));
+                    const subDomains = mainDomain.subDomains || {};
+                    const subDomainNames = Object.keys(subDomains);
+                    if (subDomainNames.length === 0) {
+                        console.log(chalk.blue('No available subdomains.'));
+                    } else {
+                        console.log(chalk.blue('Subdomains:', subDomainNames));
+                    }
                 }
                 
                 // Implement viewing logic here

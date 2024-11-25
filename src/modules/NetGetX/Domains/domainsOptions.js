@@ -35,11 +35,13 @@ const logAllDomainsTable = (domainsConfig) => {
     console.table(domainTable);
 };
 
+// TODO //
+// This one is displayed in the domains MainMenu, need to be reconfigurated
 const domainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
         Domain: domain,
-        Port: domainsConfig[domain].port,
+        Port: domainsConfig[domain].forwardPort,
         Type: domainsConfig[domain].type
 
     }));
@@ -81,7 +83,7 @@ const addNewDomain = async () => {
                 return;
             }
 
-            port = forwardPortAnswer.forwardPort;
+            port = forwardPortAnswer.proxy;
         } else if (serviceTypeAnswer.serviceType === 'static') {
             const staticPathAnswer = await inquirer.prompt([
                 {
@@ -131,7 +133,7 @@ const addNewDomain = async () => {
             return;
         }
 
-        const { domain, email, type } = { ...domainAnswer, ...emailAnswer, ...serviceTypeAnswer };
+        const { domain, email, type } = { ...domainAnswer, ...emailAnswer, ...serviceTypeAnswer.serviceType };
         const xConfig = await loadOrCreateXConfig();
 
         if (!xConfig.domains) {
@@ -146,7 +148,9 @@ const addNewDomain = async () => {
         const newDomainConfig = {
             sslMode: 'letsencrypt',
             email: email,
-            type: type
+            forwardPort: port,
+            type: type,
+            subDomains:{}
         };
 
         // Save only the new domain configuration
@@ -164,6 +168,55 @@ const addNewDomain = async () => {
         return;  // Exit the loop after successful addition
     }
 };
+
+const addSubdomain = async (domain) => {
+    const { subdomain } = await inquirer.prompt([
+        {
+            type: 'input',
+            name: 'subdomain',
+            message: 'Enter the subdomain name:',
+        }
+    ]);
+
+    if (!subdomain) {
+        console.log(chalk.red('Subdomain name cannot be empty.'));
+        return;
+    }
+
+    const xConfig = await loadOrCreateXConfig();
+
+    if (!xConfig.domains[domain].subDomains) {
+        xConfig.domains[domain].subDomains = {};
+    }
+
+    if (xConfig.domains[domain].subDomains[subdomain]) {
+        console.log(chalk.red(`Subdomain ${subdomain} already exists for domain ${domain}.`));
+        return;
+    }
+
+    const newDomainConfig = {
+        "sslMode": "letsencrypt",
+        "email": xConfig.domains[domain].email,
+        "forwardPort": ""
+    }
+
+    xConfig.domains[domain].subDomains[subdomain] = newDomainConfig;
+
+    console.log(newDomainConfig);
+    console.log(xConfig.domains[domain].subDomains);
+    // const sortedSubdomains = xConfig.domains[domain].subDomains.sort().reduce((acc, key) => {
+    //     acc[key] = xConfig.domains[domain].subDomains[key];
+    //     return acc;
+    // }, {});
+
+    // xConfig.domains[domain].subDomains = sortedSubdomains;
+
+    // Save the updated configuration
+    await saveXConfig({ domains: xConfig.domains });
+    
+    console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
+};
+
 
 const editOrDeleteDomain = async (domain) => {
     console.clear();
@@ -279,6 +332,7 @@ export {
     displayDomains,
     validateDomain,
     addNewDomain,
+    addSubdomain,
     editOrDeleteDomain,
     logDomainInfo,
     logAllDomainsTable,

@@ -8,8 +8,8 @@ import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js
 import {scanAndLogCertificates} from './SSL/SSLCertificates.js';
 
 const domainsMenu = async () => {
-    console.clear();
     try {
+        console.clear();
         const xConfig = await loadOrCreateXConfig();
         const domains = Object.keys(xConfig.domains || {});
 

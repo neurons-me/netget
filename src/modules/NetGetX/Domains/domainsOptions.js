@@ -14,8 +14,8 @@ const logDomainInfo = (domainConfig, domain) => {
         console.log(chalk.blue('\nDomain Information:'));
         const subDomainsTable = Object.keys(domainConfig.subDomains).map(subDomain => ({
             Subdomain: subDomain,
-            Type: domainConfig.subDomains[subDomain].type,
-            Port: domainConfig.subDomains[subDomain].forwardPort
+            Target: domainConfig.subDomains[subDomain].forwardPort,
+            Type: domainConfig.subDomains[subDomain].type
         }));
         console.table(subDomainsTable);
     } else {
@@ -47,7 +47,7 @@ const domainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
         Domain: domain,
-        Port: domainsConfig[domain].forwardPort,
+        Target: domainsConfig[domain].forwardPort,
         Type: domainsConfig[domain].type
 
     }));

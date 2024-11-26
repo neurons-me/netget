@@ -1,8 +1,13 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 
+import mainServerMenu from './mainServer/mainServer.cli.js';
+import displayStateAndConfig from './config/x_StateAndConfig.js'; // Correct import statement
+
 const netGetXSettingsMenu = async (x) => {
     const options = [
+        { name: 'Main Server Configuration', value: 'Main Server' },
+        { name: 'xConfig/xState', value: 'xConfig/xState' },
         { name: 'About NetGetX', value: 'aboutNetGetX' },
         { name: 'Back to Main Menu', value: 'mainMenu' }
     ];
@@ -17,6 +22,14 @@ const netGetXSettingsMenu = async (x) => {
     ]);
 
     switch (answer.action) {
+        case 'Main Server':
+            await mainServerMenu(x);
+            break;
+
+        case 'xConfig/xState':
+            await displayStateAndConfig(x); // Call the function to display the state and config
+            break;
+
         case 'aboutNetGetX':
             console.log(chalk.green('About NetGetX'));
             console.log(chalk.blue('NetGetX is a powerful tool for managing servers, network configurations, domains and SSL setups.'));

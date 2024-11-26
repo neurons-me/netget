@@ -14,24 +14,14 @@ import { parseMainServerName } from './mainServer/utils.js';
 
 export default async function NetGetX_CLI(x) {
     console.clear();
-    const { XBlocksAvailable, XBlocksEnabled } = x;
-    //availableXBlocks
-    const availableXBlocks = getXBlocksList(XBlocksAvailable);
-    const formattedXBlocksAvailable = availableXBlocks.length > 0 ? availableXBlocks.join(', ') : 'None';
-    //enabledXBlocks
-    const enabledXBlocks = getXBlocksEnabled(XBlocksEnabled);
-    const formattedXBlocksEnabled = enabledXBlocks.length > 0 ? enabledXBlocks.join(', ') : 'None';
-const mainServerName = parseMainServerName(x.nginxPath);
-console.log(`Main server name: ${mainServerName}`);
-console.log(`.publicIP: ${chalk.green(x.publicIP)}`);
-console.log(`.localIP: ${chalk.green(x.localIP)}`)
+
 console.log(`
      ██╗  ██╗ 
-     ╚██╗██╔╝ .XBlocks Available: ${chalk.green(formattedXBlocksAvailable)}
-      ╚███╔╝  .XBlocks Enabled: ${chalk.green(formattedXBlocksEnabled)}
-      ██╔██╗  .OutPort: ${chalk.green(x.xMainOutPutPort)}
+     ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
+      ╚███╔╝  .localIP: ${chalk.green(x.localIP)}
+      ██╔██╗  .mainServer: ${chalk.green('netget.site')} 
      ██╔╝ ██╗ 
-     ╚═╝  ╚═╝ `);
+     ╚═╝  ╚═╝ `); 
     x = x ?? await i_DefaultNetGetX();
     let exit = false;
     while (!exit) {

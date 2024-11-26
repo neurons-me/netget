@@ -1,12 +1,10 @@
 //netget/src/modules/NetGetX/NetGetX.cli.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import mainServerMenu from './mainServer/mainServer.cli.js';
 import  XBlocksMenu  from './XBlocks/XBlocks.cli.js'; // Import the new addXBlockMenu
 import { i_DefaultNetGetX } from './config/i_DefaultNetGetX.js';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
 import nginxMenu from './NGINX/nginx_menu.cli.js';
-import displayStateAndConfig from './config/x_StateAndConfig.js'; // Correct import statement
 import netGetXSettingsMenu from './NetGetX_Settings.cli.js'; 
 import { getXBlocksList, getXBlocksEnabled } from './XBlocks/XBlocksUtils.js';
 import domainsMenu from './Domains/domains.cli.js';
@@ -30,51 +28,30 @@ console.log(`
             name: 'option',
             message: 'Select an action:',
             choices: [
-                'Main Server',
-                'Domains and Certificates',
-                'Settings',
-                'NGINX Menu',
-                'xConfig/xState',
-                //'Show X Discovery Nodes',
-                //'Add New X Discovery Node',
-                'About NetGetX',
-                'Main Menu',
-                'Exit'
+                '1. Domains and Certificates (Manage domains and SSL certificates)',
+                '2. NGINX Menu (Server utilities)',
+                '3. Settings',
+                '4. Back to Main Menu',
+                '0. Exit'
             ]
         });
 
         switch (answers.option) {
-            case 'Main Server':
-                await mainServerMenu(x);
-                break;
-            case 'Domains and Certificates':
+            case '1. Domains and Certificates (Manage domains and SSL certificates)':
                 console.clear();
                 await domainsMenu();
                 break;
-            case 'NGINX Menu':
+            case '2. NGINX Menu (Server utilities)':
                 await nginxMenu();
                 break;
-            case 'Settings':
+            case '3. Settings':
                 await netGetXSettingsMenu(x);
                 break;
-            case 'xConfig/xState':
-                await displayStateAndConfig(x); // Call the function to display the state and config
-                break;
-            case 'Main Menu':
+            case '4. Back to Main Menu':
                 console.log(chalk.blue('Returning to the main menu...'));
                 await NetGetMainMenu();
                 break;
-            case 'Show X Discovery Nodes':
-                //await showXBlocks(x);
-                break; 
-            case 'Add New X Discovery Node':
-                //await addXBlockMenu(x);
-                break; 
-            case 'About NetGetX':
-                console.log(chalk.blue('NetGetX is a tool for managing NGINX configurations and XBlocks making servers and domain management easy.'));
-            //console.log(chalk.blue('Alonzo Church was a mathematician and logician who made major contributions to the field of theoretical computer science.'));   
-                break;
-            case 'Exit':
+            case '0. Exit':
                 console.log(chalk.blue('Exiting NetGet...'));
                 process.exit(); 
             default:

@@ -6,18 +6,16 @@ import { exec } from 'child_process';
 import os from 'os';
 import xDefaultServerBlock from '../mainServer/xDefaultServerBlock.js';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
+import { getDomainByName } from '../../../sqlite/utils_sqlite3.js';
 
 /**
- * Updates the NGINX configuration for a specified domain.
- * Handles file write errors, specifically permission issues, by prompting the user.
+ * Updates the NGINX configuration for a domain by writing the new configuration to the server block file.
  * 
- * @param {Object} xConfig - Configuration object containing NGINX path information and domain details.
- * @param {string} domain - The domain for which the NGINX configuration is to be updated.
+ * @param {string} domain - The domain for which to update the NGINX configuration.
+ * @param {string} nginxConfig - The new NGINX configuration to write.
  * @category NetGetX
- * @subcategory Config
- * @module updateNginxConfig
  */
-const updateNginxConfig = async (domain) => {
+const viewNginxConfig = async (domain) => {
     const xConfig = await loadOrCreateXConfig();
     const domainConfig = xConfig.domains[domain];
 
@@ -25,21 +23,9 @@ const updateNginxConfig = async (domain) => {
         console.log(chalk.red(`Domain ${domain} configuration not found.`));
         return;
     }
-
-    const serverBlock = xDefaultServerBlock(xConfig);
-    const configPath = xConfig.nginxPath;
-
-    try {
-        fs.writeFileSync(configPath, serverBlock);
-        console.log(chalk.green(`NGINX configuration for ${domain} has been updated at ${configPath}.`));
-    } catch (error) {
-        if (error.code === 'EACCES') {
-            console.error(chalk.red(`Permission denied writing to ${configPath}.`));
-            await handlePermissionError(configPath, serverBlock);
-        } else {
-            console.error(chalk.red(`Error writing to ${configPath}: ${error.message}`));
-        }
-    }
+    const dbDomainConfig = await getDomainByName(domain);
+    console.log(chalk.blue(`Current NGINX configuration for ${domain} from database:`));
+    console.log(chalk.green(dbDomainConfig.nginxConfig));
 };
 
 /**
@@ -50,7 +36,7 @@ const updateNginxConfig = async (domain) => {
  * @param {string} data - Data intended to be written to the path.
  * @category NetGetX
  * @subcategory Config
- * @module updateNginxConfig
+ * @module viewNginxConfig
  */
 const handlePermissionError = async (path, data) => {
     const isWindows = os.platform() === 'win32';
@@ -161,4 +147,4 @@ const execShellCommand = (cmd) => {
     });
 };
 
-export default updateNginxConfig;
+export default viewNginxConfig;

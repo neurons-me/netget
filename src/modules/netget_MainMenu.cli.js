@@ -14,21 +14,19 @@ import { PortManagement_CLI } from './PortManagement/portManagement.cli.js';
 export default async function NetGetMainMenu() {
     console.clear();
     console.log(`
-    Welcome to:
     ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
     ║║║├┤  │ ║ ╦├┤  │ 
     ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.4.71`);
+        v2.4.73`);
     const answers = await inquirer.prompt([
     {
         type: 'list',
         name: 'action',
         message: 'Main Menu',
         choices: [
-            'NetGetX',
-            'Apps',
-            'Gets',
-            'AccessPoints',
+            'X (HTTPS, Domains and Routes)',
+            '/srv/ (Port Services)',
+            '/var/www (Static)',
             new inquirer.Separator(),
             'Port Management',
             new inquirer.Separator(),
@@ -38,7 +36,7 @@ export default async function NetGetMainMenu() {
     ]);
 
     switch (answers.action) {
-        case 'NetGetX':
+        case 'X (HTTPS, Domains and Routes)':
             const x = await i_DefaultNetGetX();
             if (x) {
                     await NetGetX_CLI(x); 
@@ -47,7 +45,7 @@ export default async function NetGetMainMenu() {
                     }
             break;
 
-            case 'Apps':
+            case '/srv/ (Port Services)':
                 const g = await i_DefaultGateway(); //Load production configuration
                 if (g) {
                     console.log(`
@@ -64,13 +62,9 @@ export default async function NetGetMainMenu() {
                 }
                 break;
 
-        case 'Gets':
+        case '/var/www (Static)':
             console.log(chalk.yellow('Selected Gets'));
             // Call Gets functionality here
-            break;
-        case 'AccessPoints':
-            console.log(chalk.magenta('Selected AccessPoints'));
-            //await handleAccessPoints();  // Call AccessPoints functionality here
             break;
 
         case 'Port Management':

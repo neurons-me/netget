@@ -18,7 +18,7 @@ const selectedDomain = async (domain) => {
         logDomainInfo(domainConfig, domain);
         const options = [
             { name: 'Add Subdomain', value: 'addSubdomain' },
-            { name: 'View Nginx Configuration', value: 'viewServerBlockConfiguration' },
+            // { name: 'View Nginx Configuration', value: 'viewServerBlockConfiguration' },
             { name: 'Edit/Delete Domain', value: 'editOrDelete' },
             { name: 'SSL Configuration', value: 'sslConfig' },
             { name: 'Back to Domains Menu', value: 'back' },

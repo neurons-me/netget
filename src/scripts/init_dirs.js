@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import { ensureDirectoryExists, Path_Exists } from './pathUtils.js';
 
-const BASE_DIR = path.join(os.homedir(), '.get');
+const BASE_DIR = path.join('/opt/','.get');
 const DIRECTORIES = {
     getPath: BASE_DIR,
     static: path.join(BASE_DIR, 'static'),

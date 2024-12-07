@@ -3,12 +3,13 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
 import NetGetX_CLI from '../NetGetX.cli.js';
-import SelectedDomain from './selectedDomain.cli.js';
+import selectedDomain from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
 import {scanAndLogCertificates} from './SSL/SSLCertificates.js';
 
 const domainsMenu = async () => {
     try {
+        console.clear();
         const xConfig = await loadOrCreateXConfig();
         const domains = Object.keys(xConfig.domains || {});
 
@@ -20,7 +21,14 @@ const domainsMenu = async () => {
         
         const options = [
             new inquirer.Separator(),
-            ...domains.map(domain => ({ name: domain, value: domain })),
+            ...domains.map(domain => {
+                const subDomains = xConfig.domains[domain].subDomains || {};
+                const subDomainNames = Object.keys(subDomains);
+                return {
+                    name: `${domain} ${subDomainNames.length > 0 ? `(${subDomainNames.join(', ')})` : ''}`,
+                    value: domain
+                };
+            }),
             new inquirer.Separator(),
             { name: 'Add New Domain', value: 'addNewDomain' },
             { name: 'Advance Domain Settings', value: 'advance'},
@@ -50,10 +58,10 @@ const domainsMenu = async () => {
                 return;
             case 'exit':
                 console.log(chalk.blue('Exiting NetGet...'));
-                process.exit();   
+                process.exit();
             default:
                 const domain = answer.action;
-                await SelectedDomain(domain);
+                await selectedDomain(domain);
         }
 
         // After an action, redisplay the menu

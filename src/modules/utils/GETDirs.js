@@ -10,6 +10,8 @@ const DIRECTORIES = {
     devPath: path.join(BASE_DIR, 'dev'),
     devStatic: path.join(BASE_DIR, 'dev', 'static'),
     gatewayPath: path.join(BASE_DIR, 'Gateways'),
+    // Routes directory needs to be created inside app directory
+    routePath: path.join(BASE_DIR, 'Routes'),
 };
 
 /* Safety and Non-Destructive Behavior

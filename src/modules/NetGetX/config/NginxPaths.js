@@ -1,3 +1,10 @@
+/**
+ * @fileOverview This module provides functions to manage NGINX configuration paths and executable paths.
+ * It includes methods to detect and set these paths in a user configuration object.
+ * The module is designed to work across different operating systems, enhancing compatibility.
+ * 
+ * @module NginxPaths
+*/
 // netget/src/modules/NetGetX/config/setNginxPath.js
 import fs from 'fs';
 import path from 'path';

@@ -5,6 +5,14 @@ import { editOrDeleteDomain, logDomainInfo, addSubdomain } from './domainsOption
 import viewNginxConfig from './viewNginxConfig.js';
 import domainSSLConfiguration from './SSL/ssl.cli.js';
 
+/**
+ * Selected Domain Menu
+ * @param {string} domain - The domain name
+ * @returns {Promise<void>}
+ * @category NetGetX
+ * @module Domains
+ * @subcategory CLI
+ */ 
 const selectedDomain = async (domain) => {
         try {
             const xConfig = await loadOrCreateXConfig();

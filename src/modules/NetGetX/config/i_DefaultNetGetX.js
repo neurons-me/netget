@@ -1,28 +1,16 @@
 //i_DefaultNetGetX.js
 import chalk from 'chalk';
 import path from 'path';
-import fs from 'fs';
-import { 
-    loadOrCreateXConfig,
-    saveXConfig } from './xConfig.js';
+import { loadOrCreateXConfig, saveXConfig } from './xConfig.js';
 import { initializeState } from '../xState.js';
-import {
-    getNginxConfigAndDir,
-    setNginxConfigAndDir,
-    setNginxExecutable } from './NginxPaths.js';
-import { 
-    getLocalIP,
-    getPublicIP } from '../../utils/ipUtils.js';
-import { 
-    ensureDirectoryExists,
-    Path_Exists } from '../../utils/pathUtils.js';
-import { initializeDirectories,
-         getDirectoryPaths } from '../../utils/GETDirs.js';
+import { getNginxConfigAndDir,setNginxConfigAndDir, setNginxExecutable } from './NginxPaths.js';
+import { getLocalIP, getPublicIP } from '../../utils/ipUtils.js';
+import { ensureDirectoryExists, Path_Exists } from '../../utils/pathUtils.js';
+import { initializeDirectories, getDirectoryPaths } from '../../utils/GETDirs.js';
 import verifyNginxInstallation from '../NGINX/verifyNginxInstallation.js';
 import nginxInstallationOptions from '../NGINX/nginxInstallationOptions.cli.js'; 
 import { generateSelfSignedCert, checkSelfSignedCertificates } from '../NGINX/selfSignedCertificates.js';
 import verifyNginxConfig from './verifyNginxConfig.js';
-import verifyServerBlock from '../mainServer/verifyServerBlock.js'; 
 import handlePermissionErrorForEnsureDir from '../../utils/handlePermissionErrorForEnsureDir.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
 
@@ -37,8 +25,7 @@ import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localH
  * @category NetGetX
  * @subcategory Config
  * @module i_DefaultNetGetX
- * */
-
+ */
 export async function i_DefaultNetGetX() {
 initializeDirectories(); // Initialize all necessary directories
 let DEFAULT_DIRECTORIES = getDirectoryPaths(); // Get paths to .get default directories

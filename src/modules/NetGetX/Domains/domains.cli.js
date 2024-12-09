@@ -7,6 +7,12 @@ import selectedDomain from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
 import {scanAndLogCertificates} from './SSL/SSLCertificates.js';
 
+/**
+ * Displays the Domains Menu.
+ * @category NetGetX
+ * @subcategory Domains
+ * @module domainsMenu
+ */
 const domainsMenu = async () => {
     try {
         console.clear();

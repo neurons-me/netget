@@ -2,6 +2,14 @@ import { exec } from 'child_process';
 import chalk from 'chalk';
 import { handlePermission } from '../../../../utils/handlePermissions.js';
 
+/**
+ * Prints the latest Certbot logs to the console.
+ * If there is a permission error, it handles the permission issue by providing manual instructions.
+ * 
+ * @async
+ * @function printCertbotLogs
+ * @throws Will throw an error if unable to retrieve Certbot logs for reasons other than permission issues.
+ */
 const printCertbotLogs = async () => {
     try {
         const stdout = await execShellCommand('sudo tail -n 50 /var/log/letsencrypt/letsencrypt.log');
@@ -17,6 +25,14 @@ const printCertbotLogs = async () => {
     }
 };
 
+/**
+ * Executes a shell command and returns the output as a promise.
+ * 
+ * @function execShellCommand
+ * @param {string} cmd - The shell command to execute.
+ * @returns {Promise<string>} - A promise that resolves with the command's stdout or stderr.
+ * @throws Will throw an error if the command execution fails.
+ */
 const execShellCommand = (cmd) => {
     return new Promise((resolve, reject) => {
         exec(cmd, (error, stdout, stderr) => {

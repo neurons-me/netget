@@ -6,6 +6,14 @@ import { loadOrCreateXConfig, saveXConfig } from '../../../config/xConfig.js';
 import checkAndInstallCertbot from '../Certbot/checkAndInstallCertbot.js';
 import { obtainSSLCertificates } from '../Certbot/SSLCertificatesHandler.js';
 
+/**
+ * Verify DNS record for domain.
+ * @param {string} domain - Domain name.
+ * @returns {Promise<boolean>} Promise resolving to true if DNS record is verified successfully, false otherwise.
+ * @category NetGetX
+ * @subcategory SSL
+ * @subcategory LetsEncrypt
+ */
 const verifyDNSRecord = async (domain) => {
     return new Promise((resolve, reject) => {
         const command = `nslookup -q=txt _acme-challenge.${domain}`;
@@ -27,6 +35,14 @@ const verifyDNSRecord = async (domain) => {
     });
 };
 
+/**
+ * Setup LetsEncrypt SSL for domain.
+ * @param {Object} xConfiguration - X-Configuration object.
+ * @returns {Promise<void>} Promise resolving when SSL setup is complete.
+ * @category NetGetX
+ * @subcategory SSL
+ * @subcategory LetsEncrypt
+ */
 const letsEncryptMethod = async (xConfiguration) => {
     try {
         const answers = await inquirer.prompt([

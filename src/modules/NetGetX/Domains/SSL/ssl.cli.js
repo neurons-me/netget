@@ -11,6 +11,13 @@ import {
 } from './SSLCertificates.js';
 import printCertbotLogs from './Certbot/certbot.js';
 
+/**
+ * Display the current SSL configuration for a domain.
+ * @param {Object} domainConfig - The domain configuration object.
+ * @param {string} domain - The domain name.
+ * @category NetGetX
+ * @subcategory SSL
+ */
 const displayCurrentSSLConfiguration = (domainConfig, domain) => {
     console.log('\nCurrent SSL Configuration:');
     console.log(`
@@ -22,6 +29,14 @@ const displayCurrentSSLConfiguration = (domainConfig, domain) => {
 .SSL Verification: ${chalk.green("Good/Bad")}`);
 };
 
+/**
+ * Check if a wildcard certificate exists for a domain.
+ * @param {string} domain - The domain name.
+ * @returns {string|null} The path to the wildcard certificate if it exists, null otherwise.
+ * @category NetGetX
+ * @subcategory SSL
+ * @module checkWildcardCertificate
+ */
 const checkWildcardCertificate = (domain) => {
     const rootDomain = domain.split('.').slice(1).join('.');
     const wildcardDomain = `*.${rootDomain}`;
@@ -29,6 +44,13 @@ const checkWildcardCertificate = (domain) => {
     return fs.existsSync(certPath) ? certPath : null;
 };
 
+/**
+ * Configure SSL for a domain.
+ * @param {string} domain - The domain name.
+ * @category NetGetX    
+ * @subcategory SSL
+ * @module domainSSLConfiguration
+ */
 const domainSSLConfiguration = async (domain) => {
     try {
         // Check and install Certbot before proceeding with SSL Configuration
@@ -81,6 +103,16 @@ const domainSSLConfiguration = async (domain) => {
     }
 };
 
+/**
+ * Issue an SSL certificate for a domain.
+ * @param {string} domain - The domain name.
+ * @param {Object} domainConfig - The domain configuration object.
+ * @category NetGetX
+ * @subcategory SSL
+ * @module issueCertificateForDomain
+ * @returns {Promise<void>} Promise that resolves when the certificate is issued.
+ * @throws {Error} Throws an error if the certificate cannot be issued.
+ */
 const issueCertificateForDomain = async (domain, domainConfig) => {
     const certificatesIssued = await checkCertificates(domain);
 

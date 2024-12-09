@@ -1,10 +1,8 @@
 // netget/src/modules/NetGetX/config/updateNginxConfig.js
-import fs from 'fs';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { exec } from 'child_process';
 import os from 'os';
-import xDefaultServerBlock from '../mainServer/xDefaultServerBlock.js';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
 import { getDomainByName } from '../../../sqlite/utils_sqlite3.js';
 
@@ -14,6 +12,8 @@ import { getDomainByName } from '../../../sqlite/utils_sqlite3.js';
  * @param {string} domain - The domain for which to update the NGINX configuration.
  * @param {string} nginxConfig - The new NGINX configuration to write.
  * @category NetGetX
+ * @subcategory Config
+ * @module updateNginxConfig
  */
 const viewNginxConfig = async (domain) => {
     const xConfig = await loadOrCreateXConfig();

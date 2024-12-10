@@ -42,6 +42,11 @@ class Gateway {
         //process.exit(1); // Exit if the configuration file doesn't exist
       }
 
+    if (!fs.existsSync(this.domainsConfigPath)) {
+      console.error(chalk.yellow('Domains Configuration File Not Found.',
+      '\n', 'Please provide a valid path @ .env Line DOMAINS_CONFIG_PATH=...'));
+    }
+
     morgan.token('host', (req) => req.hostname || req.headers['host'] || '-');
     this.app.use(morgan(':method :url :status :res[content-length] - :response-time ms - Host: :host', {
       stream: {

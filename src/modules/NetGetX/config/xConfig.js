@@ -17,20 +17,13 @@ async function loadOrCreateXConfig() {
         if (!fs.existsSync(USER_CONFIG_FILE)) {
             console.log(chalk.yellow('Default xConfig file does not exist. Creating...'));
             const defaultConfig = {
-                nginxConfigurationProceed: false,
-                nginxPath: "",
-                nginxDir: "",
-                nginxExecutable: "",
+                ExpressConfigurationProceed: false,
+                ExpressPath: "",
                 mainServerName: "",
                 xMainOutPutPort: 3432,
                 domains: {},               
                 publicIP: "",
                 localIP: "",
-                XBlocksAvailable: "",
-                XBlocksEnabled: "",
-                nginxDevDir: "",
-                dev_XBlocksAvailable: "",
-                dev_XBlocksEnabled: "",
                 getPath: "",
                 static: "",
                 devPath: "",

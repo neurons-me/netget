@@ -21,7 +21,6 @@ import verifyNginxInstallation from '../NGINX/verifyNginxInstallation.js';
 import nginxInstallationOptions from '../NGINX/nginxInstallationOptions.cli.js'; 
 import { generateSelfSignedCert, checkSelfSignedCertificates } from '../NGINX/selfSignedCertificates.js';
 import verifyNginxConfig from './verifyNginxConfig.js';
-import verifyServerBlock from '../mainServer/verifyServerBlock.js'; 
 import handlePermissionErrorForEnsureDir from '../../utils/handlePermissionErrorForEnsureDir.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';

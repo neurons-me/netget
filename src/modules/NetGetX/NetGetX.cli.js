@@ -1,19 +1,16 @@
 //netget/src/modules/NetGetX/NetGetX.cli.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import  XBlocksMenu  from './XBlocks/XBlocks.cli.js'; // Import the new addXBlockMenu
 import { i_DefaultNetGetX } from './config/i_DefaultNetGetX.js';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
 import nginxMenu from './NGINX/nginx_menu.cli.js';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.js'; 
-import { getXBlocksList, getXBlocksEnabled } from './XBlocks/XBlocksUtils.js';
 import domainsMenu from './Domains/domains.cli.js';
-import { parseMainServerName } from './mainServer/utils.js';
 
 export default async function NetGetX_CLI(x) {
-    console.clear();
 
 console.log(`
+    
      ██╗  ██╗ 
      ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
       ╚███╔╝  .localIP: ${chalk.green(x.localIP)}

@@ -173,7 +173,7 @@ export async function ensureRequiredConfig() {
     // Example for getPath
     if (!xConfig.getPath) {
         const getDefaultPath = DEFAULT_DIRECTORIES.getPath;
-        if (Path_Exists(getDefaultPath)) {
+        if (pathExists(getDefaultPath)) {
             await saveXConfig({ getPath: getDefaultPath });
             xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
         } else {

@@ -30,7 +30,7 @@ export default async function verifyNginxConfig(xConfig) {
     try {
         const nginxVersionCommand = `${xConfig.nginxExecutable} -v 2>&1`; // Redirect stderr to stdout
         const output = execSync(nginxVersionCommand).toString();
-        console.log(`${chalk.blue(output)}`);
+        console.log(`Nginx version: ${chalk.blue(output)}`);
     } catch (error) {
         console.log(chalk.red(`Failed to execute NGINX: ${error.message}`));
         return false;

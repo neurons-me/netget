@@ -1,7 +1,6 @@
 //i_DefaultNetGetX.js
 import chalk from 'chalk';
 import path from 'path';
-import fs from 'fs';
 import { 
     loadOrCreateXConfig,
     saveXConfig } from './xConfig.js';
@@ -25,6 +24,8 @@ import verifyNginxConfig from './verifyNginxConfig.js';
 import verifyServerBlock from '../mainServer/verifyServerBlock.js'; 
 import handlePermissionErrorForEnsureDir from '../../utils/handlePermissionErrorForEnsureDir.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
+import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';
+import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.js';
 
 /**
  * Sets default paths for NGINX and other directories if they are not already set.
@@ -45,18 +46,19 @@ let DEFAULT_DIRECTORIES = getDirectoryPaths(); // Get paths to .get default dire
 let xConfig = await loadOrCreateXConfig();
 
 const entry = '127.0.0.1 local.netget';
-//console.log(chalk.blue(`Checking if entry exists in hosts: ${entry}`));
 if (!checkLocalHostEntryExists(entry)) {
     console.log(chalk.blue(`Entry does not exist, adding: ${entry}`));
     await addLocalHostEntry(entry);
 }
-console.log(chalk.blue(`Host: ${entry}`));
+
+console.log(`Host: ${chalk.blue(entry)}`);
 
 if (!checkSelfSignedCertificates()) {
     console.log(chalk.blue('Self-signed certificates not found, generating new ones.'));
     await generateSelfSignedCert();
 } else {
     console.log(chalk.blue('Self-signed certificates already exist.'));
+    console.log(' ');
 }
 
 /* NGINX
@@ -73,11 +75,11 @@ if (!nginxInstalled) {
         return false;
     }
 }
- // Verify and set NGINX configuration paths
+// Verify and set NGINX configuration paths
 if (!xConfig.nginxPath || !xConfig.nginxDir) {
-const nginxPath = await getNginxConfigAndDir();
+    const nginxPath = await getNginxConfigAndDir();
     if (nginxPath && nginxPath.configPath) {
-        console.log(chalk.green(`Found NGINX configuration path: ${nginxPath.configPath}`));
+        // console.log(chalk.green(`Found NGINX configuration path: ${nginxPath.configPath}`));
         const setSuccess = await setNginxConfigAndDir(nginxPath.configPath, nginxPath.basePath);
         if (setSuccess) {
             xConfig = await loadOrCreateXConfig();
@@ -101,6 +103,38 @@ if (!xConfig.nginxExecutable) {
         console.log(chalk.red('Please Make Sure NGINX Is Installed.'));
       }  
     } 
+
+/* Verify All Good. 
+╔╗╔╔═╗╦╔╗╔═╗ ╦  ╔═╗╦ ╦╔═╗╔═╗╦╔═╔═╗
+║║║║ ╦║║║║╔╩╦╝  ║  ╠═╣║╣ ║  ╠╩╗╚═╗
+╝╚╝╚═╝╩╝╚╝╩ ╚═  ╚═╝╩ ╩╚═╝╚═╝╩ ╩╚═╝*/
+let nginxVerified = await verifyNginxConfig(xConfig);
+if (!nginxVerified) {
+    console.log(chalk.yellow('Initial NGINX verification failed. Attempting to resolve...'));
+    await nginxInstallationOptions();  // Attempt automated fixes
+    nginxVerified = await verifyNginxConfig(xConfig);  // Re-check after attempting fixes
+    if (!nginxVerified) {
+        console.log(chalk.red('NGINX installation or configuration still incorrect after attempted fixes.'));
+        console.log(chalk.blue('Please check the manual configuration guidelines or contact support.'));
+        return false;
+    } else {
+        console.log(chalk.green('NGINX issues resolved successfully.'));
+    }
+}
+
+// Verify OpenResty Installation
+let openRestyInstalled = verifyOpenRestyInstallation();
+if (!openRestyInstalled) {
+    console.log(chalk.yellow("OpenResty is not installed. Redirecting to installation options..."));
+    await openRestyInstallationOptions();
+    openRestyInstalled = verifyOpenRestyInstallation();
+    if (!openRestyInstalled) {
+        console.log(chalk.red("OpenResty still not detected after installation attempt. Please manually install OpenResty and retry."));
+        return false;
+    } else {
+        console.log(chalk.green("OpenResty installed successfully."));
+    }
+}
 
 /*
  ┏┓┏┓┏┳┓
@@ -152,72 +186,6 @@ const getDefaultDevStatic = DEFAULT_DIRECTORIES.devStatic;
     }
 }
 
-/*
-██   ██ ██████  ██       ██████   ██████ ██   ██ ███████ 
- ██ ██  ██   ██ ██      ██    ██ ██      ██  ██  ██      
-  ███   ██████  ██      ██    ██ ██      █████   ███████ 
- ██ ██  ██   ██ ██      ██    ██ ██      ██  ██       ██ 
-██   ██ ██████  ███████  ██████   ██████ ██   ██ ███████ 
-
- █████  ██    ██  █████  ██ ██       █████  ██████  ██      ███████ 
-██   ██ ██    ██ ██   ██ ██ ██      ██   ██ ██   ██ ██      ██      
-███████ ██    ██ ███████ ██ ██      ███████ ██████  ██      █████   
-██   ██  ██  ██  ██   ██ ██ ██      ██   ██ ██   ██ ██      ██      
-██   ██   ████   ██   ██ ██ ███████ ██   ██ ██████  ███████ ███████ */
-// Check paths before attempting to create XBlocks-available directory
-if (xConfig.nginxDir && pathExists(xConfig.nginxDir)) {
-// Ensure 'XBlocks-available' directory exists or create it
-const xBlocksAvailablePath = path.join(xConfig.nginxDir, 'XBlocks-available');
-try { ensureDirectoryExists(xBlocksAvailablePath); } 
-catch (error) {
-    if (error.message.startsWith('PermissionError')) {
-    // This is where you involve user decision
-    await handlePermissionErrorForEnsureDir(xBlocksAvailablePath);
-    } else {
-    console.error(chalk.red(`Setup failed: ${error.message}`));
-    }}
-// Check if the directory was successfully created or already exists and update configuration if necessary
-if (!xConfig.XBlocksAvailable && pathExists(xBlocksAvailablePath)) {
-    await saveXConfig({ XBlocksAvailable: xBlocksAvailablePath });
-    xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
-    console.log(chalk.green("nginx/XBlocks-available path set successfully."));
-    } else if (!pathExists(xBlocksAvailablePath)) {
-    console.log(chalk.red("nginx/XBlocks-available path not set."));
-    }
-} else {
-    console.log(chalk.yellow("Cannot proceed: NGINX directory path is not set or does not exist."));
-}
-/*
-██   ██ ██████  ██       ██████   ██████ ██   ██ ███████ 
- ██ ██  ██   ██ ██      ██    ██ ██      ██  ██  ██      
-  ███   ██████  ██      ██    ██ ██      █████   ███████ 
- ██ ██  ██   ██ ██      ██    ██ ██      ██  ██       ██ 
-██   ██ ██████  ███████  ██████   ██████ ██   ██ ███████ 
-
-███████ ███    ██  █████  ██████  ██      ███████ ██████  
-██      ████   ██ ██   ██ ██   ██ ██      ██      ██   ██ 
-█████   ██ ██  ██ ███████ ██████  ██      █████   ██   ██ 
-██      ██  ██ ██ ██   ██ ██   ██ ██      ██      ██   ██ 
-███████ ██   ████ ██   ██ ██████  ███████ ███████ ██████*/
-// Check paths before attempting to create XBlocks-enabled directory
-if (xConfig.nginxDir && pathExists(xConfig.nginxDir)) {
-// Ensure 'XBlocks-enabled' directory exists or create it
-const xBlocksEnabledPath = path.join(xConfig.nginxDir, 'XBlocks-enabled');
-    try {  ensureDirectoryExists(xBlocksEnabledPath);  } 
-    catch (error) {
-    if (error.message.startsWith('PermissionError')) {
-    // This is where you involve user decision
-    await handlePermissionErrorForEnsureDir(xBlocksEnabledPath);
-    } else { console.error(chalk.red(`Setup failed: ${error.message}`)); }}
-// Check if the directory was successfully created or already exists and update configuration if necessary
-if (!xConfig.XBlocksEnabled && pathExists(xBlocksEnabledPath)) {
-    await saveXConfig({ XBlocksEnabled: xBlocksEnabledPath });
-    xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
-    console.log(chalk.green("nginx/XBlocks-enabled path set successfully."));
-    } else if (!pathExists(xBlocksEnabledPath)) {
-    console.log(chalk.red("nginx/XBlocks-enabled path not set."));
-    }} else { console.log(chalk.yellow("Cannot proceed: NGINX directory path is not set or does not exist.")); }
-   
 /* nginx/dev_X
 ████████▄     ▄████████  ▄█    █▄           ▀████    ▐████▀ 
 ███   ▀███   ███    ███ ███    ███            ███▌   ████▀  
@@ -293,40 +261,7 @@ if(!xConfig.xMainOutPutPort){
     xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
 }
 
-/* Verify All Good. 
-╔╗╔╔═╗╦╔╗╔═╗ ╦  ╔═╗╦ ╦╔═╗╔═╗╦╔═╔═╗
-║║║║ ╦║║║║╔╩╦╝  ║  ╠═╣║╣ ║  ╠╩╗╚═╗
-╝╚╝╚═╝╩╝╚╝╩ ╚═  ╚═╝╩ ╩╚═╝╚═╝╩ ╩╚═╝*/
-let nginxVerified = await verifyNginxConfig(xConfig);
-if (!nginxVerified) {
-        console.log(chalk.yellow('Initial NGINX verification failed. Attempting to resolve...'));
-        try {
-            await nginxInstallationOptions();  // Attempt automated fixes
-            nginxVerified = await verifyNginxConfig(xConfig);  // Re-check after attempting fixes
-            if (!nginxVerified) {
-                console.log(chalk.red('NGINX installation or configuration still incorrect after attempted fixes.'));
-                console.log(chalk.blue('Please check the manual configuration guidelines or contact support.'));
-                return false;
-            } else {
-                console.log(chalk.green('NGINX issues resolved successfully.'));
-            }
-        } catch (error) {
-            console.log(chalk.red(`An error occurred while attempting to fix NGINX: ${error.message}`));
-            console.log(chalk.blue('Please check the manual configuration guidelines or contact support.'));
-            return false;
-        }
-    } 
 
-
-/* Verify NGINX server block is correctly configured for netgetX.
-    ╔═╗╔═╗╦═╗╦  ╦╔═╗╦═╗  ╔╗ ╦  ╔═╗╔═╗╦╔═
-    ╚═╗║╣ ╠╦╝╚╗╔╝║╣ ╠╦╝  ╠╩╗║  ║ ║║  ╠╩╗
-    ╚═╝╚═╝╩╚═ ╚╝ ╚═╝╩╚═  ╚═╝╩═╝╚═╝╚═╝╩ ╩*/
-// const serverBlockVerified = await verifyServerBlock(xConfig);
-// if (!serverBlockVerified) {
-//     console.log(chalk.yellow('Default Server block is not as NetGetX Default.'));
-//     return false;
-//     }
 
 const publicIP = await getPublicIP();  // Properly await the asynchronous call
 const localIP = getLocalIP();

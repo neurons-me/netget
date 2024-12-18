@@ -1,6 +1,5 @@
 //netget/src/modules/utils/GETDirs.js
 import path from 'path';
-import os from 'os';
 import { ensureDirectoryExists } from './pathUtils.js';
 
 const BASE_DIR = path.join('/opt/','.get');

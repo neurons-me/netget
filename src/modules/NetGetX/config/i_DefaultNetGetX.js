@@ -7,7 +7,8 @@ import { pathExists } from '../../utils/pathUtils.js';
 import { initializeDirectories, getDirectoryPaths } from '../../utils/GETDirs.js';
 import { generateSelfSignedCert, checkSelfSignedCertificates } from '../Domains/SSL/selfSignedCertificates.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
-import { verifyExpressInstallation, getExpressConfig } from '../Express/expressInstallationOptions.cli.js';
+import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';
+import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.js';
 
 /**
  * Sets default paths for NGINX and other directories if they are not already set.
@@ -28,28 +29,95 @@ let DEFAULT_DIRECTORIES = getDirectoryPaths(); // Get paths to .get default dire
 let xConfig = await loadOrCreateXConfig();
 
 const entry = '127.0.0.1 local.netget';
-//console.log(chalk.blue(`Checking if entry exists in hosts: ${entry}`));
 if (!checkLocalHostEntryExists(entry)) {
     console.log(chalk.blue(`Entry does not exist, adding: ${entry}`));
     await addLocalHostEntry(entry);
 }
-console.log(chalk.blue(`Host: ${entry}`));
+
+console.log(`Host: ${chalk.blue(entry)}`);
 
 if (!checkSelfSignedCertificates()) {
     console.log(chalk.blue('Self-signed certificates not found, generating new ones.'));
     await generateSelfSignedCert();
 } else {
     console.log(chalk.blue('Self-signed certificates already exist.'));
+    console.log(' ');
 }
 
 /* EXPRESS
 ╔═╗┌─┐┌┬┐┬ ┬┌─┐
 ╠═╝├─┤ │ ├─┤└─┐
 ╩  ┴ ┴ ┴ ┴ ┴└─┘*/
+// Verify Installation
+const nginxInstalled = verifyNginxInstallation();
+if (!nginxInstalled) {
+    console.log(chalk.yellow("NGINX is not installed. Redirecting to installation options..."));
+    await nginxInstallationOptions();
+    if (!verifyNginxInstallation()) {
+        console.log(chalk.red("NGINX still not detected after installation attempt. Please manually install NGINX and retry."));
+        return false;
+    }
+}
+// Verify and set NGINX configuration paths
+if (!xConfig.nginxPath || !xConfig.nginxDir) {
+    const nginxPath = await getNginxConfigAndDir();
+    if (nginxPath && nginxPath.configPath) {
+        // console.log(chalk.green(`Found NGINX configuration path: ${nginxPath.configPath}`));
+        const setSuccess = await setNginxConfigAndDir(nginxPath.configPath, nginxPath.basePath);
+        if (setSuccess) {
+            xConfig = await loadOrCreateXConfig();
+        } else {
+            console.error(chalk.red(`Failed to set NGINX configuration paths.`));
+        }
+    } else {
+        console.log(chalk.yellow(`NGINX configuration path not found.`));
+    }
+}
+/* NGINX 
+ ╔═╗═╗ ╦╔═╗╔═╗╦ ╦╔╦╗╔═╗╔╗ ╦  ╔═╗
+ ║╣ ╔╩╦╝║╣ ║  ║ ║ ║ ╠═╣╠╩╗║  ║╣ 
+ ╚═╝╩ ╚═╚═╝╚═╝╚═╝ ╩ ╩ ╩╚═╝╩═╝╚═╝
+Check and set executable*/
+if (!xConfig.nginxExecutable) {
+    if (await setNginxExecutable(xConfig)) {
+        xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+         }else{
+        console.log(chalk.red('Failed to set NGINX executable.'));
+        console.log(chalk.red('Please Make Sure NGINX Is Installed.'));
+      }  
+    } 
 
-// Verify and set express configuration paths
-await verifyExpressInstallation();
-await getExpressConfig();
+/* Verify All Good. 
+╔╗╔╔═╗╦╔╗╔═╗ ╦  ╔═╗╦ ╦╔═╗╔═╗╦╔═╔═╗
+║║║║ ╦║║║║╔╩╦╝  ║  ╠═╣║╣ ║  ╠╩╗╚═╗
+╝╚╝╚═╝╩╝╚╝╩ ╚═  ╚═╝╩ ╩╚═╝╚═╝╩ ╩╚═╝*/
+let nginxVerified = await verifyNginxConfig(xConfig);
+if (!nginxVerified) {
+    console.log(chalk.yellow('Initial NGINX verification failed. Attempting to resolve...'));
+    await nginxInstallationOptions();  // Attempt automated fixes
+    nginxVerified = await verifyNginxConfig(xConfig);  // Re-check after attempting fixes
+    if (!nginxVerified) {
+        console.log(chalk.red('NGINX installation or configuration still incorrect after attempted fixes.'));
+        console.log(chalk.blue('Please check the manual configuration guidelines or contact support.'));
+        return false;
+    } else {
+        console.log(chalk.green('NGINX issues resolved successfully.'));
+    }
+}
+
+// Verify OpenResty Installation
+let openRestyInstalled = verifyOpenRestyInstallation();
+if (!openRestyInstalled) {
+    console.log(chalk.yellow("OpenResty is not installed. Redirecting to installation options..."));
+    await openRestyInstallationOptions();
+    openRestyInstalled = verifyOpenRestyInstallation();
+    if (!openRestyInstalled) {
+        console.log(chalk.red("OpenResty still not detected after installation attempt. Please manually install OpenResty and retry."));
+        return false;
+    } else {
+        console.log(chalk.green("OpenResty installed successfully."));
+    }
+}
 
 /*
  ┏┓┏┓┏┳┓

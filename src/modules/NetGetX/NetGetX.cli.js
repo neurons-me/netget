@@ -7,14 +7,15 @@ import netGetXSettingsMenu from './NetGetX_Settings.cli.js';
 import domainsMenu from './Domains/domains.cli.js';
 
 export default async function NetGetX_CLI(x) {
-    console.log(`
-     ██╗  ██╗ 
-     ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
-      ╚███╔╝  .localIP: ${chalk.green(x.localIP)}
-      ██╔██╗  .mainServer: ${chalk.green('netget.site')} 
-     ██╔╝ ██╗ 
-     ╚═╝  ╚═╝ `); 
     x = x ?? await i_DefaultNetGetX();
+    console.log(`
+        
+ ██╗  ██╗ 
+ ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
+  ╚███╔╝  .localIP: ${chalk.green(x.localIP)}
+  ██╔██╗  .mainServer: ${chalk.green('netget.site')} 
+ ██╔╝ ██╗ 
+ ╚═╝  ╚═╝ `); 
     let exit = false;
     while (!exit) {
         const answers = await inquirer.prompt({

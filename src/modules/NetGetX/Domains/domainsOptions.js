@@ -5,8 +5,6 @@ import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
 import { addDomain, deleteDomain, storeConfig } from '../../../sqlite/utils_sqlite3.js';
-import viewNginxConfig from './viewNginxConfig.js';
-import selectedDomain from './selectedDomain.cli.js';
 
 // Used to log the domain information to the console in the selected domain.
 const logDomainInfo = (domainConfig, domain) => {

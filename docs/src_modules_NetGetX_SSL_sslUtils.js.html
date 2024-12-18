@@ -134,7 +134,7 @@
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs/promises';
-import { ensureDirectoryExists, Path_Exists } from '../../utils/pathUtils.js';
+import { ensureDirectoryExists, pathExists } from '../../utils/pathUtils.js';
 import handlePermission from '../../utils/handlePermissions.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import generateSelfSignedCerts from './generateSelfSignedCerts.js';
@@ -252,7 +252,7 @@ async function ensureSSLDirectories(xConfig) {
         const sslDir = path.join(xConfig.nginxDir, 'ssl');
         const certPath = path.join(sslDir, 'selfsigned.crt');
         const keyPath = path.join(sslDir, 'selfsigned.key');
-        if (!await Path_Exists(certPath) || !await Path_Exists(keyPath)) {
+        if (!await pathExists(certPath) || !await pathExists(keyPath)) {
             let success = false;
             while (!success) {
                 try {

@@ -1,7 +1,7 @@
 // netget/src/scripts/init_dirs.js
 import path from 'path';
 import os from 'os';
-import { ensureDirectoryExists, Path_Exists } from './pathUtils.js';
+import { ensureDirectoryExists, pathExists } from './pathUtils.js';
 
 const BASE_DIR = path.join('/opt/','.get');
 const DIRECTORIES = {
@@ -38,7 +38,7 @@ function verifyInitialization() {
     Object.values(DIRECTORIES).forEach(dir => {
         try {
             ensureDirectoryExists(dir);
-            initStatus[dir] = Path_Exists(dir);
+            initStatus[dir] = pathExists(dir);
         } catch (error) {
             initStatus[dir] = false;
         }

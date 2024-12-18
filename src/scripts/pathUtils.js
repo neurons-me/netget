@@ -54,9 +54,9 @@ function ensureDirectoryExists(directory, desiredMode = 0o755) {
  * @subcategory General
  * @module pathUtils
 */
-function Path_Exists(path) {
+function pathExists(path) {
     return fs.existsSync(path);
 }
 
 // Export both functions explicitly
-export { ensureDirectoryExists, Path_Exists, checkPermissions };
+export { ensureDirectoryExists, pathExists, checkPermissions };

@@ -2,7 +2,7 @@ import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import chalk from 'chalk';
-import { handlePermission } from '../../utils/handlePermissions.js'; 
+import { handlePermission } from '../../../utils/handlePermissions.js'; 
 
 const certDir = '/etc/ssl';
 const privateKeyPath = path.join(certDir, 'private', 'nginx-selfsigned.key');

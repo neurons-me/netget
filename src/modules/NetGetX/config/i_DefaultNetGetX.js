@@ -24,6 +24,8 @@ import nginxInstallationOptions from '../NGINX/nginxInstallationOptions.cli.js';
 import { generateSelfSignedCert, checkSelfSignedCertificates } from '../NGINX/selfSignedCertificates.js';
 import verifyNginxConfig from './verifyNginxConfig.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
+import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';
+import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.js';
 
 /**
  * Sets default paths for NGINX and other directories if they are not already set.

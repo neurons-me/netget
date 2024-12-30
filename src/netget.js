@@ -40,5 +40,30 @@ class NetGet {
       return null;
     }
   }
+  
+/**
+   * Chains this NetGet instance to another NetGet instance (external).
+   * @param {string} externalNetGetUrl - The URL of the external NetGet instance.
+   * @param {Object} options - Options for the chaining process.
+   * @param {string} options.hostname - Hostname of this NetGet instance.
+   * @param {string} options.token - Authorization token for the external NetGet instance.
+   */
+async chain(externalNetGetUrl, options) {
+  try {
+    const { hostname, token } = options;
+    const response = await axios.post(`${externalNetGetUrl}/register`, {
+    hostname: hostname || require('os').hostname(),
+    token,
+  });
+
+  if (response.data.success) {
+    console.log('Successfully chained to external NetGet:', response.data.message);
+  } else {
+    console.error('Failed to chain to external NetGet:', response.data.error);
+  }
+} catch (error) {
+  console.error('Error chaining to external NetGet:', error.message);
+}
+}
 }
 export default NetGet;

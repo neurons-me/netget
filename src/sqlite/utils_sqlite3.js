@@ -24,9 +24,10 @@ async function createTable() {
             sslMode TEXT,
             sslCertificate TEXT,
             sslCertificateKey TEXT,
-            nginxConfig TEXT,
-            port TEXT,
-            type TEXT
+            target TEXT,
+            type TEXT,
+            projectPath TEXT,
+            rootDomain TEXT
         )
     `);
 
@@ -44,7 +45,7 @@ export async function initializeDatabase() {
 const dbPromise = initializeDatabase();
 
 // Function to add a domain
-export async function addDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type) {
+export async function registerDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
@@ -52,9 +53,9 @@ export async function addDomain(domain, email, sslMode, sslCertificate, sslCerti
             throw new Error(`The domain ${domain} already exists.`);
         }
         await db.run(
-            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type]);
-    }catch (error) {
+            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath]);
+    } catch (error) {
         console.error(`Error adding domain ${domain}:`, error);
         throw error;
     }
@@ -104,14 +105,14 @@ export async function deleteDomain(domain) {
     }
 }
 
-export async function storeConfig(domain, nginxConfig) {
+export async function storeConfig(domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
         if (existingDomain) {
-            await db.run('UPDATE domains SET nginxConfig = ? WHERE domain = ?', [nginxConfig, domain]);
+            await db.run('UPDATE domains SET sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ? WHERE domain = ?', [sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domain]);
         } else {
-            await db.run('INSERT INTO domains (domain, nginxConfig) VALUES (?, ?)', [domain, nginxConfig]);
+            await db.run('INSERT INTO domains (domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) VALUES (?, ?, ?, ?, ?, ?, ?)', [domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath]);
         }
     } catch (error) {
         console.error(`Error storing config for domain ${domain}:`, error);
@@ -142,24 +143,6 @@ export async function writeExistingNginxConfigs() {
     }
 }
 
-async function generateNginxConfig() {
-    const db = await dbPromise;
-    try {
-        const configs = await db.all('SELECT * FROM nginx_config');
-
-        let nginxConfig = '';
-        configs.forEach(config => {
-            nginxConfig += config.config + '\n';
-        });
-
-        fs.writeFileSync('/etc/nginx/conf.d/custom.conf', nginxConfig);
-    } catch (error) {
-        console.error('Error generating nginx config:', error);
-        throw error;
-    }
-}
-
-
 function getConfig(domain) {
     return new Promise((resolve, reject) => {
         const db = new sqlite3.Database(USER_CONFIG_FILE);
@@ -172,52 +155,5 @@ function getConfig(domain) {
         });
     });
 }
-
-// Function to migrate the table into a new schema
-async function migrateTable() {
-    const db = await open({
-        filename: USER_CONFIG_FILE,
-        driver: sqlite3.Database
-    });
-
-    // Start a transaction
-    await db.exec('BEGIN TRANSACTION');
-
-    // Create a new table without the column to be removed
-    await db.exec(`
-        CREATE TABLE domains_new (
-            domain TEXT PRIMARY KEY,
-            email TEXT,
-            sslMode TEXT,
-            sslCertificate TEXT,
-            sslCertificateKey TEXT,
-            nginxConfig TEXT,
-            port TEXT,
-            type TEXT
-        )
-    `);
-
-    // Copy data from the old table to the new table
-    await db.exec(`
-        INSERT INTO domains_new (domain, email, sslMode, sslCertificate, nginxConfig, port, type)
-        SELECT domain, email, sslMode, sslCertificate, nginxConfig, port, type
-        FROM domains
-    `);
-
-    // Drop the old table
-    await db.exec('DROP TABLE domains');
-
-    // Rename the new table to the original table name
-    await db.exec('ALTER TABLE domains_new RENAME TO domains');
-
-    // Commit the transaction
-    await db.exec('COMMIT');
-
-    await db.close();
-}
-
-// migrateTable().catch(err => {
-//     console.error(err);
-// });
 
 export default { getConfig };

@@ -4,7 +4,7 @@ import { loadOrCreateXConfig } from '../config/xConfig.js';
 import { editOrDeleteDomain, logDomainInfo, addSubdomain } from './domainsOptions.js';
 import domainSSLConfiguration from './SSL/ssl.cli.js';
 
-const selectedDomain = async (domain) => {
+const selectedDomainMenu = async (domain) => {
         try {
             const xConfig = await loadOrCreateXConfig();
             const domainConfig = xConfig.domains[domain];
@@ -35,9 +35,6 @@ const selectedDomain = async (domain) => {
             case 'addSubdomain':
                 await addSubdomain(domain);
                 break;
-            case 'viewServerBlockConfiguration':
-                await viewNginxConfig(domain);
-                break;
             case 'editOrDelete':
                 await editOrDeleteDomain(domain);
                 break;
@@ -51,10 +48,10 @@ const selectedDomain = async (domain) => {
         }
 
         // After an action, redisplay the menu
-        await selectedDomain(domain);
+        await selectedDomainMenu(domain);
     } catch (error) {
         console.error(chalk.red('An error occurred in the Selected Domain Menu:', error.message));
     }
 };
 
-export default selectedDomain;
+export default selectedDomainMenu;

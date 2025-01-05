@@ -4,7 +4,7 @@ import chalk from 'chalk';
 import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
-import { addDomain, deleteDomain, storeConfig } from '../../../sqlite/utils_sqlite3.js';
+import { registerDomain, deleteDomain } from '../../../sqlite/utils_sqlite3.js';
 
 // Used to log the domain information to the console in the selected domain.
 const logDomainInfo = (domainConfig, domain) => {
@@ -12,7 +12,7 @@ const logDomainInfo = (domainConfig, domain) => {
         console.log(chalk.blue('\nDomain Information:'));
         const subDomainsTable = Object.keys(domainConfig.subDomains).map(subDomain => ({
             Subdomain: subDomain,
-            Target: domainConfig.subDomains[subDomain].forwardPort,
+            Target: domainConfig.subDomains[subDomain].target,
             Type: domainConfig.subDomains[subDomain].type
         }));
         console.table(subDomainsTable);
@@ -45,7 +45,7 @@ const domainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
         Domain: domain,
-        Target: domainsConfig[domain].forwardPort,
+        Target: domainsConfig[domain].target,
         Type: domainsConfig[domain].type
 
     }));
@@ -66,28 +66,30 @@ const addNewDomain = async () => {
                 message: 'Select the type of service for this domain:',
                 choices: [
                     { name: 'Serve Static Content', value: 'static' },
-                    { name: 'Forward Port', value: 'proxy' }
+                    { name: 'Forward Port', value: 'server' }
                 ]
             }
         ]);
 
+        const type = serviceTypeAnswer.serviceType;
+
         let port = '';
-        if (serviceTypeAnswer.serviceType === 'proxy') {
+        if (serviceTypeAnswer.serviceType === 'server') {
             const forwardPortAnswer = await inquirer.prompt([
                 {
                     type: 'input',
-                    name: 'proxy',
+                    name: 'server',
                     message: 'Enter the forward port for this domain (type /b to go back):',
                     validate: input => input ? true : 'Forward port is required.'
                 }
             ]);
 
-            if (forwardPortAnswer.proxy === '/b') {
+            if (forwardPortAnswer.server === '/b') {
                 console.log(chalk.blue('Going back to the previous menu...'));
                 return;
             }
 
-            port = forwardPortAnswer.proxy;
+            port = forwardPortAnswer.server;
         } else if (serviceTypeAnswer.serviceType === 'static') {
             const staticPathAnswer = await inquirer.prompt([
                 {
@@ -137,7 +139,7 @@ const addNewDomain = async () => {
             return;
         }
 
-        const { domain, email, type } = { ...domainAnswer, ...emailAnswer, ...serviceTypeAnswer.serviceType };
+        const { domain, email} = { ...domainAnswer, ...emailAnswer };
         const xConfig = await loadOrCreateXConfig();
 
         if (!xConfig.domains) {
@@ -152,7 +154,7 @@ const addNewDomain = async () => {
         const newDomainConfig = {
             sslMode: 'letsencrypt',
             email: email,
-            forwardPort: port,
+            target: port,
             type: type,
             subDomains:{}
         };
@@ -166,7 +168,7 @@ const addNewDomain = async () => {
         }, {});
         xConfig.domains = sortedDomains;
         await saveXConfig({ domains: xConfig.domains });
-        await addDomain(domain, email, 'letsencrypt', '', '', '', port, type);
+        await registerDomain(domain, email, 'letsencrypt', '', '', port, type, '');
 
         console.log(chalk.green(`Domain ${domain} added successfully.`));
         return;  // Exit the loop after successful addition
@@ -194,28 +196,28 @@ const addSubdomain = async (domain) => {
             message: 'Select the type of service for this domain:',
             choices: [
                 { name: 'Serve Static Content', value: 'static' },
-                { name: 'Forward Port', value: 'proxy' }
+                { name: 'Forward Port', value: 'server' }
             ]
         }
     ]);
 
     let port = '';
-    if (serviceTypeAnswer.serviceType === 'proxy') {
+    if (serviceTypeAnswer.serviceType === 'server') {
         const forwardPortAnswer = await inquirer.prompt([
             {
                 type: 'input',
-                name: 'proxy',
+                name: 'server',
                 message: 'Enter the forward port for this domain (type /b to go back):',
                 validate: input => input ? true : 'Forward port is required.'
             }
         ]);
 
-        if (forwardPortAnswer.proxy === '/b') {
+        if (forwardPortAnswer.server === '/b') {
             console.log(chalk.blue('Going back to the previous menu...'));
             return;
         }
 
-        port = forwardPortAnswer.proxy;
+        port = forwardPortAnswer.server;
     } else if (serviceTypeAnswer.serviceType === 'static') {
         const staticPathAnswer = await inquirer.prompt([
             {
@@ -246,7 +248,7 @@ const addSubdomain = async (domain) => {
     }
 
     const newDomainConfig = {
-        "forwardPort": port,
+        "target": port,
         "type": serviceTypeAnswer.serviceType
     }
 
@@ -298,24 +300,12 @@ const editOrDeleteDomain = async (domain) => {
         switch (answer.action) {
             case 'editDomain':
                 console.clear();
-                await viewNginxConfig(domain);
-                const newConfig = await inquirer.prompt([
-                    {
-                        type: 'input',
-                        name: 'nginxConfig',
-                        message: 'Enter the new NGINX configuration: (type /b to go back)',
-                        
-                        // validate: input => input ? false : 'NGINX configuration is required.'
-                    }
-                ]);
 
-                const nginxConfig = newConfig.nginxConfig;
 
-                if (newConfig.nginxConfig === '/b') {
-                    console.log(chalk.blue('Going back to the previous menu...'));
-                    return;
-                }
 
+                await inquirer.prompt([{ type: 'input', name: 'continue', message: 'Press Enter to continue...' }]);
+                await storeConfig(domain, nginxConfig);
+                
                 await inquirer.prompt([{ type: 'input', name: 'continue', message: 'Press Enter to continue...' }]);
                 await storeConfig(domain, nginxConfig);
                 console.log(chalk.green(`Domain ${domain} configuration updated successfully.`));

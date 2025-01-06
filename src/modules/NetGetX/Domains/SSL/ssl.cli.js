@@ -89,6 +89,8 @@ const issueCertificateForDomain = async (domain, domainConfig) => {
             domainConfig.SSLCertificateName = `${domain}`;
             domainConfig.SSLCertificatesPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
+            domainConfig.SSLCertificateSqlitePath = `/etc/letsencrypt/archive/${domain}/fullchain1.pem`;
+            domainConfig.SSLCertificateKeySqlitePath = `/etc/letsencrypt/archive/${domain}/privkey1.pem`;   
             const xConfig = await loadOrCreateXConfig();
             xConfig.domains[domain] = domainConfig;
             await saveXConfig({ domains: xConfig.domains });

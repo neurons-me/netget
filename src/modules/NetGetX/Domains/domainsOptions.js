@@ -253,9 +253,6 @@ const addSubdomain = async (domain) => {
     }
 
     xConfig.domains[domain].subDomains[subdomain] = newDomainConfig;
-
-    console.log(newDomainConfig);
-    console.log(xConfig.domains[domain].subDomains);
     const sortedSubdomains = Object.keys(xConfig.domains[domain].subDomains).sort().reduce((acc, key) => {
         acc[key] = xConfig.domains[domain].subDomains[key];
         return acc;
@@ -263,11 +260,14 @@ const addSubdomain = async (domain) => {
 
     xConfig.domains[domain].subDomains = sortedSubdomains;
 
-
     // Save the updated configuration
     await saveXConfig({ domains: xConfig.domains });
-    
+
+    // Register the subdomain into the database
+    await registerDomain(subdomain, xConfig.domains[domain].email, 'letsencrypt', xConfig.domains[domain].SSLCertificatesPath, xConfig.domains[domain].SSLCertificateKeyPath, port, serviceTypeAnswer.serviceType, '');
+
     console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
+    return;
 };
 
 const editOrDeleteDomain = async (domain) => {
@@ -282,7 +282,7 @@ const editOrDeleteDomain = async (domain) => {
         }
 
         const options = [
-            { name: 'Edit Domain', value: 'editDomain' },
+            //{ name: 'Edit Domain', value: 'editDomain' },
             { name: 'Delete Domain', value: 'deleteDomain' },
             { name: 'Delete Subdomain', value: 'deleteSubdomain' },
             { name: 'Back to Domains Menu', value: 'back' }
@@ -307,7 +307,6 @@ const editOrDeleteDomain = async (domain) => {
                 await storeConfig(domain, nginxConfig);
                 
                 await inquirer.prompt([{ type: 'input', name: 'continue', message: 'Press Enter to continue...' }]);
-                await storeConfig(domain, nginxConfig);
                 console.log(chalk.green(`Domain ${domain} configuration updated successfully.`));
                 return;
 
@@ -365,6 +364,7 @@ const editOrDeleteDomain = async (domain) => {
                 }
 
                 delete xConfig.domains[domain].subDomains[subdomainAnswer.subdomain];
+                await deleteDomain(subdomainAnswer.subdomain);
                 await saveXConfig({ domains: xConfig.domains });
                 console.log(chalk.green(`Subdomain ${subdomainAnswer.subdomain} deleted successfully from domain ${domain}.`));
                 return;

@@ -1,6 +1,5 @@
 // netget/src/scripts/init_dirs.js
 import path from 'path';
-import os from 'os';
 import { ensureDirectoryExists, pathExists } from './pathUtils.js';
 
 const BASE_DIR = path.join('/opt/','.get');
@@ -8,8 +7,7 @@ const DIRECTORIES = {
     getPath: BASE_DIR,
     static: path.join(BASE_DIR, 'static'),
     devPath: path.join(BASE_DIR, 'dev'),
-    devStatic: path.join(BASE_DIR, 'dev', 'static'),
-    gatewayPath: path.join(BASE_DIR, 'Gateways'),
+    devStatic: path.join(BASE_DIR, 'dev', 'static')
 };
 
 /* Safety and Non-Destructive Behavior

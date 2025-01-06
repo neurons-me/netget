@@ -8,12 +8,7 @@
         "start": "node index.js",
         "test": "echo \"Error: no test specified\" && exit 1",
         "postinstall": "node ./src/scripts/postInstall.js",
-        "doc": "jsdoc -c jsdoc.json",
-        "gateway:start": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'start')\"",
-        "gateway:stop": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'stop')\"",
-        "gateway:restart": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'restart')\"",
-        "gateway:delete": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'delete')\"",
-        "gateway:status": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'status')\""
+        "doc": "jsdoc -c jsdoc.json"
     },
     "bin": {
         "netget": "./src/netget.cli.js",

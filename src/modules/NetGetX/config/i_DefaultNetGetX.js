@@ -6,11 +6,6 @@ import {
 } from './xConfig.js';
 import { initializeState } from '../xState.js';
 import {
-    getNginxConfigAndDir,
-    setNginxConfigAndDir,
-    setNginxExecutable
-} from './NginxPaths.js';
-import {
     getLocalIP,
     getPublicIP
 } from '../../utils/ipUtils.js';
@@ -19,10 +14,6 @@ import {
     initializeDirectories,
     getDirectoryPaths
 } from '../../utils/GETDirs.js';
-import verifyNginxInstallation from '../NGINX/verifyNginxInstallation.js';
-import nginxInstallationOptions from '../NGINX/nginxInstallationOptions.cli.js';
-import { generateSelfSignedCert, checkSelfSignedCertificates } from '../NGINX/selfSignedCertificates.js';
-import verifyNginxConfig from './verifyNginxConfig.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';
 import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.js';
@@ -53,74 +44,13 @@ export async function i_DefaultNetGetX() {
 
     console.log(`Host: ${chalk.blue(entry)}`);
 
-    if (!checkSelfSignedCertificates()) {
-        console.log(chalk.blue('Self-signed certificates not found, generating new ones.'));
-        await generateSelfSignedCert();
-    } else {
-        console.log(chalk.blue('Self-signed certificates already exist.'));
-        console.log(' ');
-    }
-
-    /* EXPRESS
-    ╔═╗┌─┐┌┬┐┬ ┬┌─┐
-    ╠═╝├─┤ │ ├─┤└─┐
-    ╩  ┴ ┴ ┴ ┴ ┴└─┘*/
-    // Verify Installation
-    const nginxInstalled = verifyNginxInstallation();
-    if (!nginxInstalled) {
-        console.log(chalk.yellow("NGINX is not installed. Redirecting to installation options..."));
-        await nginxInstallationOptions();
-        if (!verifyNginxInstallation()) {
-            console.log(chalk.red("NGINX still not detected after installation attempt. Please manually install NGINX and retry."));
-            return false;
-        }
-    }
-    // Verify and set NGINX configuration paths
-    if (!xConfig.nginxPath || !xConfig.nginxDir) {
-        const nginxPath = await getNginxConfigAndDir();
-        if (nginxPath && nginxPath.configPath) {
-            // console.log(chalk.green(`Found NGINX configuration path: ${nginxPath.configPath}`));
-            const setSuccess = await setNginxConfigAndDir(nginxPath.configPath, nginxPath.basePath);
-            if (setSuccess) {
-                xConfig = await loadOrCreateXConfig();
-            } else {
-                console.error(chalk.red(`Failed to set NGINX configuration paths.`));
-            }
-        } else {
-            console.log(chalk.yellow(`NGINX configuration path not found.`));
-        }
-    }
-    /* NGINX 
-     ╔═╗═╗ ╦╔═╗╔═╗╦ ╦╔╦╗╔═╗╔╗ ╦  ╔═╗
-     ║╣ ╔╩╦╝║╣ ║  ║ ║ ║ ╠═╣╠╩╗║  ║╣ 
-     ╚═╝╩ ╚═╚═╝╚═╝╚═╝ ╩ ╩ ╩╚═╝╩═╝╚═╝
-    Check and set executable*/
-    if (!xConfig.nginxExecutable) {
-        if (await setNginxExecutable(xConfig)) {
-            xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
-        } else {
-            console.log(chalk.red('Failed to set NGINX executable.'));
-            console.log(chalk.red('Please Make Sure NGINX Is Installed.'));
-        }
-    }
-
-    /* Verify All Good. 
-    ╔╗╔╔═╗╦╔╗╔═╗ ╦  ╔═╗╦ ╦╔═╗╔═╗╦╔═╔═╗
-    ║║║║ ╦║║║║╔╩╦╝  ║  ╠═╣║╣ ║  ╠╩╗╚═╗
-    ╝╚╝╚═╝╩╝╚╝╩ ╚═  ╚═╝╩ ╩╚═╝╚═╝╩ ╩╚═╝*/
-    let nginxVerified = await verifyNginxConfig(xConfig);
-    if (!nginxVerified) {
-        console.log(chalk.yellow('Initial NGINX verification failed. Attempting to resolve...'));
-        await nginxInstallationOptions();  // Attempt automated fixes
-        nginxVerified = await verifyNginxConfig(xConfig);  // Re-check after attempting fixes
-        if (!nginxVerified) {
-            console.log(chalk.red('NGINX installation or configuration still incorrect after attempted fixes.'));
-            console.log(chalk.blue('Please check the manual configuration guidelines or contact support.'));
-            return false;
-        } else {
-            console.log(chalk.green('NGINX issues resolved successfully.'));
-        }
-    }
+    // if (!checkSelfSignedCertificates()) {
+    //     console.log(chalk.blue('Self-signed certificates not found, generating new ones.'));
+    //     await generateSelfSignedCert();
+    // } else {
+    //     console.log(chalk.blue('Self-signed certificates already exist.'));
+    //     console.log(' ');
+    // }
 
     // Verify OpenResty Installation
     let openRestyInstalled = verifyOpenRestyInstallation();

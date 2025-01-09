@@ -105,7 +105,7 @@ export async function deleteDomain(domain) {
     }
 }
 
-export async function storeConfig(domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
+export async function storeConfigInDB(domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);

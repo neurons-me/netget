@@ -29,8 +29,6 @@ async function loadOrCreateXConfig() {
                 devPath: "",
                 devStatic: "",
                 useSudo: false,
-                sslCertPath: "",
-                sslKeyPath: ""
             };
             fs.writeFileSync(USER_CONFIG_FILE, JSON.stringify(defaultConfig, null, 4));
             return defaultConfig;

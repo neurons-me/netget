@@ -10,6 +10,7 @@ import {
     checkCertificates 
 } from './SSLCertificates.js';
 import printCertbotLogs from './Certbot/certbot.js';
+import { storeConfigInDB } from '../../../../sqlite/utils_sqlite3.js';
 
 const displayCurrentSSLConfiguration = (domainConfig, domain) => {
     console.log('\nCurrent SSL Configuration:');
@@ -94,6 +95,7 @@ const issueCertificateForDomain = async (domain, domainConfig) => {
             const xConfig = await loadOrCreateXConfig();
             xConfig.domains[domain] = domainConfig;
             await saveXConfig({ domains: xConfig.domains });
+            await storeConfigInDB(domain, 'letsencrypt', domainConfig.SSLCertificateSqlitePath, domainConfig.SSLCertificateKeySqlitePath, domainConfig.target, domainConfig.type, domainConfig.projectPath);
         }
 
         displayCurrentSSLConfiguration(domainConfig, domain);
@@ -152,9 +154,12 @@ const issueCertificateForDomain = async (domain, domainConfig) => {
             await obtainSSLCertificates(domain, domainConfig.email);
             domainConfig.SSLCertificatesPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
+            domainConfig.SSLCertificateSqlitePath = `/etc/letsencrypt/archive/${domain}/fullchain1.pem`;
+            domainConfig.SSLCertificateKeySqlitePath = `/etc/letsencrypt/archive/${domain}/privkey1.pem`; 
             const xConfig = await loadOrCreateXConfig();
             xConfig.domains[domain] = domainConfig;
             await saveXConfig({ domains: xConfig.domains });
+            await storeConfigInDB(domain, 'letsencrypt', domainConfig.SSLCertificateSqlitePath, domainConfig.SSLCertificateKeySqlitePath, domainConfig.target, domainConfig.type, domainConfig.projectPath);
         }
     }
 };

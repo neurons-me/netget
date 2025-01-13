@@ -264,7 +264,7 @@ const addSubdomain = async (domain) => {
     await saveXConfig({ domains: xConfig.domains });
 
     // Register the subdomain into the database
-    await registerDomain(subdomain, xConfig.domains[domain].email, 'letsencrypt', xConfig.domains[domain].SSLCertificatesPath, xConfig.domains[domain].SSLCertificateKeyPath, port, serviceTypeAnswer.serviceType, '');
+    await registerDomain(subdomain, xConfig.domains[domain].email, 'letsencrypt', xConfig.domains[domain].SSLCertificateSqlitePath, xConfig.domains[domain].SSLCertificateKeySqlitePath, port, serviceTypeAnswer.serviceType, '');
 
     console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
     return;

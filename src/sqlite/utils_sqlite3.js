@@ -83,13 +83,36 @@ export async function getDomainByName(domain) {
     } 
 }
 
-// Function to update the redirection of a domain
-export async function updateDomain(domain, port) {
+// Function to update a domain
+export async function updateDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     try {
         const db = await dbPromise;
-        await db.run('UPDATE domains SET proxy_redirect = ? WHERE domain = ?', [port, domain]);
-    } catch (error) {
+        await db.run('UPDATE domains SET email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ? WHERE domain = ?', [email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domain]);
+    }
+    catch (error) {
         console.error(`Error updating the domain ${domain}:`, error);
+        throw error;
+    }
+}
+
+// Function to update the target of a domain
+export async function updateDomainTarget(domain, target) {
+    try {
+        const db = await dbPromise;
+        await db.run('UPDATE domains SET target = ? WHERE domain = ?', [target, domain]);
+    } catch (error) {
+        console.error(`Error updating the target of the domain ${domain}:`, error);
+        throw error;
+    }
+}
+
+// Function to update the type of a domain
+export async function updateDomainType(domain, type) {
+    try {
+        const db = await dbPromise;
+        await db.run('UPDATE domains SET type = ? WHERE domain = ?', [type, domain]);
+    } catch (error) {
+        console.error(`Error updating the type of the domain ${domain}:`, error);
         throw error;
     }
 }

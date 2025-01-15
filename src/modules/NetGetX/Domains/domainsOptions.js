@@ -4,7 +4,7 @@ import chalk from 'chalk';
 import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
-import { registerDomain, deleteDomain } from '../../../sqlite/utils_sqlite3.js';
+import { registerDomain, deleteDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.js';
 
 // Used to log the domain information to the console in the selected domain.
 const logDomainInfo = (domainConfig, domain) => {
@@ -270,6 +270,57 @@ const addSubdomain = async (domain) => {
     return;
 };
 
+const editDomainDetails = async (domain, domainConfig) => {
+    const editOptions = await inquirer.prompt([
+        {
+            type: 'list',
+            name: 'editOption',
+            message: 'Select an option to edit:',
+            choices: [
+                { name: 'Edit Type', value: 'editType' },
+                { name: 'Edit Target', value: 'editTarget' },
+                { name: 'Back to Domains Menu', value: 'back' }
+            ]
+        }
+    ]);
+
+    switch (editOptions.editOption) {
+        case 'editType':
+            const typeAnswer = await inquirer.prompt([
+                {
+                    type: 'list',
+                    name: 'serviceType',
+                    message: 'Select the new type of service for this domain:',
+                    choices: [
+                        { name: 'Serve Static Content', value: 'static' },
+                        { name: 'Forward Port', value: 'server' }
+                    ]
+                }
+            ]);
+            domainConfig.type = typeAnswer.serviceType;
+            await updateDomainType(domain, typeAnswer.serviceType);
+            break;
+
+        case 'editTarget':
+            const targetAnswer = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'target',
+                    message: 'Enter the new target for this domain:',
+                    validate: input => input ? true : 'Target is required.'
+                }
+            ]);
+            domainConfig.target = targetAnswer.target;
+            await updateDomainTarget(domain, targetAnswer.target);
+            break;
+
+        case 'back':
+            return;
+    }
+
+    return domainConfig;
+};
+
 const editOrDeleteDomain = async (domain) => {
     console.clear();
     try {
@@ -282,7 +333,7 @@ const editOrDeleteDomain = async (domain) => {
         }
 
         const options = [
-            //{ name: 'Edit Domain', value: 'editDomain' },
+            { name: 'Edit Domain', value: 'editDomain' },
             { name: 'Delete Domain', value: 'deleteDomain' },
             { name: 'Delete Subdomain', value: 'deleteSubdomain' },
             { name: 'Back to Domains Menu', value: 'back' }
@@ -300,13 +351,9 @@ const editOrDeleteDomain = async (domain) => {
         switch (answer.action) {
             case 'editDomain':
                 console.clear();
-
-
-
-                await inquirer.prompt([{ type: 'input', name: 'continue', message: 'Press Enter to continue...' }]);
-                await storeConfig(domain, nginxConfig);
-                
-                await inquirer.prompt([{ type: 'input', name: 'continue', message: 'Press Enter to continue...' }]);
+                const updatedConfig = await editDomainDetails(domain, domainConfig);
+                xConfig.domains[domain] = updatedConfig;
+                await saveXConfig({ domains: xConfig.domains });
                 console.log(chalk.green(`Domain ${domain} configuration updated successfully.`));
                 return;
 
@@ -331,42 +378,42 @@ const editOrDeleteDomain = async (domain) => {
                 return;
 
             case 'deleteSubdomain':
-                const subdomainAnswer = await inquirer.prompt([
-                    {
-                        type: 'input',
-                        name: 'subdomain',
-                        message: 'Enter the subdomain to delete:',
+                const subDomains = Object.keys(xConfig.domains[domain].subDomains || {});
+                if (subDomains.length === 0) {
+                    console.log(chalk.red('No subdomains available to delete.'));
+                } else {
+                    const subDomainToDelete = await inquirer.prompt([
+                        {
+                            type: 'list',
+                            name: 'subDomain',
+                            message: 'Select a subdomain to delete:',
+                            choices: [...subDomains, { name: 'Back', value: 'back' }]
+                        }
+                    ]);
+
+                    if (subDomainToDelete.subDomain === 'back') {
+                        console.log(chalk.blue('Going back to the previous menu...'));
+                        return;
                     }
-                ]);
 
-                if (!subdomainAnswer.subdomain) {
-                    console.log(chalk.red('Subdomain name cannot be empty.'));
-                    return;
-                }
-
-                if (!xConfig.domains[domain].subDomains[subdomainAnswer.subdomain]) {
-                    console.log(chalk.red(`Subdomain ${subdomainAnswer.subdomain} not found for domain ${domain}.`));
-                    return;
-                }
-
-                const confirmSubdomainDelete = await inquirer.prompt([
-                    {
+                    const confirmDelete = await inquirer.prompt([
+                        {
                         type: 'confirm',
                         name: 'confirm',
-                        message: `Are you sure you want to delete the subdomain ${subdomainAnswer.subdomain} for domain ${domain}?`,
+                        message: `Are you sure you want to delete the subdomain ${subDomainToDelete.subDomain}?`,
                         default: false
+                        }
+                    ]);
+    
+                    if (!confirmDelete.confirm) {
+                        console.log(chalk.blue('Subdomain deletion was cancelled.'));
+                        return;
                     }
-                ]);
-
-                if (!confirmSubdomainDelete.confirm) {
-                    console.log(chalk.blue('Subdomain deletion was cancelled.'));
-                    return;
+                    delete xConfig.domains[domain].subDomains[subDomainToDelete.subDomain];
+                    await deleteDomain(subDomainToDelete.subDomain);
+                    await saveXConfig({ domains: xConfig.domains });
+                    console.log(chalk.green(`Subdomain ${subDomainToDelete.subDomain} deleted successfully.`));
                 }
-
-                delete xConfig.domains[domain].subDomains[subdomainAnswer.subdomain];
-                await deleteDomain(subdomainAnswer.subdomain);
-                await saveXConfig({ domains: xConfig.domains });
-                console.log(chalk.green(`Subdomain ${subdomainAnswer.subdomain} deleted successfully from domain ${domain}.`));
                 return;
 
             case 'back':

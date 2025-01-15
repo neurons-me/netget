@@ -315,9 +315,8 @@ const editDomainDetails = async (domain, domainConfig) => {
             break;
 
         case 'back':
-            return;
+            return domainConfig;
     }
-
     return domainConfig;
 };
 
@@ -334,6 +333,7 @@ const editOrDeleteDomain = async (domain) => {
 
         const options = [
             { name: 'Edit Domain', value: 'editDomain' },
+            { name: 'Edit Subdomain', value: 'editSubdomain' },
             { name: 'Delete Domain', value: 'deleteDomain' },
             { name: 'Delete Subdomain', value: 'deleteSubdomain' },
             { name: 'Back to Domains Menu', value: 'back' }
@@ -355,6 +355,34 @@ const editOrDeleteDomain = async (domain) => {
                 xConfig.domains[domain] = updatedConfig;
                 await saveXConfig({ domains: xConfig.domains });
                 console.log(chalk.green(`Domain ${domain} configuration updated successfully.`));
+                return;
+            
+            case 'editSubdomain':
+                console.clear();
+                const listsubDomains = Object.keys(xConfig.domains[domain].subDomains || {});
+                if (listsubDomains.length === 0) {
+                    console.log(chalk.red('No subdomains available to edit.'));
+                }
+                else {
+                    const subDomainToEdit = await inquirer.prompt([
+                        {
+                            type: 'list',
+                            name: 'subDomain',
+                            message: 'Select a subdomain to edit:',
+                            choices: [...listsubDomains, { name: 'Back', value: 'back' }]
+                        }
+                    ]);
+
+                    if (subDomainToEdit.subDomain === 'back') {
+                        console.log(chalk.blue('Going back to the previous menu...'));
+                        return;
+                    }
+
+                    const updatedSubDomainConfig = await editDomainDetails(subDomainToEdit.subDomain, xConfig.domains[domain].subDomains[subDomainToEdit.subDomain]);
+                    xConfig.domains[domain].subDomains[subDomainToEdit.subDomain] = updatedSubDomainConfig;
+                    await saveXConfig({ domains: xConfig.domains });
+                    console.log(chalk.green(`Subdomain ${subDomainToEdit.subDomain} configuration updated successfully.`));
+                }
                 return;
 
             case 'deleteDomain':

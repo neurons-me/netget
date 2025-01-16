@@ -1,16 +1,16 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import fs from 'fs';
-import { loadOrCreateXConfig, saveXConfig } from '../../config/xConfig.js';
-import checkAndInstallCertbot from './Certbot/checkAndInstallCertbot.js';
+import { loadOrCreateXConfig, saveXConfig } from '../../../config/xConfig.js';
+import checkAndInstallCertbot from '../Certbot/checkAndInstallCertbot.js';
 import { 
     verifySSLCertificate, 
     renewSSLCertificate, 
     obtainSSLCertificates,
     checkCertificates 
-} from './SSLCertificates.js';
-import printCertbotLogs from './Certbot/certbot.js';
-import { storeConfigInDB } from '../../../../sqlite/utils_sqlite3.js';
+} from '../SSLCertificates.js';
+import printCertbotLogs from '../Certbot/certbot.js';
+import { storeConfigInDB } from '../../../../../sqlite/utils_sqlite3.js';
 
 const displayCurrentSSLConfiguration = (domainConfig, domain) => {
     console.log('\nCurrent SSL Configuration:');

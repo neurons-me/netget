@@ -17,8 +17,6 @@ async function loadOrCreateXConfig() {
         if (!fs.existsSync(USER_CONFIG_FILE)) {
             console.log(chalk.yellow('Default xConfig file does not exist. Creating...'));
             const defaultConfig = {
-                ExpressConfigurationProceed: false,
-                ExpressPath: "",
                 mainServerName: "",
                 xMainOutPutPort: 3432,
                 domains: {},               
@@ -29,6 +27,9 @@ async function loadOrCreateXConfig() {
                 devPath: "",
                 devStatic: "",
                 useSudo: false,
+                sslSelfSignedCertPath: "",
+                sslSelfSignedKeyPath: "",
+                sqliteDatabasePath: "",
             };
             fs.writeFileSync(USER_CONFIG_FILE, JSON.stringify(defaultConfig, null, 4));
             return defaultConfig;

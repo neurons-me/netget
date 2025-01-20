@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import chalk from 'chalk';
 import { handlePermission } from '../../../utils/handlePermissions.js'; 
+import inquirer from 'inquirer';
 
 const certDir = '/etc/ssl';
 const privateKeyPath = path.join(certDir, 'private', 'nginx-selfsigned.key');
@@ -39,33 +40,37 @@ const isOpenSSLInstalled = () => {
  * Checks if self-signed certificates already exist.
  * @returns {Promise<boolean>} - Resolves to true if both key and certificate exist, false otherwise.
  */
-const checkSelfSignedCertificates = () => {
-  const certDir = '/etc/ssl';
-  const privateKeyPath = path.join(certDir, 'private', 'nginx-selfsigned.key');
-  const certPath = path.join(certDir, 'certs', 'nginx-selfsigned.crt');
+async function checkSelfSignedCertificates() {
+  try {
+    const keyExists = fs.existsSync(privateKeyPath);
+    const certExists = fs.existsSync(certPath);
 
-  return new Promise((resolve, reject) => {
-    exec(`sudo test -f ${privateKeyPath} && sudo test -f ${certPath}`, (error) => {
-      if (error) {
-        console.log(chalk.red(`Error checking self-signed certificates: ${error.message}`));
-        resolve(false);
-      } else {
-        resolve(true);
-      }
-    });
-  });
-};
+    return keyExists && certExists;
+  } catch (error) {
+    console.log(chalk.red(`Error checking self-signed certificates: ${error.message}`));
+    return false;
+  }
+}
 
 /**
  * Generates a self-signed certificate if it doesn't already exist.
  */
 const generateSelfSignedCert = async () => {
-  if (checkSelfSignedCertificates()) {
-    console.log(chalk.blue('Self-signed certificates already exist.'));
+  const { generateCerts } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'generateCerts',
+      message: `Do you want to generate self-signed certificates in the following paths?\nKey: ${privateKeyPath}\nCert: ${certPath}`,
+      default: false,
+    },
+  ]);
+
+  if (!generateCerts) {
+    console.log(chalk.yellow('Certificate generation aborted by user.'));
     return;
   }
-
-  if (!(await isOpenSSLInstalled())) {
+  const opensslInstalled = await isOpenSSLInstalled();
+  if (!opensslInstalled) {
     console.error(chalk.red('OpenSSL is not installed. Please install OpenSSL and try again.'));
     return;
   }

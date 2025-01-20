@@ -1,22 +1,15 @@
 //i_DefaultNetGetX.js
 import chalk from 'chalk';
-import {
-    loadOrCreateXConfig,
-    saveXConfig
-} from './xConfig.js';
+import { loadOrCreateXConfig, saveXConfig } from './xConfig.js';
 import { initializeState } from '../xState.js';
-import {
-    getLocalIP,
-    getPublicIP
-} from '../../utils/ipUtils.js';
+import { getLocalIP, getPublicIP } from '../../utils/ipUtils.js';
 import { pathExists } from '../../utils/pathUtils.js';
-import {
-    initializeDirectories,
-    getDirectoryPaths
-} from '../../utils/GETDirs.js';
+import { initializeDirectories, getDirectoryPaths } from '../../utils/GETDirs.js';
+import { checkSelfSignedCertificates, generateSelfSignedCert } from '../Domains/SSL/selfSignedCertificates.js';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';
 import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.js';
+import { setNginxConfigFile } from '../OpenResty/setNginxConfigFile.js';
 
 /**
  * Sets default paths for NGINX and other directories if they are not already set.
@@ -44,15 +37,17 @@ export async function i_DefaultNetGetX() {
 
     console.log(`Host: ${chalk.blue(entry)}`);
 
-    // if (!checkSelfSignedCertificates()) {
-    //     console.log(chalk.blue('Self-signed certificates not found, generating new ones.'));
-    //     await generateSelfSignedCert();
-    // } else {
-    //     console.log(chalk.blue('Self-signed certificates already exist.'));
-    //     console.log(' ');
-    // }
+    // Self-signed certificates validation
+    const getSelfSignedCertificates = await checkSelfSignedCertificates();
+    if (!getSelfSignedCertificates) {
+        console.log(chalk.blue('Self-signed certificates not found, generating new ones.'));
+        await generateSelfSignedCert();
+    } else {
+        console.log(chalk.blue('Self-signed certificates already exist.'));
+        console.log(' ');
+    }
 
-    // Verify OpenResty Installation
+    // OpenResty installation validation
     let openRestyInstalled = verifyOpenRestyInstallation();
     if (!openRestyInstalled) {
         console.log(chalk.yellow("OpenResty is not installed. Redirecting to installation options..."));
@@ -65,6 +60,9 @@ export async function i_DefaultNetGetX() {
             console.log(chalk.green("OpenResty installed successfully."));
         }
     }
+
+    // NGINX configuration file validation
+    await setNginxConfigFile();
 
     /*
      ┏┓┏┓┏┳┓

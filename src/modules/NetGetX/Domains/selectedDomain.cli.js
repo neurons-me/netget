@@ -1,8 +1,8 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
-import { editOrDeleteDomain, logDomainInfo, addSubdomain, linkDevelopmentAppProject } from './domainsOptions.js';
-import domainSSLConfiguration from './SSL/ssl.cli.js';
+import { editOrDeleteDomain, logDomainInfo, addSubdomain } from './domainsOptions.js';
+import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
 
 const selectedDomainMenu = async (domain) => {
         try {

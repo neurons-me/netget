@@ -168,7 +168,15 @@ const addNewDomain = async () => {
         }, {});
         xConfig.domains = sortedDomains;
         await saveXConfig({ domains: xConfig.domains });
-        await registerDomain(domain, email, 'letsencrypt', '', '', port, type, '');
+        await registerDomain(
+            domain, 
+            email, 
+            'letsencrypt', 
+            '', 
+            '', 
+            port, 
+            type, 
+            '');
 
         console.log(chalk.green(`Domain ${domain} added successfully.`));
         return;  // Exit the loop after successful addition
@@ -264,7 +272,15 @@ const addSubdomain = async (domain) => {
     await saveXConfig({ domains: xConfig.domains });
 
     // Register the subdomain into the database
-    await registerDomain(subdomain, xConfig.domains[domain].email, 'letsencrypt', xConfig.domains[domain].SSLCertificateSqlitePath, xConfig.domains[domain].SSLCertificateKeySqlitePath, port, serviceTypeAnswer.serviceType, '');
+    await registerDomain(
+        subdomain, 
+        xConfig.domains[domain].email, 
+        'letsencrypt', 
+        xConfig.domains[domain].SSLCertificateSqlitePath, 
+        xConfig.domains[domain].SSLCertificateKeySqlitePath, 
+        port, 
+        serviceTypeAnswer.serviceType, 
+        '');
 
     console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
     return;
@@ -496,6 +512,32 @@ const advanceSettings = async () => {
     }    
 };
 
+const linkDevelopmentAppProject = async (domain) => {
+    const { projectPath } = await inquirer.prompt([
+        {
+            type: 'input',
+            name: 'projectPath',
+            message: 'Enter the path where the project is being developed:',
+        }
+    ]);
+
+    const xConfig = await loadOrCreateXConfig();
+    xConfig.domains[domain].projectPath = projectPath;
+    await saveXConfig(xConfig);
+    await updateDomain(
+        domain,
+        xConfig.domains[domain].email,
+        'letsencrypt',
+        xConfig.domains[domain].SSLCertificateSqlitePath, 
+        xConfig.domains[domain].SSLCertificateKeySqlitePath, 
+        xConfig.domains[domain].target,
+        xConfig.domains[domain].type,
+        projectPath
+    );
+
+    console.log(chalk.green(`Linked development app project at ${projectPath} with domain ${domain}.`));
+};
+
 export {
     displayDomains,
     validateDomain,
@@ -504,6 +546,7 @@ export {
     editOrDeleteDomain,
     logDomainInfo,
     logAllDomainsTable,
+    linkDevelopmentAppProject,
     domainsTable,
     advanceSettings
 };

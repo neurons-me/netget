@@ -19,6 +19,7 @@ const selectedDomainMenu = async (domain) => {
             { name: 'Add Subdomain', value: 'addSubdomain' },
             { name: 'Edit/Delete Domain', value: 'editOrDelete' },
             { name: 'SSL Configuration', value: 'sslConfig' },
+            { name: 'Link Development App Project', value: 'linkDevApp' },
             { name: 'Back to Domains Menu', value: 'back' },
         ];
 
@@ -40,6 +41,9 @@ const selectedDomainMenu = async (domain) => {
                 break;
             case 'sslConfig':
                 await domainSSLConfiguration(domain);
+                break;
+            case 'linkDevApp':
+                await linkDevelopmentAppProject(domain);
                 break;
             case 'back':
                 return;

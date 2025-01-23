@@ -1,6 +1,73 @@
 {
   "source": {
-    "include": ["./src", "./index.js", "./README.md"]
+    "include": [
+      "./README.md",
+      "./src/netget.js",
+
+      "./src/modules/Gets/Gets.js",
+
+      "./src/modules/NetGetX/NetGetX.cli.js",
+      "./src/modules/NetGetX/NetGetX_Settings.cli.js",
+      
+      "./src/modules/NetGetX/config/getConfig.js",
+      "./src/modules/NetGetX/config/i_DefaultNetGetX.js",
+      "./src/modules/NetGetX/config/NginxPaths.js",
+      "./src/modules/NetGetX/config/verifyNginxConfig.js",
+      "./src/modules/NetGetX/config/x_StateAndConfig.js",
+      "./src/modules/NetGetX/config/verifyNginxConfig.js",
+      "./src/modules/NetGetX/config/xConfig.js",
+
+      "./src/modules/NetGetX/Domains/SSL/Certbot/cerbot.js",
+      "./src/modules/NetGetX/Domains/SSL/Certbot/checkAndInstallCertbot.js",
+      "./src/modules/NetGetX/Domains/SSL/letsEncrypt/letsEncrypt.js",
+      "./src/modules/NetGetX/Domains/SSL/selfsigned/certGenerator.js",
+      "./src/modules/NetGetX/Domains/SSL/selfsigned/ssl.cli.js",
+      "./src/modules/NetGetX/Domains/SSL/selfsignedCertificates.js/",
+      "./src/modules/NetGetX/Domains/SSL/SSLCertificates.js",
+      "./src/modules/NetGetX/Domains/domains.cli.js",
+      "./src/modules/NetGetX/Domains/domainsOptions.js",
+      "./src/modules/NetGetX/Domains/handleErrors.js",
+      "./src/modules/NetGetX/Domains/selectedDomain.cli.js",
+      "./src/modules/NetGetX/Domains/viewNginxConfig.js",
+
+      "./src/modules/NetGetX/mainServer/mainserver.cli.js",
+      "./src/modules/NetGetX/mainServer/serverBlockConfigOptions.cli.js",
+      "/src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
+      "/src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
+      "/src/modules/NetGetX/mainServer/utils.js",
+      "/src/modules/NetGetX/mainServer/verifyServerBlock.js",
+      "/src/modules/NetGetX/OpenResty/openRestyInstallationOptions.cli.js",
+      "/src/modules/NetGetX/OpenResty/setNginxConfigFile.js",
+      "/src/modules/NetGetX/OpenResty/verifyOpenRestyInstallation.js",
+
+      "./src/modules/NetGetX/xState.js",
+
+      "./src/modules/PortManagement/portManagement.cli.js",
+
+      "./src/modules/Srvrs/srvrs.cli.js",
+      
+      "./src/modules/utils/GETDirs.js",
+      "./src/modules/utils/execShellCommand.js",
+      "./src/modules/utils/handlePermissionErrorForEnsureDir.js",
+      "./src/modules/utils/handlePermissions.js",
+      "./src/modules/utils/ipUtils.js",
+      "./src/modules/utils/pathUtils.js",
+      "./src/modules/utils/promptForDomainAndEmail.js",
+      
+      "./src/modules/netget_MainMenu.cli.js",
+
+      "./src/modules/scripts/init_dirs.js",
+      "./src/modules/scripts/pathUtils.js",
+      "./src/modules/scripts/postInstall.js",
+
+      "./src/modules/sqlite/getConfig.js",
+      "./src/modules/sqlite/migrateTable.js",
+      "./src/modules/sqlite/utils_sqlite3.js",
+      
+      "./src/netget.cli.js",
+      "./src/netget.js",
+  
+      "./index.js"]
   },
   "opts": {
     "destination": "/mnt/neuroverse/https-neurons/subDomains/docs/public/netget",

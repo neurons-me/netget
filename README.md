@@ -1,116 +1,155 @@
-<img src="https://suign.github.io/assets/imgs/netget.png" alt="netget" width="377px" style="display: block; margin: 0 auto;"/>
+<img src="https://docs.neurons.me/media/netget.png" alt="netget" width="377px" style="display: block; margin: 0 auto;"/>
 
 # NetGet
-> [netget.me](https://netget.me)
 
+> **Rete Adepto – Get it from the Net.**
 
-## Install:
-Install **NetGet** globally using npm:
+> **NetGet** is inspired by the idea of creating the **"right net"** – a network tailored to your needs. It empowers you to **get it from the net** and build efficient, decentralized, and versatile networks.
+
+**NetGet** is a modular **open-source network creation suite** designed to simplify the creation, management, and exposure of networks. It provides flexible tools for building efficient, decentralized, and adaptable systems.
+
+# Table of Contents
+- [NetGet](#netget)
+- [Table of Contents](#table-of-contents)
+- [Getting Started:](#getting-started)
+  - [1. **Global Installation (Device Scope)**](#1-global-installation-device-scope)
+      - [Key Features:](#key-features)
+  - [2. **Local Installation (Project Scope)**](#2-local-installation-project-scope)
+      - [Key Features:](#key-features-1)
+- [Understanding It's Parts](#understanding-its-parts)
+  - [NetGetX](#netgetx)
+      - [Accessing NetGetX via the CLI](#accessing-netgetx-via-the-cli)
+      - [Example Use Case](#example-use-case)
+  - [**Port Management**:](#port-management)
+      - [Accessing Port Management](#accessing-port-management)
+      - [**Available Actions**](#available-actions)
+  - [**Summary**](#summary)
+  - [By Neurons.me](#by-neuronsme)
+      - [Contribution](#contribution)
+      - [License \& Policies](#license--policies)
+
+# Getting Started:
+**NetGet** operates on **two levels** to suit different use cases:
+## 1. **Global Installation (Device Scope)**
+Global installation sets up **NetGet** at the device level, giving you access to its **Command Line Interface (CLI)** for managing network configurations and **exposing the device** to networks.
+
+#### Key Features:
+- **HTTPS Servers**: Create servers that listen on specific IPs and redirect traffic to internal processes.
+- **Port Management**: Simplify port routing and allocations.
+- **SSL Certificate Management**: Automate the handling of secure connections.
+
+**Installation:**
 
 ```bash
 npm install -g netget
 ```
 
-## Start:
-Once installed, start the **NetGet** by simply running the following command in the terminal:
+**Start NetGet Globally:**
+
 ```bash
 netget
 ```
----------------
-# Modules:
-## **NetGetX**
-Serves as a **front face to the public.** Provides an efficient, centralized solution for managing and directing public traffic to the correct internal services.
-Is particularly useful in environments where multiple services or applications must be accessible through a single entry point. 
-<img src="https://suign.github.io/assets/imgs/netgetX.png" alt="netgetX" width="377">
-- **Public Interface**: Serves as the front face to the public by acting as a reverse proxy that redirects all traffic to a specific port.
-- **Optimal NGINX Configuration**: Ensures that NGINX is set up as a robust and efficient channel, directing incoming traffic to the appropriate internal endpoints automatically.
-- **Reverse Proxy Setup**: Ideal for environments where multiple services or applications need to be accessible through a single entry point. This setup simplifies traffic management by centralizing the routing process.
-  **For example:** Rather than having different domain names, server names, and configurations for each website or application, you **set up NetGetX on a specific domain**. Once configured, you **point all your other domains to this NetGetX domain.** This approach eliminates the need to maintain multiple **DNS records**, as they all redirect to the same place. **NetGetX** handles the traffic and routes it to the appropriate internal services based on your configurations.  
-  In summary, **NetGetX** provides an efficient, centralized solution for managing and directing public traffic to the correct internal services, **simplifying domain and server management.**
----
-
-## GateWays:
-A **Gateway** in NetGet is a key component that manages incoming traffic in a more granular level.
-Here are the key points about its functionality:
-<img src="https://suign.github.io/assets/imgs/netgetGateways.png" alt="netgetX" width="377">
-- **Traffic Reception**: Gateways receive traffic through an input port. Typically plugged in after a **NetGetX** to handle all public requests.
-- **Request Management**: The gateway identifies the requester, domain, subdomain, or path of the incoming request.
-- **Route Handling**: Based on predefined routes, the gateway determines how to handle each request.
-- **Redirection**: The gateway can redirect requests to another port where a different server is active.
-- **Request Handling**: Alternatively, it can process the request directly using specified handlers.
-  In essence, a **Gateway** acts as a **traffic manager**, directing and processing incoming requests **based on defined rules and routes.**
-
-----
-
-## **Port Management**:
-"I traced the *cord back to the wall*, *no wonder* it was ever plugged in at all ... ♪ ♪ ♪
-<img src="https://suign.github.io/assets/imgs/port_management.png" alt="netgetX" width="377">
-- **Check Port Activity**: Users can check what processes are running on a specific port.
-- **Kill Processes**: Facilitates the termination of processes running on a selected port by converting port numbers to PIDs.
-  **In summary**, the **Port Management** menu offers comprehensive control over port configurations and process management, streamlining the process of monitoring and managing network traffic and making the right connections easy.
 
 ------
 
-**Local NetGet Setup:** On your local machine, **NetGet** operates within your Node.js environment, managing local traffic and processing requests according to your configured rules. The GateWays doesn't directly face the internet and instead communicates with an external **NetGetX** instance that does or any other service.
+## 2. **Local Installation (Project Scope)**
+At the project level, **NetGet** offers tools and libraries that **integrate processes** into the **NetGet ecosystem**, enabling seamless interactions with the broader network.
 
-# Install as a Node Module Dependency.
+#### Key Features:
+- Install as a project dependency via npm.
+- Import the library into your codebase for direct use.
+- Simplify application connectivity to **NetGet** networks.
+
+**Installation:**
 
 ```bash
 npm install netget
 ```
 
-### GateWay SetUp
+**Usage:**
 
 ```js
-// NETGET
-import NetGet from 'netget';
-import { routes } from './GET/routes.js';
-let netget = new NetGet();
-netget.Gateway({ routes: routes }).listen();
+import netget from 'netget';
 ```
 
-If no port specified the Gateway listens at http://localhost:3432/
-This will set up a gateway that will listen to all traffic in a specific port, detect the domain, host, subdomain and act accordingly.
+# Understanding It's Parts
+**NetGet** is modular, with each component serving a specific purpose. Here's a brief overview:
 
-### Constructor:
-* Initializes a new instance of the Gateway class.
+------
 
-```js
-class Gateway {
-  constructor({   
-   host = process.env.HOST || 'localhost', 
-   port = process.env.NETGET_PORT || 3432, 
-   routes = {},
-   domainsConfigPath = process.env.DOMAINS_CONFIG_PATH || '~/.get/domains.json' 
-  } = {}) {
-   this.host = host;
-   this.port = port;
-   this.routes = routes;
-   this.domainsConfigPath = domainsConfigPath;
-   this.app = express();
-   this.initialize().catch(err => console.error('Initialization error:', err));
-  }
+## NetGetX
+
+<img src="https://docs.neurons.me/media/netgetX-readme.png" alt="netgetX" width="244px" align="right"/>
+
+Simplifies traffic management by acting as a single entry point for all your services.
+
+- **Public Front**: Routes incoming traffic to the right services.
+- **Easy Setup**: Use one domain for **NetGetX** and point other domains and subdomains to it. Let **NetGetX** handle routing.
+- **SSL & Subdomain Management**: Centrally manage certificates, subdomains, and wildcards.
+
+
+#### Accessing NetGetX via the CLI
+To use **NetGetX**, follow these steps:
+
+1. **Start the CLI**
+   Run the **NetGet** global command in your terminal:
+   
+   ```bash
+   netget
+   ```
+   
+2. **Select NetGetX**
+   From the main menu, use the arrow keys to select **NetGetX**.
+
+#### Example Use Case
+Suppose you have the domain `example.com`, and you want to:
+
+1. Route traffic from `https://example.com` to an internal API running on port `5000`.
+2. Add a subdomain like `api.example.com` to point to another service or Static Path.
+3. Automatically manage SSL certificates for both the domain and subdomain.
+
+With **NetGetX**, you can achieve all of this from a single interface, eliminating the need for manual configurations or external tools.
+
+----
+
+<img src="https://docs.neurons.me/media/port_management_Netget.png" alt="netget Port Management" width="377" align="right">
+
+## **Port Management**:
+Port Management is a key feature of **NetGet's global installation**, providing tools to monitor and control ports on your device. It ensures that applications relying on specific ports run smoothly by helping you identify and resolve conflicts or issues with port usage.
+
+#### Accessing Port Management
+You can access Port Management through the **NetGet CLI.**
+
+Run the following command in your terminal:
+```bash
+netget
 ```
 
+ Use the arrow keys to navigate and select **Port Management** from the menu.
 
+#### **Available Actions**
 
-It **detects the host making the request**, the domain and the subdomain. Acting accordingly through the routes given and its handlers.
+- **What's On Port?**
+  This option lets you check which processes are using a specific port. Enter the port number when prompted, and NetGet will display detailed information about the process, such as its ID (PID), name, and status.
+- **Kill Process On Port**
+  This option helps you terminate a process occupying a specific port. This is especially useful when a port is blocked or stuck due to a lingering or misbehaving process.
 
-### Scalable Web Services
-In a microservices architecture, **NetGet can route requests to different services** within your infrastructure, making it an ideal solution for developers looking to scale their applications horizontally. Each service can have its own domain, and **NetGet** will ensure that requests are forwarded to the correct service.
+With **Port Management**, you gain total control over port configurations and network traffic, simplifying monitoring and connections.
 
-### Personal Hosting Solutions
-For personal web hosting, **NetGet** provides an **easy-to-set-up gateway** for routing traffic to various self-hosted applications. 
+----
 
-### Secure Access Control
-Combined with authentication layers, NetGet can control access to various parts of a web infrastructure, ensuring that only authorized users can access specific services.
+## **Summary**
+NetGet works seamlessly at both the **device level**, managing networks and exposing processes globally, and at the **project level**, enabling individual applications to participate in the ecosystem. Whether you need to configure servers or integrate your app with the network, NetGet has you covered.
 
-# 
+Whether you're an individual developer or managing enterprise-level networks, **NetGet** scales to meet your needs.
 
 ## By Neurons.me 
-#### **License & Policies**
+#### Contribution
+If you are interested in collaborating or wish to share your insights, please feel free to reach out or contribute to the project.
+
+#### License & Policies
 - **License**: MIT License (see LICENSE for details).
-- **Privacy Policy**: Respects user privacy; no collection/storage of personal data.
-- **Terms of Usage**: Use responsibly. No guarantees/warranties provided. 
-  [Terms](https://www.neurons.me/terms-of-use) | [Privacy](https://www.neurons.me/privacy-policy)
-  <img src="https://suign.github.io/neurons.me/neurons_logo.png" alt="neurons.me logo" width="123" height="123" style="width123px; height:123px;">
+- **Learn more** at **https://docs.neurons.me**
+  [Terms](https://docs.neurons.me/terms-and-conditions) | [Privacy](https://docs.neurons.me/privacy-policy)
+  
+  <img src="https://docs.neurons.me/neurons.me.webp" alt="neurons.me logo" width="123" height="123">

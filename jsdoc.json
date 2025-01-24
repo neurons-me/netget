@@ -2,9 +2,6 @@
   "source": {
     "include": [
       "./README.md",
-      "./src/netget.js",
-
-      "./src/modules/Gets/Gets.js",
 
       "./src/modules/NetGetX/NetGetX.cli.js",
       "./src/modules/NetGetX/NetGetX_Settings.cli.js",
@@ -17,12 +14,12 @@
       "./src/modules/NetGetX/config/verifyNginxConfig.js",
       "./src/modules/NetGetX/config/xConfig.js",
 
-      "./src/modules/NetGetX/Domains/SSL/Certbot/cerbot.js",
+      "./src/modules/NetGetX/Domains/SSL/Certbot/certbot.js",
       "./src/modules/NetGetX/Domains/SSL/Certbot/checkAndInstallCertbot.js",
       "./src/modules/NetGetX/Domains/SSL/letsEncrypt/letsEncrypt.js",
-      "./src/modules/NetGetX/Domains/SSL/selfsigned/certGenerator.js",
-      "./src/modules/NetGetX/Domains/SSL/selfsigned/ssl.cli.js",
-      "./src/modules/NetGetX/Domains/SSL/selfsignedCertificates.js/",
+      "./src/modules/NetGetX/Domains/SSL/selfSigned/certGenerator.js",
+      "./src/modules/NetGetX/Domains/SSL/selfSigned/ssl.cli.js",
+      "./src/modules/NetGetX/Domains/SSL/selfSignedCertificates.js",
       "./src/modules/NetGetX/Domains/SSL/SSLCertificates.js",
       "./src/modules/NetGetX/Domains/domains.cli.js",
       "./src/modules/NetGetX/Domains/domainsOptions.js",
@@ -30,15 +27,15 @@
       "./src/modules/NetGetX/Domains/selectedDomain.cli.js",
       "./src/modules/NetGetX/Domains/viewNginxConfig.js",
 
-      "./src/modules/NetGetX/mainServer/mainserver.cli.js",
+      "./src/modules/NetGetX/mainServer/mainServer.cli.js",
       "./src/modules/NetGetX/mainServer/serverBlockConfigOptions.cli.js",
-      "/src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
-      "/src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
-      "/src/modules/NetGetX/mainServer/utils.js",
-      "/src/modules/NetGetX/mainServer/verifyServerBlock.js",
-      "/src/modules/NetGetX/OpenResty/openRestyInstallationOptions.cli.js",
-      "/src/modules/NetGetX/OpenResty/setNginxConfigFile.js",
-      "/src/modules/NetGetX/OpenResty/verifyOpenRestyInstallation.js",
+      "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
+      "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
+      "./src/modules/NetGetX/mainServer/utils.js",
+      "./src/modules/NetGetX/mainServer/verifyServerBlock.js",
+      "./src/modules/NetGetX/OpenResty/openRestyInstallationOptions.cli.js",
+      "./src/modules/NetGetX/OpenResty/setNginxConfigFile.js",
+      "./src/modules/NetGetX/OpenResty/verifyOpenRestyInstallation.js",
 
       "./src/modules/NetGetX/xState.js",
 
@@ -55,14 +52,6 @@
       "./src/modules/utils/promptForDomainAndEmail.js",
       
       "./src/modules/netget_MainMenu.cli.js",
-
-      "./src/modules/scripts/init_dirs.js",
-      "./src/modules/scripts/pathUtils.js",
-      "./src/modules/scripts/postInstall.js",
-
-      "./src/modules/sqlite/getConfig.js",
-      "./src/modules/sqlite/migrateTable.js",
-      "./src/modules/sqlite/utils_sqlite3.js",
       
       "./src/netget.cli.js",
       "./src/netget.js",

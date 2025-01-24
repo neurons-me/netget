@@ -18,6 +18,9 @@ It simply moves on without changing anything in the existing directory structure
 
 /**
  * Initializes all necessary directories and checks their permissions.
+ * @category Utils
+ * @subcategory General
+ * @module GETDirs
  */
 function initializeDirectories() {
     Object.values(DIRECTORIES).forEach(dir => {

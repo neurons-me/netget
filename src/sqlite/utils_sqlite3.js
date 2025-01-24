@@ -7,10 +7,10 @@ import fs from 'fs';
 const CONFIG_DIR = path.join('/opt/','.get');
 const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'domains.db');
 
-async function generateID(domain) {
-    return uuidv4(domain);
-}
-
+/**
+ * Function to create the table in the database
+ * @returns {Promise<void>}
+ */
 async function createTable() {
     const db = await open({
         filename: USER_CONFIG_FILE,
@@ -34,6 +34,10 @@ async function createTable() {
     await db.close();
 }
 
+/**
+ * Function to initialize the database
+ * @returns {Promise<sqlite3.Database>}
+ */
 export async function initializeDatabase() {
     await createTable();
     return open({
@@ -44,7 +48,18 @@ export async function initializeDatabase() {
 
 const dbPromise = initializeDatabase();
 
-// Function to add a domain
+/**
+ * Function to add a domain
+ * @param {string} domain - The domain name
+ * @param {string} email - The email associated with the domain
+ * @param {string} sslMode - The SSL mode
+ * @param {string} sslCertificate - The SSL certificate
+ * @param {string} sslCertificateKey - The SSL certificate key
+ * @param {string} target - The target
+ * @param {string} type - The type
+ * @param {string} projectPath - The project path
+ * @returns {Promise<void>}
+ */
 export async function registerDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
@@ -61,7 +76,10 @@ export async function registerDomain(domain, email, sslMode, sslCertificate, ssl
     }
 }
 
-// Function to get all domains
+/**
+ * Function to get all domains
+ * @returns {Promise<Array>}
+ */
 export async function getDomains() {
     try {
         const db = await dbPromise;
@@ -72,7 +90,11 @@ export async function getDomains() {
     }
 }
 
-// Function to get a domain by its name
+/**
+ * Function to get a domain by its name
+ * @param {string} domain - The domain name
+ * @returns {Promise<Object>}
+ */
 export async function getDomainByName(domain) {
     try {
         const db = await dbPromise;
@@ -83,7 +105,18 @@ export async function getDomainByName(domain) {
     } 
 }
 
-// Function to update a domain
+/**
+ * Function to update a domain
+ * @param {string} domain - The domain name
+ * @param {string} email - The email associated with the domain
+ * @param {string} sslMode - The SSL mode
+ * @param {string} sslCertificate - The SSL certificate
+ * @param {string} sslCertificateKey - The SSL certificate key
+ * @param {string} target - The target
+ * @param {string} type - The type
+ * @param {string} projectPath - The project path
+ * @returns {Promise<void>}
+ */
 export async function updateDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     try {
         const db = await dbPromise;
@@ -95,7 +128,12 @@ export async function updateDomain(domain, email, sslMode, sslCertificate, sslCe
     }
 }
 
-// Function to update the target of a domain
+/**
+ * Function to update the target of a domain
+ * @param {string} domain - The domain name
+ * @param {string} target - The new target
+ * @returns {Promise<void>}
+ */
 export async function updateDomainTarget(domain, target) {
     try {
         const db = await dbPromise;
@@ -106,7 +144,12 @@ export async function updateDomainTarget(domain, target) {
     }
 }
 
-// Function to update the type of a domain
+/**
+ * Function to update the type of a domain
+ * @param {string} domain - The domain name
+ * @param {string} type - The new type
+ * @returns {Promise<void>}
+ */
 export async function updateDomainType(domain, type) {
     try {
         const db = await dbPromise;
@@ -117,7 +160,11 @@ export async function updateDomainType(domain, type) {
     }
 }
 
-// Function to delete a domain
+/**
+ * Function to delete a domain
+ * @param {string} domain - The domain name
+ * @returns {Promise<void>}
+ */
 export async function deleteDomain(domain) {
     try {
         const db = await dbPromise;
@@ -128,6 +175,17 @@ export async function deleteDomain(domain) {
     }
 }
 
+/**
+ * Function to store configuration in the database
+ * @param {string} domain - The domain name
+ * @param {string} sslMode - The SSL mode
+ * @param {string} sslCertificate - The SSL certificate
+ * @param {string} sslCertificateKey - The SSL certificate key
+ * @param {string} target - The target
+ * @param {string} type - The type
+ * @param {string} projectPath - The project path
+ * @returns {Promise<void>}
+ */
 export async function storeConfigInDB(domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
@@ -143,6 +201,10 @@ export async function storeConfigInDB(domain, sslMode, sslCertificate, sslCertif
     }
 }
 
+/**
+ * Function to write existing Nginx configurations to the database
+ * @returns {Promise<void>}
+ */
 export async function writeExistingNginxConfigs() {
     const db = await dbPromise;
     try {
@@ -166,6 +228,11 @@ export async function writeExistingNginxConfigs() {
     }
 }
 
+/**
+ * Function to get the configuration of a domain
+ * @param {string} domain - The domain name
+ * @returns {Promise<Object>}
+ */
 function getConfig(domain) {
     return new Promise((resolve, reject) => {
         const db = new sqlite3.Database(USER_CONFIG_FILE);

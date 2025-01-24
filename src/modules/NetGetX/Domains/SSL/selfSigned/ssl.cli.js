@@ -12,6 +12,12 @@ import {
 import printCertbotLogs from '../Certbot/certbot.js';
 import { storeConfigInDB } from '../../../../../sqlite/utils_sqlite3.js';
 
+/**
+ * Display the current SSL Configuration for a domain
+ * @param {Object} domainConfig - The domain configuration object
+ * @param {string} domain - The domain name
+ * @returns {void}
+ */
 const displayCurrentSSLConfiguration = (domainConfig, domain) => {
     console.log('\nCurrent SSL Configuration:');
     console.log(`
@@ -23,6 +29,11 @@ const displayCurrentSSLConfiguration = (domainConfig, domain) => {
 .SSL Verification: ${chalk.green("Good/Bad")}`);
 };
 
+/**
+ * Check if a wildcard certificate exists for a domain
+ * @param {string} domain - The domain name
+ * @returns {string} - The path to the wildcard certificate if it exists
+ */
 const checkWildcardCertificate = (domain) => {
     const rootDomain = domain.split('.').slice(1).join('.');
     const wildcardDomain = `*.${rootDomain}`;
@@ -30,6 +41,11 @@ const checkWildcardCertificate = (domain) => {
     return fs.existsSync(certPath) ? certPath : null;
 };
 
+/**
+ * Domain SSL Configuration Menu
+ * @param {string} domain - The domain name
+ * @returns {void}
+ */
 const domainSSLConfiguration = async (domain) => {
     try {
         // Check and install Certbot before proceeding with SSL Configuration
@@ -82,6 +98,12 @@ const domainSSLConfiguration = async (domain) => {
     }
 };
 
+/**
+ * Issue SSL Certificates for a domain
+ * @param {string} domain - The domain name
+ * @param {Object} domainConfig - The domain configuration object
+ * @returns {void}
+ */   
 const issueCertificateForDomain = async (domain, domainConfig) => {
     const certificatesIssued = await checkCertificates(domain);
 

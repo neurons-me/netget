@@ -5,6 +5,11 @@ import fs from 'fs';
 
 const execPromise = util.promisify(exec);
 
+/**
+ * Generate a self-signed certificate for localhost
+ * @param {string} certPath - Path to save the certificate
+ * @returns {Promise<{certPath: string, keyPath: string}>}
+ */
 const generateSelfSignedCert = async (certPath) => {
     const certDir = path.dirname(certPath);
     const keyPath = path.join(certDir, 'key.pem');

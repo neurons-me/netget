@@ -1,6 +1,5 @@
 //netget/src/modules/utils/GETDirs.js
 import path from 'path';
-import os from 'os';
 import { ensureDirectoryExists } from './pathUtils.js';
 
 const BASE_DIR = path.join('/opt/','.get');
@@ -10,6 +9,8 @@ const DIRECTORIES = {
     devPath: path.join(BASE_DIR, 'dev'),
     devStatic: path.join(BASE_DIR, 'dev', 'static'),
     gatewayPath: path.join(BASE_DIR, 'Gateways'),
+    // Routes directory needs to be created inside app directory
+    routePath: path.join(BASE_DIR, 'Routes'),
 };
 
 /* Safety and Non-Destructive Behavior

@@ -4,8 +4,10 @@ import { initializeDirectories } from './init_dirs.js';  // Adjust the path as n
  * This script is executed after the package is installed.
  * It initializes the default directories for the project.
  * You can customize this script to perform other post-install tasks as needed.
+ * 
+ * @module postInstall
+ * 
  */
-// Function to run on post-install
 function runPostInstall() {
     try {
         console.log('Initializing default .get directories...');

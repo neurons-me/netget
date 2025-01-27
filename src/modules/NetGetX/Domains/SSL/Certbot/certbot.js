@@ -2,6 +2,10 @@ import { exec } from 'child_process';
 import chalk from 'chalk';
 import { handlePermission } from '../../../../utils/handlePermissions.js';
 
+/**
+ * Print the latest Certbot logs.
+ * @returns {Promise<void>}
+ */
 const printCertbotLogs = async () => {
     try {
         const stdout = await execShellCommand('sudo tail -n 50 /var/log/letsencrypt/letsencrypt.log');

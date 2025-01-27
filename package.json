@@ -1,6 +1,6 @@
 {
     "name": "netget",
-    "version": "2.5.7",
+    "version": "2.5.82",
     "description": "Rette Adepto/ Recibido Directamente.",
     "type": "module",
     "main": "index.js",
@@ -8,12 +8,7 @@
         "start": "node index.js",
         "test": "echo \"Error: no test specified\" && exit 1",
         "postinstall": "node ./src/scripts/postInstall.js",
-        "doc": "jsdoc -c jsdoc.json",
-        "gateway:start": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'start')\"",
-        "gateway:stop": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'stop')\"",
-        "gateway:restart": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'restart')\"",
-        "gateway:delete": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'delete')\"",
-        "gateway:status": "node -e \"require('./pm2Manager').manageGateway(process.argv[1], 'status')\""
+        "doc": "jsdoc -c jsdoc.json"
     },
     "bin": {
         "netget": "./src/netget.cli.js",
@@ -43,10 +38,10 @@
         "morgan": "^1.10.0",
         "node-fetch": "^3.3.2",
         "pm2": "^5.3.1",
-        "sudo-prompt": "^9.2.1",
-        "uuid": "^10.0.0",
         "sqlite": "^5.1.1",
-        "sqlite3": "^5.1.7"
+        "sqlite3": "^5.1.7",
+        "sudo-prompt": "^9.2.1",
+        "uuid": "^10.0.0"
     },
     "repository": {
         "type": "git",

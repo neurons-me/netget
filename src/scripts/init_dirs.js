@@ -1,15 +1,13 @@
 // netget/src/scripts/init_dirs.js
 import path from 'path';
-import os from 'os';
-import { ensureDirectoryExists, Path_Exists } from './pathUtils.js';
+import { ensureDirectoryExists, pathExists } from './pathUtils.js';
 
 const BASE_DIR = path.join('/opt/','.get');
 const DIRECTORIES = {
     getPath: BASE_DIR,
     static: path.join(BASE_DIR, 'static'),
     devPath: path.join(BASE_DIR, 'dev'),
-    devStatic: path.join(BASE_DIR, 'dev', 'static'),
-    gatewayPath: path.join(BASE_DIR, 'Gateways'),
+    devStatic: path.join(BASE_DIR, 'dev', 'static')
 };
 
 /* Safety and Non-Destructive Behavior
@@ -20,6 +18,9 @@ It simply moves on without changing anything in the existing directory structure
 
 /**
  * Initializes all necessary directories and checks their permissions.
+ * @category Utils
+ * @subcategory General
+ * @module GETDirs
  */
 function initializeDirectories() {
     Object.values(DIRECTORIES).forEach(dir => {
@@ -38,7 +39,7 @@ function verifyInitialization() {
     Object.values(DIRECTORIES).forEach(dir => {
         try {
             ensureDirectoryExists(dir);
-            initStatus[dir] = Path_Exists(dir);
+            initStatus[dir] = pathExists(dir);
         } catch (error) {
             initStatus[dir] = false;
         }

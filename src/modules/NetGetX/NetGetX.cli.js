@@ -1,19 +1,13 @@
 //netget/src/modules/NetGetX/NetGetX.cli.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import  XBlocksMenu  from './XBlocks/XBlocks.cli.js'; // Import the new addXBlockMenu
 import { i_DefaultNetGetX } from './config/i_DefaultNetGetX.js';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
-import nginxMenu from './NGINX/nginx_menu.cli.js';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.js'; 
-import { getXBlocksList, getXBlocksEnabled } from './XBlocks/XBlocksUtils.js';
 import domainsMenu from './Domains/domains.cli.js';
-import { parseMainServerName } from './mainServer/utils.js';
 
 export default async function NetGetX_CLI(x) {
-    console.clear();
-
-console.log(`
+    console.log(`
      ██╗  ██╗ 
      ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
       ╚███╔╝  .localIP: ${chalk.green(x.localIP)}
@@ -29,9 +23,8 @@ console.log(`
             message: 'Select an action:',
             choices: [
                 '1. Domains and Certificates (Manage domains and SSL certificates)',
-                '2. NGINX Menu (Server utilities)',
-                '3. Settings',
-                '4. Back to Main Menu',
+                '2. Settings',
+                '3. Back to Main Menu',
                 '0. Exit'
             ]
         });
@@ -41,13 +34,10 @@ console.log(`
                 console.clear();
                 await domainsMenu();
                 break;
-            case '2. NGINX Menu (Server utilities)':
-                await nginxMenu();
-                break;
-            case '3. Settings':
+            case '2. Settings':
                 await netGetXSettingsMenu(x);
                 break;
-            case '4. Back to Main Menu':
+            case '3. Back to Main Menu':
                 console.log(chalk.blue('Returning to the main menu...'));
                 await NetGetMainMenu();
                 break;

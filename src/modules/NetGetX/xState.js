@@ -11,7 +11,7 @@ let xState = {};
 export const initializeState = (data) => {
     xState = { ...data };
     console.log(chalk.cyan('X State Initialized.'));
-    //console.log(chalk.cyan(`Configuration attached: ${JSON.stringify(xState, null, 2)}`));
+    // console.log(chalk.cyan(`Configuration attached: ${JSON.stringify(xState, null, 2)}`));
 };
 
 /**

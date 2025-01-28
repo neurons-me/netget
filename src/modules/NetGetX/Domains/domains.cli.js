@@ -3,9 +3,8 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
 import NetGetX_CLI from '../NetGetX.cli.js';
-import selectedDomain from './selectedDomain.cli.js';
+import selectedDomainMenu from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
-import {scanAndLogCertificates} from './SSL/SSLCertificates.js';
 
 /**
  * Displays the Domains Menu.
@@ -67,7 +66,7 @@ const domainsMenu = async () => {
                 process.exit();
             default:
                 const domain = answer.action;
-                await selectedDomain(domain);
+                await selectedDomainMenu(domain);
         }
 
         // After an action, redisplay the menu

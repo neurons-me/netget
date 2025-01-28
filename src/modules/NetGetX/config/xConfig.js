@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import chalk from 'chalk';
 
 const CONFIG_DIR = path.join('/opt/','.get');
@@ -18,25 +17,19 @@ async function loadOrCreateXConfig() {
         if (!fs.existsSync(USER_CONFIG_FILE)) {
             console.log(chalk.yellow('Default xConfig file does not exist. Creating...'));
             const defaultConfig = {
-                nginxConfigurationProceed: false,
-                nginxPath: "",
-                nginxDir: "",
-                nginxExecutable: "",
                 mainServerName: "",
                 xMainOutPutPort: 3432,
                 domains: {},               
                 publicIP: "",
                 localIP: "",
-                XBlocksAvailable: "",
-                XBlocksEnabled: "",
-                nginxDevDir: "",
-                dev_XBlocksAvailable: "",
-                dev_XBlocksEnabled: "",
                 getPath: "",
                 static: "",
                 devPath: "",
                 devStatic: "",
                 useSudo: false,
+                sslSelfSignedCertPath: "",
+                sslSelfSignedKeyPath: "",
+                sqliteDatabasePath: "",
             };
             fs.writeFileSync(USER_CONFIG_FILE, JSON.stringify(defaultConfig, null, 4));
             return defaultConfig;

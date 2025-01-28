@@ -2,65 +2,47 @@
   "source": {
     "include": [
       "./README.md",
-     "./src/netget.js", 
-      "./src/Gateway.js",
-      "./src/modules/AccessPoints/AccessPoints.js",
-      "./src/modules/AccessPoints/_init_access_points.js",
-      "./src/modules/Gateways/Gateway.js",
-      "./src/modules/Gateways/addGateway.cli.js",
-      "./src/modules/Gateways/config/gConfig.js",
-      "./src/modules/Gateways/config/i_DefaultGateway.js",
-      "./src/modules/Gateways/gState.js",
-      "./src/modules/Gateways/gatewayPM2.js",
-      "./src/modules/Gateways/gateways.cli.js",
-      "./src/modules/Gateways/notes.md",
-      "./src/modules/Gateways/startGateway.js",
-      "./src/modules/Gets/Gets.js",
-      "./src/modules/NetGetX/NGINX/checkNginxStatus.js",
-      "./src/modules/NetGetX/NGINX/disableSSLInNginxConfig.js",
-      "./src/modules/NetGetX/NGINX/findNginxConfig.js",
-      "./src/modules/NetGetX/NGINX/installNginx.js",
-      "./src/modules/NetGetX/NGINX/nginxInstallationOptions.cli.js",
-      "./src/modules/NetGetX/NGINX/nginxManager.js",
-      "./src/modules/NetGetX/NGINX/nginxRestart.js",
-      "./src/modules/NetGetX/NGINX/nginx_menu.cli.js",
-      "./src/modules/NetGetX/NGINX/reloadNginx.js",
-      "./src/modules/NetGetX/NGINX/startNginx.js",
-      "./src/modules/NetGetX/NGINX/stopNginx.js",
-      "./src/modules/NetGetX/NGINX/uninstallNGINX.sh",
-      "./src/modules/NetGetX/NGINX/verifyNginxInstallation.js",
-      "./src/modules/NetGetX/NGINX/viewNginxLogs.js",
+
       "./src/modules/NetGetX/NetGetX.cli.js",
-      "./src/modules/NetGetX/SSL/Certbot/checkAndInstallCertbot.js",
-      "./src/modules/NetGetX/SSL/Certbot/obtainSSLCertificates.js",
-      "./src/modules/NetGetX/SSL/generateSelfSignedCerts.js",
-      "./src/modules/NetGetX/SSL/setSSLCertificates.js",
-      "./src/modules/NetGetX/SSL/sslUtils.js",
-      "./src/modules/NetGetX/XBlocks/XBlocks.json",
-      "./src/modules/NetGetX/XBlocks/addXBlock.js",
-      "./src/modules/NetGetX/XBlocks/handleAddNewXBlock.js",
-      "./src/modules/NetGetX/XBlocks/showXBlocks.js",
-      "./src/modules/NetGetX/config/NginxPaths.js",
-      "./src/modules/NetGetX/config/dev/XBlocksConfigOptions_dev.cli.js",
-      "./src/modules/NetGetX/config/dev/defaultServerBlock_dev.js",
-      "./src/modules/NetGetX/config/dev/setDefaultServerBlock_dev.js",
-      "./src/modules/NetGetX/config/dev/verify_Default_XBlock_dev.js",
+      "./src/modules/NetGetX/NetGetX_Settings.cli.js",
+      
       "./src/modules/NetGetX/config/getConfig.js",
       "./src/modules/NetGetX/config/i_DefaultNetGetX.js",
-      "./src/modules/NetGetX/config/serverBlockConfigOptions.cli.js",
-      "./src/modules/NetGetX/config/setDefaultServerBlock.js",
+      "./src/modules/NetGetX/config/NginxPaths.js",
       "./src/modules/NetGetX/config/verifyNginxConfig.js",
-      "./src/modules/NetGetX/config/verifyServerBlock.js",
-      "./src/modules/NetGetX/config/xConfig.js",
-      "./src/modules/NetGetX/config/xDefaultServerBlock.js",
       "./src/modules/NetGetX/config/x_StateAndConfig.js",
-      "./src/modules/NetGetX/netGetXOptions.js",
-      "./src/modules/NetGetX/notes.md",
-      "./src/modules/NetGetX/portUtils.js",
+      "./src/modules/NetGetX/config/verifyNginxConfig.js",
+      "./src/modules/NetGetX/config/xConfig.js",
+
+      "./src/modules/NetGetX/Domains/SSL/Certbot/certbot.js",
+      "./src/modules/NetGetX/Domains/SSL/Certbot/checkAndInstallCertbot.js",
+      "./src/modules/NetGetX/Domains/SSL/letsEncrypt/letsEncrypt.js",
+      "./src/modules/NetGetX/Domains/SSL/selfSigned/certGenerator.js",
+      "./src/modules/NetGetX/Domains/SSL/selfSigned/ssl.cli.js",
+      "./src/modules/NetGetX/Domains/SSL/selfSignedCertificates.js",
+      "./src/modules/NetGetX/Domains/SSL/SSLCertificates.js",
+      "./src/modules/NetGetX/Domains/domains.cli.js",
+      "./src/modules/NetGetX/Domains/domainsOptions.js",
+      "./src/modules/NetGetX/Domains/handleErrors.js",
+      "./src/modules/NetGetX/Domains/selectedDomain.cli.js",
+      "./src/modules/NetGetX/Domains/viewNginxConfig.js",
+
+      "./src/modules/NetGetX/mainServer/mainServer.cli.js",
+      "./src/modules/NetGetX/mainServer/serverBlockConfigOptions.cli.js",
+      "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
+      "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
+      "./src/modules/NetGetX/mainServer/utils.js",
+      "./src/modules/NetGetX/mainServer/verifyServerBlock.js",
+      "./src/modules/NetGetX/OpenResty/openRestyInstallationOptions.cli.js",
+      "./src/modules/NetGetX/OpenResty/setNginxConfigFile.js",
+      "./src/modules/NetGetX/OpenResty/verifyOpenRestyInstallation.js",
+
       "./src/modules/NetGetX/xState.js",
 
       "./src/modules/PortManagement/portManagement.cli.js",
-      "./src/modules/netget_MainMenu.cli.js",
+
+      "./src/modules/Srvrs/srvrs.cli.js",
+      
       "./src/modules/utils/GETDirs.js",
       "./src/modules/utils/execShellCommand.js",
       "./src/modules/utils/handlePermissionErrorForEnsureDir.js",
@@ -68,19 +50,17 @@
       "./src/modules/utils/ipUtils.js",
       "./src/modules/utils/pathUtils.js",
       "./src/modules/utils/promptForDomainAndEmail.js",
-
+      
+      "./src/modules/netget_MainMenu.cli.js",
+      
       "./src/netget.cli.js",
       "./src/netget.js",
-      "./src/routes/defaultHandlers.js",
-      "./src/routes/defaultRoutes.js",
-      "./src/routes/routes.js",
   
-      "./index.js", 
-       "./tests/"]
+      "./index.js"]
   },
   "opts": {
-    "destination": "./docs",
-    "template": "../../../../../../Sandbox/dev_tools/assets/better-docs",
+    "destination": "/mnt/neuroverse/https-neurons/subDomains/docs/public/netget",
+    "template": "/mnt/neuroverse/suign.github.io/Sandbox/better-docs/", 
     "readme": "./README.md"
   },
   "templates": {
@@ -105,29 +85,21 @@
       "navLinks": [
         {
           "label": "All.This",
-          "href": "https://suign.github.io/all.this/"
-      },
-      {
-        "label": "@Source",
-        "href": "https://suign.github.io/"
-       },
-          {
-              "label": "Github",
-              "href": "https://github.com/suiGn/netget"
-          },
-          {
-              "label": "netget.me",
-              "href": "https://netget.me"
-          },
-          {
-            "label": "What is all.this?",
-              "href": "https://www.neurons.me/all-this"
-          }
+          "href": "https://docs.neurons.me/all.this/"
+        },
+        {
+          "label": "Neurons.me",
+          "href": "https://neurons.me"
+        },
+        {
+          "label": "Github",
+          "href": "https://github.com/neurons-me/all.this"
+        }
       ]
         }
   },
   "plugins": [
     "plugins/markdown",
-    "../../../../../../Sandbox/dev_tools/assets/better-docs/category.js"
+    "/mnt/neuroverse/suign.github.io/Sandbox/better-docs/category.js"
   ]
 }

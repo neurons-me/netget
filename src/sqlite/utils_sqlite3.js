@@ -7,10 +7,10 @@ import fs from 'fs';
 const CONFIG_DIR = path.join('/opt/','.get');
 const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'domains.db');
 
-async function generateID(domain) {
-    return uuidv4(domain);
-}
-
+/**
+ * Function to create the table in the database
+ * @returns {Promise<void>}
+ */
 async function createTable() {
     const db = await open({
         filename: USER_CONFIG_FILE,
@@ -24,15 +24,20 @@ async function createTable() {
             sslMode TEXT,
             sslCertificate TEXT,
             sslCertificateKey TEXT,
-            nginxConfig TEXT,
-            port TEXT,
-            type TEXT
+            target TEXT,
+            type TEXT,
+            projectPath TEXT,
+            rootDomain TEXT
         )
     `);
 
     await db.close();
 }
 
+/**
+ * Function to initialize the database
+ * @returns {Promise<sqlite3.Database>}
+ */
 export async function initializeDatabase() {
     await createTable();
     return open({
@@ -43,8 +48,19 @@ export async function initializeDatabase() {
 
 const dbPromise = initializeDatabase();
 
-// Function to add a domain
-export async function addDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type) {
+/**
+ * Function to add a domain
+ * @param {string} domain - The domain name
+ * @param {string} email - The email associated with the domain
+ * @param {string} sslMode - The SSL mode
+ * @param {string} sslCertificate - The SSL certificate
+ * @param {string} sslCertificateKey - The SSL certificate key
+ * @param {string} target - The target
+ * @param {string} type - The type
+ * @param {string} projectPath - The project path
+ * @returns {Promise<void>}
+ */
+export async function registerDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
@@ -52,15 +68,18 @@ export async function addDomain(domain, email, sslMode, sslCertificate, sslCerti
             throw new Error(`The domain ${domain} already exists.`);
         }
         await db.run(
-            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [domain, email, sslMode, sslCertificate, sslCertificateKey, nginxConfig, port, type]);
-    }catch (error) {
+            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath]);
+    } catch (error) {
         console.error(`Error adding domain ${domain}:`, error);
         throw error;
     }
 }
 
-// Function to get all domains
+/**
+ * Function to get all domains
+ * @returns {Promise<Array>}
+ */
 export async function getDomains() {
     try {
         const db = await dbPromise;
@@ -71,7 +90,11 @@ export async function getDomains() {
     }
 }
 
-// Function to get a domain by its name
+/**
+ * Function to get a domain by its name
+ * @param {string} domain - The domain name
+ * @returns {Promise<Object>}
+ */
 export async function getDomainByName(domain) {
     try {
         const db = await dbPromise;
@@ -82,18 +105,66 @@ export async function getDomainByName(domain) {
     } 
 }
 
-// Function to update the redirection of a domain
-export async function updateDomain(domain, port) {
+/**
+ * Function to update a domain
+ * @param {string} domain - The domain name
+ * @param {string} email - The email associated with the domain
+ * @param {string} sslMode - The SSL mode
+ * @param {string} sslCertificate - The SSL certificate
+ * @param {string} sslCertificateKey - The SSL certificate key
+ * @param {string} target - The target
+ * @param {string} type - The type
+ * @param {string} projectPath - The project path
+ * @returns {Promise<void>}
+ */
+export async function updateDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     try {
         const db = await dbPromise;
-        await db.run('UPDATE domains SET proxy_redirect = ? WHERE domain = ?', [port, domain]);
-    } catch (error) {
+        await db.run('UPDATE domains SET email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ? WHERE domain = ?', [email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domain]);
+    }
+    catch (error) {
         console.error(`Error updating the domain ${domain}:`, error);
         throw error;
     }
 }
 
-// Function to delete a domain
+/**
+ * Function to update the target of a domain
+ * @param {string} domain - The domain name
+ * @param {string} target - The new target
+ * @returns {Promise<void>}
+ */
+export async function updateDomainTarget(domain, target) {
+    try {
+        const db = await dbPromise;
+        await db.run('UPDATE domains SET target = ? WHERE domain = ?', [target, domain]);
+    } catch (error) {
+        console.error(`Error updating the target of the domain ${domain}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Function to update the type of a domain
+ * @param {string} domain - The domain name
+ * @param {string} type - The new type
+ * @returns {Promise<void>}
+ */
+export async function updateDomainType(domain, type) {
+    try {
+        const db = await dbPromise;
+        await db.run('UPDATE domains SET type = ? WHERE domain = ?', [type, domain]);
+    } catch (error) {
+        console.error(`Error updating the type of the domain ${domain}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Function to delete a domain
+ * @param {string} domain - The domain name
+ * @returns {Promise<void>}
+ */
 export async function deleteDomain(domain) {
     try {
         const db = await dbPromise;
@@ -104,14 +175,25 @@ export async function deleteDomain(domain) {
     }
 }
 
-export async function storeConfig(domain, nginxConfig) {
+/**
+ * Function to store configuration in the database
+ * @param {string} domain - The domain name
+ * @param {string} sslMode - The SSL mode
+ * @param {string} sslCertificate - The SSL certificate
+ * @param {string} sslCertificateKey - The SSL certificate key
+ * @param {string} target - The target
+ * @param {string} type - The type
+ * @param {string} projectPath - The project path
+ * @returns {Promise<void>}
+ */
+export async function storeConfigInDB(domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
         if (existingDomain) {
-            await db.run('UPDATE domains SET nginxConfig = ? WHERE domain = ?', [nginxConfig, domain]);
+            await db.run('UPDATE domains SET sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ? WHERE domain = ?', [sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domain]);
         } else {
-            await db.run('INSERT INTO domains (domain, nginxConfig) VALUES (?, ?)', [domain, nginxConfig]);
+            await db.run('INSERT INTO domains (domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) VALUES (?, ?, ?, ?, ?, ?, ?)', [domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath]);
         }
     } catch (error) {
         console.error(`Error storing config for domain ${domain}:`, error);
@@ -119,6 +201,10 @@ export async function storeConfig(domain, nginxConfig) {
     }
 }
 
+/**
+ * Function to write existing Nginx configurations to the database
+ * @returns {Promise<void>}
+ */
 export async function writeExistingNginxConfigs() {
     const db = await dbPromise;
     try {
@@ -142,24 +228,11 @@ export async function writeExistingNginxConfigs() {
     }
 }
 
-async function generateNginxConfig() {
-    const db = await dbPromise;
-    try {
-        const configs = await db.all('SELECT * FROM nginx_config');
-
-        let nginxConfig = '';
-        configs.forEach(config => {
-            nginxConfig += config.config + '\n';
-        });
-
-        fs.writeFileSync('/etc/nginx/conf.d/custom.conf', nginxConfig);
-    } catch (error) {
-        console.error('Error generating nginx config:', error);
-        throw error;
-    }
-}
-
-
+/**
+ * Function to get the configuration of a domain
+ * @param {string} domain - The domain name
+ * @returns {Promise<Object>}
+ */
 function getConfig(domain) {
     return new Promise((resolve, reject) => {
         const db = new sqlite3.Database(USER_CONFIG_FILE);
@@ -172,52 +245,5 @@ function getConfig(domain) {
         });
     });
 }
-
-// Function to migrate the table into a new schema
-async function migrateTable() {
-    const db = await open({
-        filename: USER_CONFIG_FILE,
-        driver: sqlite3.Database
-    });
-
-    // Start a transaction
-    await db.exec('BEGIN TRANSACTION');
-
-    // Create a new table without the column to be removed
-    await db.exec(`
-        CREATE TABLE domains_new (
-            domain TEXT PRIMARY KEY,
-            email TEXT,
-            sslMode TEXT,
-            sslCertificate TEXT,
-            sslCertificateKey TEXT,
-            nginxConfig TEXT,
-            port TEXT,
-            type TEXT
-        )
-    `);
-
-    // Copy data from the old table to the new table
-    await db.exec(`
-        INSERT INTO domains_new (domain, email, sslMode, sslCertificate, nginxConfig, port, type)
-        SELECT domain, email, sslMode, sslCertificate, nginxConfig, port, type
-        FROM domains
-    `);
-
-    // Drop the old table
-    await db.exec('DROP TABLE domains');
-
-    // Rename the new table to the original table name
-    await db.exec('ALTER TABLE domains_new RENAME TO domains');
-
-    // Commit the transaction
-    await db.exec('COMMIT');
-
-    await db.close();
-}
-
-// migrateTable().catch(err => {
-//     console.error(err);
-// });
 
 export default { getConfig };

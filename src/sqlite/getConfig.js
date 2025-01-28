@@ -1,5 +1,9 @@
 const getConfig = require('./sqlite/utils_sqlite3.js');
 
+/**
+ * Handles the incoming request and sets the appropriate variables based on the configuration.
+ * @param {Object} r - The request object.
+ */
 function handleRequest(r) {
     getConfig(r.headersIn.host).then(config => {
         if (config) {
@@ -19,8 +23,10 @@ function handleRequest(r) {
     });
 }
 
-
-
+/**
+ * Retrieves the SSL certificate for the given request.
+ * @param {Object} r - The request object.
+ */
 function getSSLCertificate(r) {
     getConfig(r.headersIn.host).then(config => {
         if (config && config.sslCertificate) {
@@ -33,7 +39,10 @@ function getSSLCertificate(r) {
     });
 }
 
-
+/**
+ * Retrieves the SSL certificate key for the given request.
+ * @param {Object} r - The request object.
+ */
 function getSSLCertificateKey(r) {
     getConfig(r.headersIn.host).then(config => {
         if (config && config.sslCertificateKey) {
@@ -48,6 +57,10 @@ function getSSLCertificateKey(r) {
 
 getSSLCertificateKey(cleaker.me);
 
+/**
+ * Retrieves the server name for the given request.
+ * @param {Object} r - The request object.
+ */
 function getServerName(r) {
     getConfig(r.headersIn.host).then(config => {
         if (config) {

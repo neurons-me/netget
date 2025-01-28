@@ -3,12 +3,8 @@ import chalk from 'chalk';
 import { handlePermission } from '../../../../utils/handlePermissions.js';
 
 /**
- * Prints the latest Certbot logs to the console.
- * If there is a permission error, it handles the permission issue by providing manual instructions.
- * 
- * @async
- * @function printCertbotLogs
- * @throws Will throw an error if unable to retrieve Certbot logs for reasons other than permission issues.
+ * Print the latest Certbot logs.
+ * @returns {Promise<void>}
  */
 const printCertbotLogs = async () => {
     try {

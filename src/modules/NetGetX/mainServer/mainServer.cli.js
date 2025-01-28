@@ -1,9 +1,8 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { parseMainServerName, changeServerName } from './utils.js';
-import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
+import { changeServerName } from './utils.js';
+import { loadOrCreateXConfig } from '../config/xConfig.js';
 import { getXBlocksList } from '../XBlocks/XBlocksUtils.js';
-import { handlePermission } from '../../utils/handlePermissions.js';
 import domainsMenu from '../Domains/domains.cli.js';
 
 

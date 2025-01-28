@@ -13,15 +13,9 @@ import { setNginxConfigFile } from '../OpenResty/setNginxConfigFile.js';
 
 /**
  * Sets default paths for NGINX and other directories if they are not already set.
+ * @module NetGetX
+ * @submodule Config
  * @returns {Promise<Object>} The updated user configuration object.
- * @example
- * i_DefaultNetGetX(); 
- * Returns the sate of the configuration object set in xConfig.js to x.
- * x = {
- *    getPath: '/var/www/html'...
- * @category NetGetX
- * @subcategory Config
- * @module i_DefaultNetGetX
  */
 export async function i_DefaultNetGetX() {
     initializeDirectories(); // Initialize all necessary directories

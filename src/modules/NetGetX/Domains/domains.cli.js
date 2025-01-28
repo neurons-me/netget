@@ -6,6 +6,12 @@ import NetGetX_CLI from '../NetGetX.cli.js';
 import selectedDomainMenu from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
 
+/**
+ * Displays the Domains Menu.
+ * @category NetGetX
+ * @subcategory Domains
+ * @module domainsMenu
+ */
 const domainsMenu = async () => {
     try {
         console.clear();

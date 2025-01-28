@@ -22,8 +22,7 @@ import { setNginxConfigFile } from '../OpenResty/setNginxConfigFile.js';
  * @category NetGetX
  * @subcategory Config
  * @module i_DefaultNetGetX
- * */
-
+ */
 export async function i_DefaultNetGetX() {
     initializeDirectories(); // Initialize all necessary directories
     let DEFAULT_DIRECTORIES = getDirectoryPaths(); // Get paths to .get default directories

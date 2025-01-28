@@ -21,6 +21,14 @@ const printCertbotLogs = async () => {
     }
 };
 
+/**
+ * Executes a shell command and returns the output as a promise.
+ * 
+ * @function execShellCommand
+ * @param {string} cmd - The shell command to execute.
+ * @returns {Promise<string>} - A promise that resolves with the command's stdout or stderr.
+ * @throws Will throw an error if the command execution fails.
+ */
 const execShellCommand = (cmd) => {
     return new Promise((resolve, reject) => {
         exec(cmd, (error, stdout, stderr) => {

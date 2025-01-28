@@ -6,7 +6,14 @@ import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
 import { registerDomain, deleteDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.js';
 
-// Used to log the domain information to the console in the selected domain.
+/**
+ * Logs the domain information to the console.
+ * @param {Object} domainConfig - The domain configuration object.
+ * @param {string} domain - The domain name.
+ * @category NetGetX
+ * @subcategory Domains
+ * @module logDomainInfo
+ */ 
 const logDomainInfo = (domainConfig, domain) => {
     if (domainConfig.subDomains && Object.keys(domainConfig.subDomains).length > 0) {
         console.log(chalk.blue('\nDomain Information:'));
@@ -21,6 +28,14 @@ const logDomainInfo = (domainConfig, domain) => {
     }
 };
 
+/**
+ * Logs the domain information to the console for all domains in the domains object.
+ * @param {Array} domains - The domains array from xConfig.
+ * @category NetGetX
+ * @subcategory Domains
+ * @module displayDomains
+ * @param {Array} domains - The domains array from xConfig.
+ */ 
 const displayDomains = (domains) => {
     console.log('\nConfigured Domains:');
     domains.forEach(domain => console.log(`- ${domain}`));
@@ -29,6 +44,9 @@ const displayDomains = (domains) => {
 /**
  * Logs the domain information to the console for all domains in the domains object.
  * @param {Object} domainsConfig - The domains configuration object from xConfig.
+ * @category NetGetX
+ * @subcategory Domains
+ * @module logAllDomainsTable
  */
 const logAllDomainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
@@ -39,8 +57,14 @@ const logAllDomainsTable = (domainsConfig) => {
     console.table(domainTable);
 };
 
-// TODO //
-// This one is displayed in the domains MainMenu, need to be reconfigurated
+/**
+ * Logs the domain information to the console for all domains in the domains object.
+ * @param {Object} domainsConfig - The domains configuration object from xConfig.
+ * @category NetGetX
+ * @subcategory Domains
+ * @module domainsTable
+ * @param {Object} domainsConfig - The domains configuration object from xConfig.
+ */ 
 const domainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
     const domainTable = Object.keys(domainsConfig).map(domain => ({
@@ -57,6 +81,14 @@ const validateDomain = (domain) => {
     return domainRegex.test(domain) ? true : 'Enter a valid domain (e.g., example.com or sub.example.com)';
 };
 
+
+/**
+ * Adds a new domain to the xConfig object.
+ * @returns {Promise<void>}
+ * @category NetGetX
+ * @subcategory Domains
+ * @module addNewDomain
+ */
 const addNewDomain = async () => {
     while (true) {
         const serviceTypeAnswer = await inquirer.prompt([
@@ -183,6 +215,14 @@ const addNewDomain = async () => {
     }
 };
 
+/**
+ * Adds a subdomain to the specified domain.
+ * @param {string} domain - The domain to add the subdomain to.
+ * @returns {Promise<void>} 
+ * @category NetGetX
+ * @subcategory Domains
+ * @module addSubdomain
+ */
 const addSubdomain = async (domain) => {
     const { subdomain } = await inquirer.prompt([
         {
@@ -348,6 +388,14 @@ const editDomainDetails = async (domain, domainConfig) => {
     return domainConfig;
 };
 
+/**
+ * Edits or deletes a domain from the xConfig object.
+ * @param {string} domain - The domain to edit or delete.
+ * @returns {Promise<void>}
+ * @category NetGetX
+ * @subcategory Domains
+ * @module editOrDeleteDomain
+ */ 
 const editOrDeleteDomain = async (domain) => {
     console.clear();
     try {
@@ -484,6 +532,13 @@ const editOrDeleteDomain = async (domain) => {
     }
 };
 
+/**
+ * Displays the advance settings for the domain.
+ * @returns {Promise<void>} 
+ * @category NetGetX
+ * @subcategory Domains
+ * @module advanceSettings
+ */
 const advanceSettings = async () => {
     try{
         const xConfig = await loadOrCreateXConfig();

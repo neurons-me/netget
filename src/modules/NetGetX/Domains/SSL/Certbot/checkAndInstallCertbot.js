@@ -22,6 +22,13 @@ const checkAndInstallCertbot = () => {
     });
 };
 
+/**
+ * Install Certbot.
+ * @category NetGetX
+ * @subcategory SSL
+ * @subcategory Certbot
+ * @returns {Promise<boolean>} Promise resolving to true if Certbot is installed successfully, false otherwise.
+ */
 const installCertbot = () => {
     return new Promise((resolve, reject) => {
         exec('sudo apt-get install -y certbot', (error, stdout, stderr) => {
@@ -36,6 +43,12 @@ const installCertbot = () => {
     });
 };
 
+/**
+ * Check if Certbot NGINX plugin is installed, and install it if necessary.
+ * @returns {Promise<boolean>} Promise resolving to true if Certbot NGINX plugin is installed, false otherwise.
+ * @category NetGetX
+ * @subcategory SSL
+ */
 const checkCertbotNginxPlugin = () => {
     return new Promise((resolve, reject) => {
         exec('certbot plugins', (error, stdout, stderr) => {
@@ -50,6 +63,13 @@ const checkCertbotNginxPlugin = () => {
     });
 };
 
+/**
+ * Install Certbot NGINX plugin.
+ * @category NetGetX
+ * @subcategory SSL
+ * @subcategory Certbot
+ * @returns {Promise<boolean>} Promise resolving to true if Certbot NGINX plugin is installed successfully, false otherwise.
+ */
 const installCertbotNginxPlugin = () => {
     return new Promise((resolve, reject) => {
         exec('sudo apt-get install -y python3-certbot-nginx', (error, stdout, stderr) => {

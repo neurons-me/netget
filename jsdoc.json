@@ -9,9 +9,6 @@
       "./src/modules/NetGetX/config/getConfig.js",
       "./src/modules/NetGetX/config/i_DefaultNetGetX.js",
       "./src/modules/NetGetX/config/NginxPaths.js",
-      "./src/modules/NetGetX/config/verifyNginxConfig.js",
-      "./src/modules/NetGetX/config/x_StateAndConfig.js",
-      "./src/modules/NetGetX/config/verifyNginxConfig.js",
       "./src/modules/NetGetX/config/xConfig.js",
 
       "./src/modules/NetGetX/Domains/SSL/Certbot/certbot.js",
@@ -29,7 +26,6 @@
 
       "./src/modules/NetGetX/mainServer/mainServer.cli.js",
       "./src/modules/NetGetX/mainServer/serverBlockConfigOptions.cli.js",
-      "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
       "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
       "./src/modules/NetGetX/mainServer/utils.js",
       "./src/modules/NetGetX/mainServer/verifyServerBlock.js",
@@ -60,7 +56,7 @@
   },
   "opts": {
     "destination": "/mnt/neuroverse/https-neurons/subDomains/docs/public/netget",
-    "template": "/mnt/neuroverse/suign.github.io/Sandbox/better-docs/", 
+    "template": "/mnt/neuroverse/Sandbox/better-docs/", 
     "readme": "./README.md"
   },
   "templates": {
@@ -97,9 +93,5 @@
         }
       ]
         }
-  },
-  "plugins": [
-    "plugins/markdown",
-    "/mnt/neuroverse/suign.github.io/Sandbox/better-docs/category.js"
-  ]
+  }
 }

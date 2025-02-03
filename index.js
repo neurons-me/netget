@@ -1,8 +1,4 @@
-/**
- * Entry point of netGet node module.
- * default exports NetGet
- * @module index
- */
+
 
 import NetGet from './src/netget.js';
 import { verifyInitialization } from './src/scripts/init_dirs.js';

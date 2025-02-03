@@ -7,6 +7,7 @@ const execPromise = util.promisify(exec);
 
 /**
  * Generate a self-signed certificate for localhost
+ * @memberof module:NetGetX.SSL
  * @param {string} certPath - Path to save the certificate
  * @returns {Promise<{certPath: string, keyPath: string}>}
  */

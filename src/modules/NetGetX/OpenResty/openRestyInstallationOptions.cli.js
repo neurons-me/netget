@@ -4,6 +4,7 @@ import NetGetX_CLI from '../NetGetX.cli.js';
 
 /**
  * Provides options to install OpenResty.
+ * @memberof module:NetGetX.OpenResty
  */
 export default async function openRestyInstallationOptions() {
     const answers = await inquirer.prompt([

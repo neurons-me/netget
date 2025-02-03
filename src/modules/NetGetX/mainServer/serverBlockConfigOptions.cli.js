@@ -4,11 +4,9 @@ import chalk from 'chalk';
 import setDefaultServerBlock from './setDefaultServerBlock.js';
 /**
  * Prompts the user for the server block configuration options.
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {object} xConfig The user configuration object.
  * @returns {Promise<boolean>} True if the configuration was successfully restored or the user wants to proceed with the current configuration.
- * @category NetGetX
- * @subcategory Config
- * @module serverBlockConfigOptions
 */
 
 export const serverBlockConfigOptions = async (xConfig) => {

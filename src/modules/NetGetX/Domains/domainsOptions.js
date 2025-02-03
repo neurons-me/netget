@@ -8,11 +8,9 @@ import { registerDomain, deleteDomain, updateDomainTarget, updateDomainType } fr
 
 /**
  * Logs the domain information to the console.
+ * @memberof module:NetGetX.Domains
  * @param {Object} domainConfig - The domain configuration object.
  * @param {string} domain - The domain name.
- * @category NetGetX
- * @subcategory Domains
- * @module logDomainInfo
  */ 
 const logDomainInfo = (domainConfig, domain) => {
     if (domainConfig.subDomains && Object.keys(domainConfig.subDomains).length > 0) {
@@ -30,10 +28,7 @@ const logDomainInfo = (domainConfig, domain) => {
 
 /**
  * Logs the domain information to the console for all domains in the domains object.
- * @param {Array} domains - The domains array from xConfig.
- * @category NetGetX
- * @subcategory Domains
- * @module displayDomains
+ * @memberof module:NetGetX.Domains
  * @param {Array} domains - The domains array from xConfig.
  */ 
 const displayDomains = (domains) => {
@@ -43,10 +38,8 @@ const displayDomains = (domains) => {
 
 /**
  * Logs the domain information to the console for all domains in the domains object.
+ * @memberof module:NetGetX.Domains
  * @param {Object} domainsConfig - The domains configuration object from xConfig.
- * @category NetGetX
- * @subcategory Domains
- * @module logAllDomainsTable
  */
 const logAllDomainsTable = (domainsConfig) => {
     console.log(chalk.blue('\nDomains Information:'));
@@ -59,10 +52,7 @@ const logAllDomainsTable = (domainsConfig) => {
 
 /**
  * Logs the domain information to the console for all domains in the domains object.
- * @param {Object} domainsConfig - The domains configuration object from xConfig.
- * @category NetGetX
- * @subcategory Domains
- * @module domainsTable
+ * @memberof module:NetGetX.Domains
  * @param {Object} domainsConfig - The domains configuration object from xConfig.
  */ 
 const domainsTable = (domainsConfig) => {
@@ -84,10 +74,8 @@ const validateDomain = (domain) => {
 
 /**
  * Adds a new domain to the xConfig object.
+ * @memberof module:NetGetX.Domains
  * @returns {Promise<void>}
- * @category NetGetX
- * @subcategory Domains
- * @module addNewDomain
  */
 const addNewDomain = async () => {
     while (true) {
@@ -217,11 +205,9 @@ const addNewDomain = async () => {
 
 /**
  * Adds a subdomain to the specified domain.
+ * @memberof module:NetGetX.Domains
  * @param {string} domain - The domain to add the subdomain to.
- * @returns {Promise<void>} 
- * @category NetGetX
- * @subcategory Domains
- * @module addSubdomain
+ * @returns {Promise<void>}
  */
 const addSubdomain = async (domain) => {
     const { subdomain } = await inquirer.prompt([
@@ -390,11 +376,9 @@ const editDomainDetails = async (domain, domainConfig) => {
 
 /**
  * Edits or deletes a domain from the xConfig object.
+ * @memberof module:NetGetX.Domains
  * @param {string} domain - The domain to edit or delete.
  * @returns {Promise<void>}
- * @category NetGetX
- * @subcategory Domains
- * @module editOrDeleteDomain
  */ 
 const editOrDeleteDomain = async (domain) => {
     console.clear();
@@ -534,10 +518,8 @@ const editOrDeleteDomain = async (domain) => {
 
 /**
  * Displays the advance settings for the domain.
- * @returns {Promise<void>} 
- * @category NetGetX
- * @subcategory Domains
- * @module advanceSettings
+ * @memberof module:NetGetX.Domains
+ * @returns {Promise<void>}
  */
 const advanceSettings = async () => {
     try{

@@ -9,9 +9,6 @@ import chalk from 'chalk';
  * @param {string} taskDescription - Description of the task that requires permission.
  * @param {string} autoCommand - Command to execute for automatic resolution with elevated privileges.
  * @param {string} manualInstructions - Manual instructions for the user to resolve permission issues.
- * @category Utils
- * @subcategory General
- * @module handlePermissions
  */
 const handlePermission = async (taskDescription, autoCommand, manualInstructions) => {
     const choices = [
@@ -68,9 +65,6 @@ const handlePermission = async (taskDescription, autoCommand, manualInstructions
  * Tries to execute a command with elevated privileges.
  * @param {string} command - Command to execute with elevated privileges.
  * @param {string} manualInstructions - Instructions for manual permission resolution.
- * @category Utils
- * @subcategory General
- * @module handlePermissions
  */
 const tryElevatedPrivileges = async (command, manualInstructions) => {
     try {
@@ -87,9 +81,6 @@ const tryElevatedPrivileges = async (command, manualInstructions) => {
 /**
  * Displays manual configuration instructions.
  * @param {string} instructions - Instructions for manual permission resolution.
- * @category Utils
- * @subcategory General
- * @module handlePermissions
  */
 const displayManualInstructions = (instructions) => {
     console.log(chalk.yellow('To manually configure, follow these instructions:'));
@@ -100,9 +91,6 @@ const displayManualInstructions = (instructions) => {
  * Executes a shell command.
  * @param {string} cmd - Command to execute.
  * @returns {Promise<string>} - A promise that resolves with the command output.
- * @category Utils
- * @subcategory General
- * @module handlePermissions
  */
 const execShellCommand = (cmd) => {
     return new Promise((resolve, reject) => {
@@ -120,9 +108,6 @@ const execShellCommand = (cmd) => {
  * Checks and sets file permissions if necessary.
  * @param {string} filePath - Path to the file to check permissions for.
  * @param {string} requiredPermissions - The permissions required (e.g., '755').
- * @category Utils
- * @subcategory General
- * @module handlePermissions 
  */
 const checkAndSetFilePermissions = async (filePath, requiredPermissions) => {
     try {

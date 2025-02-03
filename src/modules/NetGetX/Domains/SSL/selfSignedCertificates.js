@@ -22,6 +22,7 @@ const ensureDirectoryExists = (dir) => {
 
 /**
  * Checks if OpenSSL is installed.
+ * @memberof module:NetGetX.SSL
  * @returns {Promise<boolean>} - Resolves to true if OpenSSL is installed, false otherwise.
  */
 const isOpenSSLInstalled = () => {
@@ -38,6 +39,7 @@ const isOpenSSLInstalled = () => {
 
 /**
  * Checks if self-signed certificates already exist.
+ * @memberof module:NetGetX.SSL
  * @returns {Promise<boolean>} - Resolves to true if both key and certificate exist, false otherwise.
  */
 async function checkSelfSignedCertificates() {
@@ -54,6 +56,7 @@ async function checkSelfSignedCertificates() {
 
 /**
  * Generates a self-signed certificate if it doesn't already exist.
+ * @memberof module:NetGetX.SSL
  */
 const generateSelfSignedCert = async () => {
   const { generateCerts } = await inquirer.prompt([
@@ -99,6 +102,7 @@ const generateSelfSignedCert = async () => {
 
 /**
  * Executes a shell command and returns a promise.
+ * @memberof module:NetGetX.SSL
  * @param {string} cmd - The command to execute.
  * @returns {Promise<void>}
  */

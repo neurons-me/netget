@@ -14,6 +14,7 @@ import { storeConfigInDB } from '../../../../../sqlite/utils_sqlite3.js';
 
 /**
  * Display the current SSL Configuration for a domain
+  * @memberof module:NetGetX.SSL
  * @param {Object} domainConfig - The domain configuration object
  * @param {string} domain - The domain name
  * @returns {void}
@@ -31,6 +32,7 @@ const displayCurrentSSLConfiguration = (domainConfig, domain) => {
 
 /**
  * Check if a wildcard certificate exists for a domain
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain name
  * @returns {string} - The path to the wildcard certificate if it exists
  */
@@ -43,6 +45,7 @@ const checkWildcardCertificate = (domain) => {
 
 /**
  * Domain SSL Configuration Menu
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain name
  * @returns {void}
  */
@@ -100,6 +103,7 @@ const domainSSLConfiguration = async (domain) => {
 
 /**
  * Issue SSL Certificates for a domain
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain name
  * @param {Object} domainConfig - The domain configuration object
  * @returns {void}

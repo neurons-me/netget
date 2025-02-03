@@ -8,7 +8,12 @@ import NetGetMainMenu from '../netget_MainMenu.cli.js';
 
 const execPromise = util.promisify(exec);
 
-export async function PortManagement_CLI() {
+/**
+ * Port Management CLI  
+ * @memberof module:PortManagement
+ *  
+ */
+async function PortManagement_CLI() {
     console.clear();
     console.log(chalk.green('Port Management Menu'));
 
@@ -138,3 +143,5 @@ async function stopPM2Process(processName) {
         });
     });
 }
+
+export default PortManagement_CLI;

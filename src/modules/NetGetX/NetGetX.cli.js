@@ -6,6 +6,10 @@ import NetGetMainMenu from '../netget_MainMenu.cli.js';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.js'; 
 import domainsMenu from './Domains/domains.cli.js';
 
+/**
+ * NetGetX_CLI
+ * @memberof module:NetGetX 
+ */
 export default async function NetGetX_CLI(x) {
     console.log(`
      ██╗  ██╗ 

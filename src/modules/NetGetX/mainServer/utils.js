@@ -5,11 +5,9 @@ import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 
 /**
  * Parses the server_name directive from the main server configuration file.
+ * @memberof module:NetGetX.Utils
  * @param {string} configFilePath - Path to the NGINX main server configuration file.
  * @returns {string} - The server_name value or 'default' if none found.
- * @category NetGetX
- * @subcategory mainServer
- * @module Utils
  */
 const parseMainServerName = (configFilePath) => {
     try {
@@ -24,6 +22,7 @@ const parseMainServerName = (configFilePath) => {
 
 /**
  * Changes the server_name directive in the main server configuration file.
+ * @memberof module:NetGetX.Utils
  * @param {string} configFilePath - Path to the NGINX main server configuration file.
  * @param {string} newServerName - New server name to set.
  * @returns {Promise<boolean>} - True if the change was successful, false otherwise.

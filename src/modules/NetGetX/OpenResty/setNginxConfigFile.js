@@ -9,6 +9,11 @@ const sslSelfSignedCertPath = '/etc/ssl/certs/cert.pem';
 const sslSelfSignedKeyPath = '/etc/ssl/private/privkey.key';
 const sqliteDatabasePath = '/opt/.get/domains.db';
 
+/**
+ * The content of the nginx.conf file.
+ * The file contains the configuration for the OpenResty server, including the SSL certificate and key loading logic.
+ * @memberof module:NetGetX.OpenResty
+ */
 const nginxConfigContent = `
 user root;
 

@@ -8,11 +8,9 @@ import { obtainSSLCertificates } from '../Certbot/SSLCertificatesHandler.js';
 
 /**
  * Verify DNS record for domain.
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - Domain name.
  * @returns {Promise<boolean>} Promise resolving to true if DNS record is verified successfully, false otherwise.
- * @category NetGetX
- * @subcategory SSL
- * @subcategory LetsEncrypt
  */
 const verifyDNSRecord = async (domain) => {
     return new Promise((resolve, reject) => {
@@ -37,11 +35,9 @@ const verifyDNSRecord = async (domain) => {
 
 /**
  * Setup LetsEncrypt SSL for domain.
+ * @memberof module:NetGetX.SSL
  * @param {Object} xConfiguration - X-Configuration object.
  * @returns {Promise<void>} Promise resolving when SSL setup is complete.
- * @category NetGetX
- * @subcategory SSL
- * @subcategory LetsEncrypt
  */
 const letsEncryptMethod = async (xConfiguration) => {
     try {

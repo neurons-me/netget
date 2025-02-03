@@ -1,9 +1,6 @@
 /**
  * Prompts the user for the domain and email if they are not already set in the configuration.
  * @param {Object} xConfig - The user configuration object.
- * @category Utils
- * @subcategory General
- * @module promptForDomainAndEmail
 */
 async function promptForDomainAndEmail(xConfig) {
     const questions = [];

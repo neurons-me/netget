@@ -2,6 +2,8 @@
   "source": {
     "include": [
       "./README.md",
+  
+      "./index.js",
 
       "./src/modules/NetGetX/NetGetX.cli.js",
       "./src/modules/NetGetX/NetGetX_Settings.cli.js",
@@ -50,9 +52,7 @@
       "./src/modules/netget_MainMenu.cli.js",
       
       "./src/netget.cli.js",
-      "./src/netget.js",
-  
-      "./index.js"]
+      "./src/netget.js"]
   },
   "opts": {
     "destination": "/mnt/neuroverse/https-neurons/subDomains/docs/public/netget",

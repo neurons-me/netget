@@ -2,10 +2,9 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
 
-
-
 /**
  * Menu for managing the Main Server configuration.
+ * @memberof module:NetGetX
  * @param {Object} x - The user configuration object.
  */
 async function mainServerMenu(x) {

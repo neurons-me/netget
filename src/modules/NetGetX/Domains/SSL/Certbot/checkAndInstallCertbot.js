@@ -5,8 +5,7 @@ import chalk from 'chalk';
 /**
  * Check if Certbot and Certbot NGINX plugin are installed, and install them if necessary.
  * @returns {Promise<boolean>} Promise resolving to true if Certbot and its NGINX plugin are installed, false otherwise.
- * @category NetGetX
- * @subcategory SSL 
+ * @memberof module:NetGetX.SSL.SSL
 */
 const checkAndInstallCertbot = () => {
     return new Promise((resolve, reject) => {
@@ -24,9 +23,7 @@ const checkAndInstallCertbot = () => {
 
 /**
  * Install Certbot.
- * @category NetGetX
- * @subcategory SSL
- * @subcategory Certbot
+ * @memberof module:NetGetX.SSL
  * @returns {Promise<boolean>} Promise resolving to true if Certbot is installed successfully, false otherwise.
  */
 const installCertbot = () => {
@@ -45,9 +42,8 @@ const installCertbot = () => {
 
 /**
  * Check if Certbot NGINX plugin is installed, and install it if necessary.
+ * @memberof module:NetGetX.SSL
  * @returns {Promise<boolean>} Promise resolving to true if Certbot NGINX plugin is installed, false otherwise.
- * @category NetGetX
- * @subcategory SSL
  */
 const checkCertbotNginxPlugin = () => {
     return new Promise((resolve, reject) => {
@@ -65,9 +61,7 @@ const checkCertbotNginxPlugin = () => {
 
 /**
  * Install Certbot NGINX plugin.
- * @category NetGetX
- * @subcategory SSL
- * @subcategory Certbot
+ * @memberof module:NetGetX.SSL
  * @returns {Promise<boolean>} Promise resolving to true if Certbot NGINX plugin is installed successfully, false otherwise.
  */
 const installCertbotNginxPlugin = () => {

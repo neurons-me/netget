@@ -4,6 +4,12 @@ import { loadOrCreateXConfig } from '../config/xConfig.js';
 import { editOrDeleteDomain, logDomainInfo, addSubdomain } from './domainsOptions.js';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
 
+/**
+ * Domain Menu once a domain is selected
+ * @memberof NetGetX.Domains
+ * @param {string} domain - The domain to display the menu
+ * @returns {Promise<void>} - A promise that resolves when the menu is completed
+ */
 const selectedDomainMenu = async (domain) => {
         try {
             const xConfig = await loadOrCreateXConfig();

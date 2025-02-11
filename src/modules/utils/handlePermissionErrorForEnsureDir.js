@@ -5,9 +5,6 @@ import os from 'os';
 /**
  * Handles permission errors when creating directories.
  * @param {string} directory - The directory path where permission was denied.
- * @category Utils
- * @subcategory General
- * @module handlePermissionsForEnsureDir
 */
 const handlePermissionErrorForEnsureDir = async (directory) => {
     const choices = [
@@ -39,9 +36,6 @@ const handlePermissionErrorForEnsureDir = async (directory) => {
 /**
  * Tries to create the directory with elevated privileges.
  * @param {string} directory - The directory path to create.
- * @category Utils
- * @subcategory General
- * @module handlePermissionsForEnsureDir
 */
 
 const tryElevatedPrivileges = async (directory) => {
@@ -64,9 +58,6 @@ const tryElevatedPrivileges = async (directory) => {
 /**
  * Displays manual configuration instructions for setting directory permissions.
  * @param {string} directory - The directory path to display instructions for.
- * @category Utils
- * @subcategory General
- * @module handlePermissionsForEnsureDir
 */
 
 const displayManualInstructions = (directory) => {

@@ -7,6 +7,7 @@ import chalk from 'chalk';
 
 /**
  * Verifies the DNS record for the domain.
+  * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain to verify.
  * @param {string} value - The value of the DNS record.
  * @returns {Promise<boolean>} Promise resolving to true if DNS record is verified, false otherwise.
@@ -33,6 +34,7 @@ const verifyDNSRecord = async (domain, value) => {
 
 /**
  * Obtains SSL certificates for the domain.
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain to obtain SSL certificates for.
  * @param {string} email - The email address to use for obtaining SSL certificates.
  * @returns {Promise<boolean>} Promise resolving to true if SSL certificates are obtained successfully, false otherwise.
@@ -105,6 +107,7 @@ const obtainSSLCertificates = async (domain, email) => {
 
 /**
  * Waits for DNS propagation of the DNS record.
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain to wait for DNS propagation.
  * @param {string} value - The value of the DNS record.
  * @returns {Promise<boolean>} Promise resolving to true if DNS record is propagated, false otherwise.
@@ -125,6 +128,7 @@ const waitForDNSPropagation = async (domain, value) => {
 
 /**
  * Verifies the SSL certificate for the domain.
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain to verify.
  * @returns {Promise<boolean>} Promise resolving to true if SSL certificate is verified, false otherwise.
  */ 
@@ -146,6 +150,7 @@ const verifySSLCertificate = async (domain) => {
 
 /**
  * Renews the SSL certificate for the domain.
+ * @memberof module:NetGetX.SSL 
  * @param {string} domain - The domain to renew SSL certificate for.
  * @returns {Promise<boolean>} Promise resolving to true if SSL certificate is renewed successfully, false otherwise.
  */
@@ -167,6 +172,7 @@ const renewSSLCertificate = async (domain) => {
 
 /**
  * Check if certificates are issued for the domain.
+ * @memberof module:NetGetX.SSL
  * @param {string} domain - The domain to check.
  * @returns {Promise<boolean>} Promise resolving to true if certificates are issued, false otherwise.
  */
@@ -192,6 +198,7 @@ const checkCertificates = (domain) => {
 
 /**
  * Scans and logs information about all issued certificates.
+ * @memberof module:NetGetX.SSL
  * @returns {Promise<void>}
  */
 const scanAndLogCertificates = async () => {

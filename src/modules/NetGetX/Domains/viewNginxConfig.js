@@ -8,8 +8,7 @@ import { getDomainByName } from '../../../sqlite/utils_sqlite3.js';
 
 /**
  * Updates the NGINX configuration for a domain by writing the new configuration to the server block file.
- * @module NetGetX
- * @submodule Domains
+ * @memberof module:NetGetX.Domains
  * @param {string} domain - The domain for which to update the NGINX configuration.
  * @param {string} nginxConfig - The new NGINX configuration to write.
  */
@@ -29,8 +28,7 @@ const viewNginxConfig = async (domain) => {
 /**
  * Handles permission errors by offering options to retry with elevated privileges,
  * display manual configuration instructions, or cancel the operation.
- * @module NetGetX
- * @submodule Permissions
+ * @memberof module:NetGetX.Config
  * @param {string} path - The filesystem path where permission was denied.
  * @param {string} data - Data intended to be written to the path.
  */
@@ -64,9 +62,7 @@ const handlePermissionError = async (path, data) => {
 
 /**
  * Attempts to perform an operation with elevated privileges using platform-specific commands.
- * 
- * @module NetGetX
- * @submodule Permissions
+ * @memberof module:NetGetX.Config
  * @param {string} path - The filesystem path where the operation should be performed.
  * @param {string} data - Data to be written or processed.
  * @param {boolean} isWindows - Flag indicating if the operating system is Windows.
@@ -87,9 +83,7 @@ const tryElevatedPrivileges = async (path, data, isWindows) => {
 
 /**
  * Escapes shell-specific characters in a string to safely include it in a shell command.
- * 
- * @module NetGetX
- * @submodule Permissions
+ * @memberof module:NetGetX.Config
  * @param {string} data - The data to escape.
  * @returns {string} The escaped data.
  */
@@ -99,11 +93,9 @@ const escapeDataForShell = (data) => {
 
 /**
  * Displays manual instructions for configuring NGINX in case of permission errors or user preference.
- * 
- * @module NetGetX
- * @submodule Permissions
- * @param {string} path - The path to the NGINX configuration file.
- * @param {string} data - The data to write to the file.
+ * @memberof module:NetGetX.Config
+ * @param {string} path - The filesystem path related to the instructions.
+ * @param {string} data - The data or configuration details to be manually applied.
  * @param {boolean} isWindows - Flag indicating if the operating system is Windows.
  */
 const displayManualInstructions = (path, data, isWindows) => {
@@ -121,11 +113,9 @@ const displayManualInstructions = (path, data, isWindows) => {
 
 /**
  * Executes a shell command and returns a promise that resolves with the command output or rejects with an error.
- * 
- * @module NetGetX
- * @submodule Permissions
- * @param {string} cmd - The shell command to execute.
- * @returns {Promise<string>} A promise that resolves with the command output or rejects with an error.
+ * @memberof module:NetGetX.Config
+ * @param {string} cmd - The command to execute.
+ * @returns {Promise<string>} A promise that resolves with the output of the command.
  */
 const execShellCommand = (cmd) => {
     return new Promise((resolve, reject) => {

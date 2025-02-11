@@ -4,6 +4,8 @@ import { handlePermission } from '../../../../utils/handlePermissions.js';
 
 /**
  * Print the latest Certbot logs.
+ * @memberof module:NetGetX
+ * 
  * @returns {Promise<void>}
  */
 const printCertbotLogs = async () => {
@@ -25,6 +27,7 @@ const printCertbotLogs = async () => {
  * Executes a shell command and returns the output as a promise.
  * 
  * @function execShellCommand
+ * @memberof module:NetGetX
  * @param {string} cmd - The shell command to execute.
  * @returns {Promise<string>} - A promise that resolves with the command's stdout or stderr.
  * @throws Will throw an error if the command execution fails.

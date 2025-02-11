@@ -7,8 +7,7 @@ const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'xConfig.json');
 
 /**
  * Loads the user configuration file or creates it if it doesn't exist.
- * @module NetGetX
- * @submodule Config
+ * @memberof module:NetGetX.Config
  * @returns {Promise<Object>} The user configuration object.
  */
 async function loadOrCreateXConfig() {
@@ -44,8 +43,7 @@ async function loadOrCreateXConfig() {
 
 /**
  * Updates the user configuration file with specific key-value pairs.
- * @module NetGetX
- * @subcategory Config
+ * @memberof module:NetGetX.Config
  * @param {Object} updates - An object containing the key-value pairs to update.
  * @returns {Promise<void>}
  */

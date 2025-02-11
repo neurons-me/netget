@@ -1,10 +1,3 @@
-/**
- * @fileOverview This module provides functions to manage NGINX configuration paths and executable paths.
- * It includes methods to detect and set these paths in a user configuration object.
- * The module is designed to work across different operating systems, enhancing compatibility.
- * 
- * @module NginxPaths
-*/
 // netget/src/modules/NetGetX/config/setNginxPath.js
 import fs from 'fs';
 import path from 'path';
@@ -15,8 +8,7 @@ import { saveXConfig } from './xConfig.js';
 /**
  * Finds the NGINX configuration file and its base directory on the system.
  * Adjusts the approach based on the operating system for better compatibility.
- * @module NetGetX
- * @submodule Config
+ * @memberof module:NetGetX.NginxConfiguration
  * @returns {object} An object containing paths to the NGINX configuration file and its base directory or null values if not found.
  */
 async function getNginxConfigAndDir() {
@@ -57,8 +49,7 @@ async function getNginxConfigAndDir() {
 }
 /**
  * Sets the NGINX configuration path in the user configuration.
- * @module NetGetX
- * @subcategory Config
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {object} xConfig The user configuration object.
  * @param {string} nginxConfigPath The NGINX configuration path to be set.
  * @param {string} nginxBasePath The NGINX base path to be set.
@@ -78,8 +69,7 @@ async function setNginxConfigAndDir(nginxConfigPath, nginxBasePath) {
 /**
  * Attempts to set the NGINX executable path in the configuration based on the detected system paths or by querying the system environment.
  * Adjusts the method based on the operating system to enhance compatibility.
- * @module NetGetX
- * @submodule Config
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {Object} xConfig - The configuration object that holds NGINX related settings.
  * @returns {Promise<boolean>} Returns true if the executable path is successfully set, otherwise false.
  */

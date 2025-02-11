@@ -9,11 +9,8 @@ import os from 'os';
 /**
  * Writes the default NGINX server configuration to a specified path.
  * Handles file write errors, specifically permission issues, by prompting the user.
- * 
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {Object} userConfig - Configuration object containing NGINX path information.
- * @category NetGetX
- * @subcategory Config
- * @module setDefaultServerBlock
  */
 const setDefaultServerBlock = async (userConfig) => {
     const serverBlock = xDefaultServerBlock(userConfig);
@@ -33,12 +30,9 @@ const setDefaultServerBlock = async (userConfig) => {
 /**
  * Handles permission errors by offering options to retry with elevated privileges,
  * display manual configuration instructions, or cancel the operation.
- * 
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {string} path - The filesystem path where permission was denied.
  * @param {string} data - Data intended to be written to the path.
- * @category NetGetX
- * @subcategory Config
- * @module setDefaultServerBlock
  */
 const handlePermissionError = async (path, data) => {
     const isWindows = os.platform() === 'win32';
@@ -70,13 +64,10 @@ const handlePermissionError = async (path, data) => {
 
 /**
  * Attempts to perform an operation with elevated privileges using platform-specific commands.
- * 
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {string} path - The filesystem path where the operation should be performed.
  * @param {string} data - Data to be written or processed.
  * @param {boolean} isWindows - Flag indicating if the operating system is Windows.
- * @category NetGetX
- * @subcategory Config
- * @module setDefaultServerBlock
  */
 const tryElevatedPrivileges = async (path, data, isWindows) => {
     const command = isWindows 
@@ -94,12 +85,9 @@ const tryElevatedPrivileges = async (path, data, isWindows) => {
 
 /**
  * Escapes shell-specific characters in a string to safely include it in a shell command.
- * 
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {string} data - The data to escape.
  * @returns {string} The escaped data.
- * @category NetGetX
- * @subcategory Config
- * @module setDefaultServerBlock
  */
 const escapeDataForShell = (data) => {
     return data.replace(/'/g, "'\\''");
@@ -107,13 +95,10 @@ const escapeDataForShell = (data) => {
 
 /**
  * Displays manual instructions for configuring NGINX in case of permission errors or user preference.
- * 
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {string} path - The filesystem path related to the instructions.
  * @param {string} data - The data or configuration details to be manually applied.
  * @param {boolean} isWindows - Flag indicating if the operating system is Windows.
- * @category NetGetX
- * @subcategory Config
- * @module setDefaultServerBlock
  */
 const displayManualInstructions = (path, data, isWindows) => {
     console.log(chalk.yellow('Please follow these instructions to manually configure the NGINX server block:'));
@@ -130,12 +115,9 @@ const displayManualInstructions = (path, data, isWindows) => {
 
 /**
  * Executes a shell command and returns a promise that resolves with the command output or rejects with an error.
- * 
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {string} cmd - The command to execute.
  * @returns {Promise<string>} A promise that resolves with the output of the command.
- * @category NetGetX
- * @subcategory Config
- * @module setDefaultServerBlock
  */
 const execShellCommand = (cmd) => {
     return new Promise((resolve, reject) => {

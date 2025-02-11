@@ -7,12 +7,9 @@ import { serverBlockConfigOptions } from './serverBlockConfigOptions.cli.js';
 /**
  * Verifies if the existing NGINX server block matches the expected configuration.
  * If not, it may prompt the user to update the configuration depending on the user's settings.
- *
+ * @memberof module:NetGetX.NginxConfiguration
  * @param {Object} xConfig - The configuration object containing the path to the NGINX config file and user preferences.
  * @returns {Promise<boolean>} True if the current configuration is correct or successfully updated; false if it fails.
- * @category NetGetX
- * @subcategory Config
- * @module verifyServerBlock
  */
 const verifyServerBlock = async (xConfig) => {
     const nginxConfigPath = xConfig.nginxPath;

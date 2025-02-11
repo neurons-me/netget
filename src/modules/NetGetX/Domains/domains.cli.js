@@ -8,9 +8,7 @@ import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js
 
 /**
  * Displays the Domains Menu.
- * @category NetGetX
- * @subcategory Domains
- * @module domainsMenu
+ * @memberof module:NetGetX.Domains
  */
 const domainsMenu = async () => {
     try {

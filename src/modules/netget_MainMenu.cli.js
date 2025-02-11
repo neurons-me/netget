@@ -5,9 +5,52 @@ import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.js';
 import NetGetX_CLI from './NetGetX/NetGetX.cli.js';
 import { Srvrs_CLI } from './Srvrs/srvrs.cli.js';
 import { PortManagement_CLI } from './PortManagement/portManagement.cli.js';
+
 /**
- * the NetGet CLI.
+ * Entry point of NetGet node module.
+ * @module NetGetX
  */
+
+/**
+ * This module provides a command-line interface (CLI) for managing network ports.
+ * It allows users to check which processes are running on a specific port and to kill processes running on a specified port.
+ * The module integrates with PM2 to manage processes that are started by PM2.
+ * @module PortManagement
+ */ 
+
+/**
+ * This module provides functions to manage NGINX configuration paths and executable paths.
+ * It includes methods to detect and set these paths in a user configuration object.
+ * The module is designed to work across different operating systems, enhancing compatibility.
+ * @namespace NginxConfiguration
+ * @memberof module:NetGetX
+ */
+
+/**
+ * @namespace Config
+ * @memberof module:NetGetX
+ */
+
+/**
+ * @namespace SSL
+ * @memberof module:NetGetX
+ */
+
+/**
+ * @namespace Domains
+ * @memberof module:NetGetX
+ */
+
+/**
+ * @namespace OpenResty
+ * @memberof module:NetGetX
+ */ 
+
+/**
+ * @namespace Utils
+ * @memberof module:NetGetX
+ */
+
 export default async function NetGetMainMenu() {
     console.clear();
     console.log(`

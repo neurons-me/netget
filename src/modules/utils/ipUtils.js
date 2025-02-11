@@ -5,9 +5,6 @@ import os from 'os';
 /**
  * Gets the public IP address of the machine using an external API.
  * @returns {Promise<string|null>} The public IP address or null if not found.
- * @category Utils
- * @subcategory General
- * @module ipUtils
 */
 async function getPublicIP() {
     try {
@@ -27,9 +24,6 @@ async function getPublicIP() {
 /**
  * Gets the local IP address of the machine.
  * @returns {string|null} The local IP address or null if not found.
- * @category Utils
- * @subcategory General
- * @module ipUtils
 */
 function getLocalIP() {
     const interfaces = os.networkInterfaces();

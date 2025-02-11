@@ -1,9 +1,14 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-
 import mainServerMenu from './mainServer/mainServer.cli.js';
-import displayStateAndConfig from './config/x_StateAndConfig.js'; // Correct import statement
+import displayStateAndConfig from './config/x_StateAndConfig.js';
 
+/**
+ * This function displays the NetGetX settings menu
+ * @memberof module:NetGetX
+ * @param {Object} x - The NetGetX instance
+ * @returns {Promise<void>} - A promise that resolves when the menu is displayed 
+ */
 const netGetXSettingsMenu = async (x) => {
     const options = [
         { name: 'Main Server Configuration', value: 'Main Server' },

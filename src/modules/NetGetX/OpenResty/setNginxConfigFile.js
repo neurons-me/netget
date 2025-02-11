@@ -3,6 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 
+/**
+ * Configuration file in order to set the nginx.conf file for OpenResty.
+ * The file will be created at /usr/local/openresty/nginx/conf/nginx.conf
+ * @module NetGetX
+ * @submodule OpenResty
+ */
+
 const configPath = '/usr/local/openresty/nginx/conf';
 const nginxConfigPath = path.join(configPath, 'nginx.conf');
 const sslSelfSignedCertPath = '/etc/ssl/certs/cert.pem';

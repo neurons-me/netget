@@ -13,7 +13,7 @@ const execPromise = util.promisify(exec);
  * @memberof module:PortManagement
  *  
  */
-async function PortManagement_CLI() {
+export async function PortManagement_CLI() {
     console.clear();
     console.log(chalk.green('Port Management Menu'));
 
@@ -143,5 +143,3 @@ async function stopPM2Process(processName) {
         });
     });
 }
-
-export default PortManagement_CLI;

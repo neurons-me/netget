@@ -340,11 +340,6 @@ const editDomainDetails = async (domain, domainConfig) => {
                 }
             ]);
 
-            if (forwardPortAnswer.server === '/b') {
-                console.log(chalk.blue('Going back to the previous menu...'));
-                return;
-            }
-
             domainConfig.type = typeAnswer.serviceType;
             await updateDomainType(domain, typeAnswer.serviceType);
             break;
@@ -358,11 +353,6 @@ const editDomainDetails = async (domain, domainConfig) => {
                     validate: input => input ? true : 'Target is required.'
                 }
             ]);
-
-            if (forwardPortAnswer.server === '/b') {
-                console.log(chalk.blue('Going back to the previous menu...'));
-                return;
-            }
 
             domainConfig.target = targetAnswer.target;
             await updateDomainTarget(domain, targetAnswer.target);
@@ -455,7 +445,7 @@ const editOrDeleteDomain = async (domain) => {
                     }
                 ]);
 
-                if (forwardPortAnswer.server === '/b') {
+                if (!confirmDelete.confirm) {
                     console.log(chalk.blue('Going back to the previous menu...'));
                     return;
                 }

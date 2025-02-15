@@ -57,7 +57,7 @@ export default async function NetGetMainMenu() {
     ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
     ║║║├┤  │ ║ ╦├┤  │ 
     ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.6`);
+        v2.6.0`);
     const answers = await inquirer.prompt([
         {
             type: 'list',

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
 
-const CONFIG_DIR = path.join('/opt/','.get');
+const CONFIG_DIR = path.join('/opt/', '.get');
 const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'domains.db');
 
 /**
@@ -27,7 +27,8 @@ async function createTable() {
             target TEXT,
             type TEXT,
             projectPath TEXT,
-            rootDomain TEXT
+            rootDomain TEXT,
+            owner TEXT
         )
     `);
 
@@ -60,16 +61,17 @@ const dbPromise = initializeDatabase();
  * @param {string} projectPath - The project path
  * @returns {Promise<void>}
  */
-export async function registerDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
+export async function registerDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
         if (existingDomain) {
             throw new Error(`The domain ${domain} already exists.`);
         }
+        
         await db.run(
-            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath]);
+            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
     } catch (error) {
         console.error(`Error adding domain ${domain}:`, error);
         throw error;
@@ -102,7 +104,7 @@ export async function getDomainByName(domain) {
     } catch (error) {
         console.error(`Error getting the domain ${domain}:`, error);
         throw error;
-    } 
+    }
 }
 
 /**
@@ -190,10 +192,11 @@ export async function storeConfigInDB(domain, sslMode, sslCertificate, sslCertif
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
+        const owner = domain.split('.').slice(-2).join('.');
         if (existingDomain) {
-            await db.run('UPDATE domains SET sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ? WHERE domain = ?', [sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domain]);
+            await db.run('UPDATE domains SET sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?', [sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]);
         } else {
-            await db.run('INSERT INTO domains (domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) VALUES (?, ?, ?, ?, ?, ?, ?)', [domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath]);
+            await db.run('INSERT INTO domains (domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
         }
     } catch (error) {
         console.error(`Error storing config for domain ${domain}:`, error);

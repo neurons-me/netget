@@ -189,7 +189,21 @@ const addNewDomain = async () => {
             return;
         }
 
-        const { domain, email} = { ...domainAnswer, ...emailAnswer };
+        const ownerAnswer = await inquirer.prompt([
+            {
+                type: 'input',
+                name: 'owner',
+                message: 'Enter the owner of this domain (type /b to go back):',
+                validate: input => input ? true : 'Owner is required.'
+            }
+        ]);
+
+        if (ownerAnswer.owner === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
+
+        const { domain, email, owner } = { ...domainAnswer, ...emailAnswer, ...ownerAnswer };
         const xConfig = await loadOrCreateXConfig();
 
         if (!xConfig.domains) {
@@ -206,6 +220,7 @@ const addNewDomain = async () => {
             email: email,
             target: port,
             type: type,
+            owner: owner,
             subDomains:{}
         };
 
@@ -225,8 +240,9 @@ const addNewDomain = async () => {
             '', 
             '', 
             port, 
-            type, 
-            '');
+            type,
+            '',
+            owner);
 
         console.log(chalk.green(`Domain ${domain} added successfully.`));
         return;  // Exit the loop after successful addition
@@ -300,6 +316,20 @@ const addSubdomain = async (domain) => {
         port = staticPathAnswer.staticPath;
     }
 
+    const ownerAnswer = await inquirer.prompt([
+        {
+            type: 'input',
+            name: 'owner',
+            message: 'Enter the owner of this subdomain (type /b to go back):',
+            validate: input => input ? true : 'Owner is required.'
+        }
+    ]);
+
+    if (ownerAnswer.owner === '/b') {
+        console.log(chalk.blue('Going back to the previous menu...'));
+        return;
+    }
+
     const xConfig = await loadOrCreateXConfig();
 
     if (!xConfig.domains[domain].subDomains) {
@@ -313,7 +343,8 @@ const addSubdomain = async (domain) => {
 
     const newDomainConfig = {
         "target": port,
-        "type": serviceTypeAnswer.serviceType
+        "type": serviceTypeAnswer.serviceType,
+        "owner": ownerAnswer.owner
     }
 
     xConfig.domains[domain].subDomains[subdomain] = newDomainConfig;
@@ -335,8 +366,9 @@ const addSubdomain = async (domain) => {
         xConfig.domains[domain].SSLCertificateSqlitePath, 
         xConfig.domains[domain].SSLCertificateKeySqlitePath, 
         port, 
-        serviceTypeAnswer.serviceType, 
-        '');
+        serviceTypeAnswer.serviceType,
+        '',
+        ownerAnswer.owner);
 
     console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
     return;

@@ -6,8 +6,7 @@ import { i_DefaultNetGetX } from './config/i_DefaultNetGetX.js';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.js'; 
 import domainsMenu from './Domains/domains.cli.js';
-import { exec } from 'child_process';
-import LocalNetgetCLI from '../../../../../domains/local.netget/backend/local.netget.cli.js';
+import LocalNetgetCLI from '../../../local.netget/backend/local.netget.cli.js';
 
 /**
  * NetGetX_CLI
@@ -34,7 +33,7 @@ export default async function NetGetX_CLI(x) {
             message: 'Select an action:',
             choices: [
                 '1. Domains and Certificates (Manage domains and SSL certificates)',
-                '2. Local.Netget (Start Local Dev Server)',
+                // '2. Local.Netget (Start Local Dev Server)',
                 '3. Settings',
                 '4. Back to Main Menu',
                 '0. Exit'
@@ -53,6 +52,7 @@ export default async function NetGetX_CLI(x) {
                 break;
     
             case '3. Settings':
+                console.clear();
                 await netGetXSettingsMenu(x);
                 break;
             case '4. Back to Main Menu':

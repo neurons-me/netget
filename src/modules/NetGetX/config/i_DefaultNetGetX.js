@@ -9,7 +9,7 @@ import { checkSelfSignedCertificates, generateSelfSignedCert } from '../Domains/
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.js';
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.js';
 import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.js';
-import { setNginxConfigFile } from '../OpenResty/setNginxConfigFile.js';
+import { ensureNginxConfigFile, setNginxConfigFile } from '../OpenResty/setNginxConfigFile.js';
 
 /**
  * Sets default paths for NGINX and other directories if they are not already set.
@@ -54,6 +54,16 @@ async function i_DefaultNetGetX() {
     }
 
     // NGINX configuration file validation
+    if (!ensureNginxConfigFile()) {
+        const defaultNginxConfigFile = DEFAULT_DIRECTORIES.nginxConfigFile;
+        if (pathExists(defaultNginxConfigFile)) {
+            await setNginxConfigFile(defaultNginxConfigFile);
+            xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+        } else {
+            await ensureNginxConfigFile();
+        }
+    }
+
     await setNginxConfigFile();
 
     /*

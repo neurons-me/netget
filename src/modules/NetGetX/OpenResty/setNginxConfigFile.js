@@ -404,14 +404,17 @@ const validateNginxConfig = () => {
     return false;
 };
 
+
+
 const setNginxConfigFile = async () => {
     if (!validateNginxConfig()) {
         try{
+            console.log(chalk.yellow('The existing nginx.conf file is different from the expected configuration. This may cause unexpected behavior.'));
             const { createConfig } = await inquirer.prompt([
                 {
                     type: 'confirm',
                     name: 'createConfig',
-                    message: `Do you want to create the nginx.conf file at ${configPath}?`,
+                    message: `Do you want to proceed and overwrite the current nginx.conf file at ${configPath}?`,
                     default: false,
                 },
             ]);
@@ -432,4 +435,37 @@ const setNginxConfigFile = async () => {
     }
 };
 
-export { setNginxConfigFile };
+/**
+ * Checks if nginx.conf exists, and if not, prompts the user to create it,
+ * explaining why it is important.
+ */
+const ensureNginxConfigFile = async () => {
+    if (!fs.existsSync(nginxConfigPath)) {
+        console.log(chalk.yellow(
+            `The nginx.conf file does not exist at ${nginxConfigPath}.\n` +
+            'This file is essential for OpenResty to function properly, as it contains the main server configuration, including security rules, SSL certificates, and proxy routes.\n' +
+            'Without this file, the server will not be able to start or securely manage domains.'
+        ));
+        try {
+            const { createConfig } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'createConfig',
+                    message: `Do you want to create the nginx.conf file now at ${configPath}?`,
+                    default: true,
+                },
+            ]);
+            if (createConfig) {
+                createNginxConfig(configPath);
+            } else {
+                console.log(chalk.red('Operation cancelled by the user. The server will not work without nginx.conf.'));
+            }
+        } catch (error) {
+            console.log(chalk.red('An error occurred: ', error));
+        }
+    } else {
+        console.log(chalk.green('The nginx.conf file already exists.'));
+    }
+};
+
+export { setNginxConfigFile as setNginxConfigFile, ensureNginxConfigFile };

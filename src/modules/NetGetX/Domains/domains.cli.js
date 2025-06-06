@@ -2,7 +2,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
-import NetGetX_CLI from '../NetGetX.cli.js';
 import selectedDomainMenu from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
 
@@ -13,14 +12,23 @@ import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js
 const domainsMenu = async () => {
     try {
         console.clear();
+        console.log(chalk.blue('Domains Routed via NetGet'))
         const xConfig = await loadOrCreateXConfig();
         const domains = Object.keys(xConfig.domains || {});
 
         if (domains.length === 0) {
-            console.log(chalk.red('No domains configured.'));
+            console.log(chalk.yellow('No domains configured.'));
+            console.log(
+                chalk.yellow(
+                    'Once you have domains configured, they will appear below as a selectable list and be ready to serve.\n' +
+                    'You can then choose a domain to view or modify its settings.'
+                )
+            );
         }
+        else {
 
         domainsTable(xConfig.domains);
+        }
         
         const options = [
             new inquirer.Separator(),
@@ -35,7 +43,7 @@ const domainsMenu = async () => {
             new inquirer.Separator(),
             { name: 'Add New Domain', value: 'addNewDomain' },
             { name: 'Advance Domain Settings', value: 'advance'},
-            { name: 'Back to NetGetX Settings', value: 'back' },
+            { name: 'Back', value: 'back' },
             { name: 'Exit', value: 'exit' }
         ];
 
@@ -53,11 +61,11 @@ const domainsMenu = async () => {
                 await addNewDomain();
                 break;
             case 'advance':
+                console.clear();
                 await advanceSettings();
-                return;
+                return
             case 'back':
                 console.log(chalk.green('Returning to NetGetX Settings...'));
-                await NetGetX_CLI(xConfig);
                 return;
             case 'exit':
                 console.log(chalk.blue('Exiting NetGet...'));

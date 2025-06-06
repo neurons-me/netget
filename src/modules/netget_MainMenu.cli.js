@@ -57,16 +57,17 @@ export default async function NetGetMainMenu() {
     ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
     ║║║├┤  │ ║ ╦├┤  │ 
     ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.6.0`);
+        v2.6.1`);
+    console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
     const answers = await inquirer.prompt([
         {
             type: 'list',
             name: 'action',
             message: 'Main Menu',
             choices: [
-                'X (HTTPS, Domains and Routes)',
-                'Srvrs - (Port Services)',
-                'Statics - (Static files)',
+                'HTTPS, Domains and Routes',
+                //'Srvrs - (Port Services)',
+                //'Statics - (Static files)',
                 new inquirer.Separator(),
                 'Port Management',
                 new inquirer.Separator(),
@@ -76,7 +77,7 @@ export default async function NetGetMainMenu() {
     ]);
 
     switch (answers.action) {
-        case 'X (HTTPS, Domains and Routes)':
+        case 'HTTPS, Domains and Routes':
             const x = await i_DefaultNetGetX();
             if (x) {
                 /*

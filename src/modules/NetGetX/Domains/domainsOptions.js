@@ -5,6 +5,7 @@ import NetGetX_CLI from '../NetGetX.cli.js';
 import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
 import { registerDomain, deleteDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.js';
+import domainsMenu from './domains.cli.js';
 
 /**
  * Logs the domain information to the console.
@@ -79,29 +80,53 @@ const validateDomain = (domain) => {
  */
 const addNewDomain = async () => {
     while (true) {
+        const description_message = 
+            'Add a new domain to your NetGetX configuration. You can choose to serve static content or forward traffic to a specific port on your server.\n' +
+            chalk.blue('Available Service Types:\n' +
+            '- Serve Static Content: Host static files (like HTML, CSS, JS, images) from a folder on your server. Great for simple websites or landing pages.\n' +
+            '- Forward Port: Forward all incoming traffic to a specific port on your server. Useful for connecting your domain to a backend service, app, or container running on a different port.\n\n') +
+            chalk.white('Select the type of service for this domain:');
         const serviceTypeAnswer = await inquirer.prompt([
             {
-                type: 'list',
-                name: 'serviceType',
-                message: 'Select the type of service for this domain:',
-                choices: [
-                    { name: 'Serve Static Content', value: 'static' },
-                    { name: 'Forward Port', value: 'server' }
-                ]
+            type: 'list',
+            name: 'serviceType',
+            message: description_message,
+            validate: input => input ? true : 'Service type is required.',
+            choices: [
+                { name: 'Serve Static Content', value: 'static' },
+                { name: 'Forward Port', value: 'server' },
+                { name: 'Back', value: 'back' }
+            ]
             }
         ]);
+
+        if (serviceTypeAnswer.serviceType === 'back') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
 
         const type = serviceTypeAnswer.serviceType;
 
         let port = '';
         if (serviceTypeAnswer.serviceType === 'server') {
             const forwardPortAnswer = await inquirer.prompt([
-                {
-                    type: 'input',
-                    name: 'server',
-                    message: 'Enter the forward port for this domain (type /b to go back):',
-                    validate: input => input ? true : 'Forward port is required.'
+            {
+                type: 'input',
+                name: 'server',
+                message: 'Enter the forward port for this domain (type /b to go back):',
+                validate: input => {
+                if (input === '/b') return true;
+                const portNum = Number(input);
+                if (
+                    !Number.isInteger(portNum) ||
+                    portNum < 1 ||
+                    portNum > 65535
+                ) {
+                    return 'Enter a valid port number (1-65535)';
                 }
+                return true;
+                }
+            }
             ]);
 
             if (forwardPortAnswer.server === '/b') {
@@ -147,10 +172,15 @@ const addNewDomain = async () => {
 
         const emailAnswer = await inquirer.prompt([
             {
-                type: 'input',
-                name: 'email',
-                message: 'Enter the email associated with this domain (type /b to go back):',
-                validate: input => input ? true : 'Email is required.'
+            type: 'input',
+            name: 'email',
+            message: 'Enter the email associated with this domain (type /b to go back):',
+            validate: input => {
+                if (input === '/b') return true;
+                // Simple email regex validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                return emailRegex.test(input) ? true : 'Enter a valid email address.';
+            }
             }
         ]);
 
@@ -521,16 +551,18 @@ const advanceSettings = async () => {
             choices: [
                 'Scan All SSL Certificates Issued',
                 'View Certbot Logs',
-                'Back to NetGetX Settings'
+                'Back'
             ]
         });
+
+        if (answers.option === 'Back') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
 
         switch (answers.option) {
             case 'Scan All SSL Certificates Issued':
                 await scanAndLogCertificates();
-            case 'back':
-                console.log(chalk.green('Returning to NetGetX Settings...'));
-                await NetGetX_CLI(xConfig);
         }
     
     } 

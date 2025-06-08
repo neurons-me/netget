@@ -20,6 +20,7 @@ async function createTable() {
     await db.exec(`
         CREATE TABLE IF NOT EXISTS domains (
             domain TEXT PRIMARY KEY,
+            subdomain TEXT,
             email TEXT,
             sslMode TEXT,
             sslCertificate TEXT,
@@ -61,7 +62,7 @@ const dbPromise = initializeDatabase();
  * @param {string} projectPath - The project path
  * @returns {Promise<void>}
  */
-export async function registerDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) {
+export async function registerDomain(domain, subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
@@ -70,8 +71,8 @@ export async function registerDomain(domain, email, sslMode, sslCertificate, ssl
         }
         
         await db.run(
-            'INSERT INTO domains (domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
+            'INSERT INTO domains (domain, subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [domain, subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
     } catch (error) {
         console.error(`Error adding domain ${domain}:`, error);
         throw error;

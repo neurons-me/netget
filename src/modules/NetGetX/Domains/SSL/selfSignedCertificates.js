@@ -74,8 +74,22 @@ const generateSelfSignedCert = async () => {
   }
   const opensslInstalled = await isOpenSSLInstalled();
   if (!opensslInstalled) {
-    console.error(chalk.red('OpenSSL is not installed. Please install OpenSSL and try again.'));
-    return;
+    const { installOpenSSL } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'installOpenSSL',
+        message: 'OpenSSL is not installed. Do you want to install it to continue?',
+        default: false,
+      },
+    ]);
+    if (installOpenSSL) {
+      console.log(chalk.yellow('Please install OpenSSL by running the following command according to your operating system:'));
+      console.log(chalk.cyan('\nUbuntu/Debian: sudo apt-get install openssl\nRedHat/CentOS: sudo yum install openssl\nMacOS (Homebrew): brew install openssl\n'));
+      console.log(chalk.yellow('After installing OpenSSL, please rerun this process.'));
+    } else {
+      console.log(chalk.red('Process aborted because OpenSSL is required.'));
+    }
+    process.exit();
   }
 
   ensureDirectoryExists(path.join(certDir, 'private'));

@@ -4,6 +4,54 @@ import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
 import selectedDomainMenu from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
+import sqlite3 from 'sqlite3';
+
+/**
+ * Obtiene los dominios de la base de datos SQLite3.
+ * @returns {Promise<Array>} Promesa que se resuelve con la lista de dominios.
+ */
+const getDomainsFromDB = () => {
+    return new Promise((resolve, reject) => {
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err) => {
+            if (err) return reject(err);
+        });
+
+        db.all(`SELECT domain, subdomain FROM domains ORDER BY domain`, [], (err, rows) => {
+            if (err) {
+            db.close();
+            return reject(err);
+            }
+
+            const rootDomains = {};  // { 'example.com': ['api.example.com', 'www.example.com'] }
+
+            rows.forEach(row => {
+            if (row.subdomain === null) {
+                // Dominio raíz
+                if (!rootDomains[row.domain]) {
+                rootDomains[row.domain] = [];
+                }
+            } else {
+                // Subdominio
+                if (!rootDomains[row.subdomain]) {
+                rootDomains[row.subdomain] = [];
+                }
+                rootDomains[row.subdomain].push(row.domain);
+            }
+            });
+
+            // Ordenar los dominios alfabéticamente antes de formatear
+            const formattedDomains = Object.entries(rootDomains)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([domain, subDomains]) => ({
+                    name: `${domain} ${subDomains.length > 0 ? `(${subDomains.join(', ')})` : ''}`,
+                    value: domain
+                }));
+
+            db.close();
+            resolve(formattedDomains);
+        });
+    });
+};
 
 /**
  * Displays the Domains Menu.
@@ -13,10 +61,9 @@ const domainsMenu = async () => {
     try {
         console.clear();
         console.log(chalk.blue('Domains Routed via NetGet'))
-        const xConfig = await loadOrCreateXConfig();
-        const domains = Object.keys(xConfig.domains || {});
+        const dbDomains = await getDomainsFromDB();
 
-        if (domains.length === 0) {
+        if (dbDomains.length === 0) {
             console.log(chalk.yellow('No domains configured.'));
             console.log(
                 chalk.yellow(
@@ -26,20 +73,12 @@ const domainsMenu = async () => {
             );
         }
         else {
-
-        domainsTable(xConfig.domains);
+            domainsTable();
         }
-        
+
         const options = [
             new inquirer.Separator(),
-            ...domains.map(domain => {
-                const subDomains = xConfig.domains[domain].subDomains || {};
-                const subDomainNames = Object.keys(subDomains);
-                return {
-                    name: `${domain} ${subDomainNames.length > 0 ? `(${subDomainNames.join(', ')})` : ''}`,
-                    value: domain
-                };
-            }),
+            ...(await getDomainsFromDB()),
             new inquirer.Separator(),
             { name: 'Add New Domain', value: 'addNewDomain' },
             { name: 'Advance Domain Settings', value: 'advance'},
@@ -51,7 +90,8 @@ const domainsMenu = async () => {
             {
                 type: 'list',
                 name: 'action',
-                message: 'Select a domain or add a new one:',
+                message: 'Select a domain or add a new one:' + chalk.blue(' (Use arrow keys to navigate)'),
+                pageSize: 5,
                 choices: options
             }
         ]);

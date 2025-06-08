@@ -6,6 +6,7 @@ import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
 import { registerDomain, deleteDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.js';
 import domainsMenu from './domains.cli.js';
+import sqlite3 from 'sqlite3';
 
 /**
  * Logs the domain information to the console.
@@ -52,19 +53,34 @@ const logAllDomainsTable = (domainsConfig) => {
 };
 
 /**
- * Logs the domain information to the console for all domains in the domains object.
- * @memberof module:NetGetX.Domains
- * @param {Object} domainsConfig - The domains configuration object from xConfig.
- */ 
-const domainsTable = (domainsConfig) => {
-    console.log(chalk.blue('\nDomains Information:'));
-    const domainTable = Object.keys(domainsConfig).map(domain => ({
-        Domain: domain,
-        Target: domainsConfig[domain].target,
-        Type: domainsConfig[domain].type
+ * Muestra la tabla de dominios leyendo desde la base de datos SQLite3.
+ */
+const domainsTable = () => {
+    const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err) => {
+        if (err) {
+            console.log(chalk.red('Error opening database:'), err.message);
+            return;
+        }
+    });
 
-    }));
-    console.table(domainTable);
+    db.all('SELECT domain, target, type FROM domains ORDER BY domain', [], (err, rows) => {
+        if (err) {
+            console.log(chalk.red('Error reading domains:'), err.message);
+            db.close();
+            return;
+        }
+        if (rows.length === 0) {
+            console.log(chalk.yellow('No domains configured.'));
+        } else {
+            console.log(chalk.blue('\nDomains Information:'));
+            console.table(rows.map(row => ({
+                Domain: row.domain,
+                Target: row.target,
+                Type: row.type
+            })));
+        }
+        db.close();
+    });
 };
 
 const validateDomain = (domain) => {
@@ -234,7 +250,8 @@ const addNewDomain = async () => {
         xConfig.domains = sortedDomains;
         await saveXConfig({ domains: xConfig.domains });
         await registerDomain(
-            domain, 
+            domain,
+            domain,
             email, 
             'letsencrypt', 
             '', 
@@ -360,7 +377,8 @@ const addSubdomain = async (domain) => {
 
     // Register the subdomain into the database
     await registerDomain(
-        subdomain, 
+        subdomain,
+        domain,
         xConfig.domains[domain].email, 
         'letsencrypt', 
         xConfig.domains[domain].SSLCertificateSqlitePath, 

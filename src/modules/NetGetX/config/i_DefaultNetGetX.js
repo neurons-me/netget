@@ -53,18 +53,25 @@ async function i_DefaultNetGetX() {
         }
     }
 
+    const validateNginxConfig = () => {
+        if (fs.existsSync(nginxConfigPath)) {
+            const existingContent = fs.readFileSync(nginxConfigPath, 'utf8');
+            return existingContent === nginxConfigContent;
+        }
+        return false;
+    };
+
     // NGINX configuration file validation
-    if (!ensureNginxConfigFile()) {
-        const defaultNginxConfigFile = DEFAULT_DIRECTORIES.nginxConfigFile;
-        if (pathExists(defaultNginxConfigFile)) {
-            await setNginxConfigFile(defaultNginxConfigFile);
+    const nginxConfigPath = '/usr/local/openresty/nginx/conf/nginx.conf';
+    if (!pathExists(nginxConfigPath)) {
+        await ensureNginxConfigFile();
+        if (!pathExists(nginxConfigPath) & validateNginxConfig()) {
+            await setNginxConfigFile();
             xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
         } else {
             await ensureNginxConfigFile();
         }
     }
-
-    await setNginxConfigFile();
 
     /*
      ┏┓┏┓┏┳┓

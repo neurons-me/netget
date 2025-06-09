@@ -25,6 +25,14 @@ const getDomainsFromDB = () => {
             const rootDomains = {};  // { 'example.com': ['api.example.com', 'www.example.com'] }
 
             rows.forEach(row => {
+            if (row.subdomain === row.domain) {
+            if (!rootDomains[row.domain]) {
+                rootDomains[row.domain] = [];
+            }
+            // Do not add as subdomain to itself
+            return;
+            }
+            
             if (row.subdomain === null) {
                 // Dominio raíz
                 if (!rootDomains[row.domain]) {
@@ -60,7 +68,7 @@ const getDomainsFromDB = () => {
 const domainsMenu = async () => {
     try {
         console.clear();
-        console.log(chalk.blue('Domains Routed via NetGet'))
+        console.log(chalk.blue('Domains Routed via NetGet'));
         const dbDomains = await getDomainsFromDB();
 
         if (dbDomains.length === 0) {
@@ -70,10 +78,7 @@ const domainsMenu = async () => {
                     'Once you have domains configured, they will appear below as a selectable list and be ready to serve.\n' +
                     'You can then choose a domain to view or modify its settings.'
                 )
-            );
-        }
-        else {
-            domainsTable();
+            );            
         }
 
         const options = [
@@ -81,7 +86,7 @@ const domainsMenu = async () => {
             ...(await getDomainsFromDB()),
             new inquirer.Separator(),
             { name: 'Add New Domain', value: 'addNewDomain' },
-            { name: 'Advance Domain Settings', value: 'advance'},
+            { name: 'Advance Domain Settings', value: 'advance' },
             { name: 'Back', value: 'back' },
             { name: 'Exit', value: 'exit' }
         ];
@@ -90,8 +95,8 @@ const domainsMenu = async () => {
             {
                 type: 'list',
                 name: 'action',
-                message: 'Select a domain or add a new one:' + chalk.blue(' (Use arrow keys to navigate)'),
-                pageSize: 5,
+                message: 'Select a domain or add a new one:',
+                pageSize: 10,
                 choices: options
             }
         ]);
@@ -103,9 +108,9 @@ const domainsMenu = async () => {
             case 'advance':
                 console.clear();
                 await advanceSettings();
-                return
+                break;
             case 'back':
-                console.log(chalk.green('Returning to NetGetX Settings...'));
+                console.clear();
                 return;
             case 'exit':
                 console.log(chalk.blue('Exiting NetGet...'));

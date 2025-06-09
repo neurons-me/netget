@@ -11,6 +11,7 @@ import {
 } from '../SSLCertificates.js';
 import printCertbotLogs from '../Certbot/certbot.js';
 import { storeConfigInDB } from '../../../../../sqlite/utils_sqlite3.js';
+import sqlite3 from 'sqlite3';
 
 /**
  * Display the current SSL Configuration for a domain
@@ -58,11 +59,18 @@ const domainSSLConfiguration = async (domain) => {
             return;
         }
 
-        const xConfig = await loadOrCreateXConfig();
-        const domainConfig = xConfig.domains[domain];
+        // Leer configuración del dominio desde la base de datos
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const domainConfig = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
+                db.close();
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
 
         if (!domainConfig) {
-            console.log(chalk.red(`Domain ${domain} configuration not found.`));
+            console.log(chalk.red(`Domain ${domain} configuration not found in database.`));
             return;
         }
 
@@ -82,9 +90,7 @@ const domainSSLConfiguration = async (domain) => {
             if (useWildcard) {
                 domainConfig.SSLCertificatesPath = wildcardCertPath;
                 domainConfig.SSLCertificateKeyPath = wildcardCertPath.replace('fullchain.pem', 'privkey.pem');
-                const xConfig = await loadOrCreateXConfig();
-                xConfig.domains[domain] = domainConfig;
-                await saveXConfig({ domains: xConfig.domains });
+                // Aquí podrías actualizar la base de datos si lo deseas
                 console.log(chalk.green(`Applied wildcard certificate from ${wildcardCertPath} to ${domain}.`));
             } else {
                 console.log(chalk.yellow(`Proceeding to issue a new certificate for ${domain}.`));
@@ -95,7 +101,7 @@ const domainSSLConfiguration = async (domain) => {
         }
 
         // After an action, redisplay the menu
-        await displayCurrentSSLConfiguration(domain);
+        await displayCurrentSSLConfiguration(domainConfig, domain);
     } catch (error) {
         console.error(chalk.red('An error occurred in the SSL Configuration Menu:', error.message));
     }
@@ -108,7 +114,7 @@ const domainSSLConfiguration = async (domain) => {
  * @param {Object} domainConfig - The domain configuration object
  * @returns {void}
  */   
-const issueCertificateForDomain = async (domain, domainConfig) => {
+async function issueCertificateForDomain(domain, domainConfig) {
     const certificatesIssued = await checkCertificates(domain);
 
     if (certificatesIssued) {
@@ -116,11 +122,26 @@ const issueCertificateForDomain = async (domain, domainConfig) => {
             domainConfig.SSLCertificateName = `${domain}`;
             domainConfig.SSLCertificatesPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
-            domainConfig.SSLCertificateSqlitePath = `/etc/letsencrypt/archive/${domain}/fullchain1.pem`;
-            domainConfig.SSLCertificateKeySqlitePath = `/etc/letsencrypt/archive/${domain}/privkey1.pem`;   
-            const xConfig = await loadOrCreateXConfig();
-            xConfig.domains[domain] = domainConfig;
-            await saveXConfig({ domains: xConfig.domains });
+
+            // Guardar los cambios en la base de datos en vez de xConfig
+            const db = new sqlite3.Database('/opt/.get/domains.db');
+            db.run(
+                `UPDATE domains SET
+                    sslCertificate = ?,
+                    sslCertificateKey = ?,
+                 WHERE domain = ?`,
+                [
+                    domainConfig.SSLCertificatesPath,
+                    domainConfig.SSLCertificateKeyPath,
+                    domain
+                ],
+                (err) => {
+                    if (err) {
+                        console.log(chalk.red('Error updating SSL certificate paths in database:'), err.message);
+                    }
+                    db.close();
+                }
+            );
             await storeConfigInDB(domain, 'letsencrypt', domainConfig.SSLCertificateSqlitePath, domainConfig.SSLCertificateKeySqlitePath, domainConfig.target, domainConfig.type, domainConfig.projectPath);
         }
 
@@ -154,14 +175,26 @@ const issueCertificateForDomain = async (domain, domainConfig) => {
                 await printCertbotLogs();
                 break;
             case 'editSSLMethod':
-                await saveXConfig({ domain, sslMode: null });
-                console.log(chalk.green('SSL Configuration method has been reset.'));
+                // Eliminar el método SSL en la base de datos (opcional)
+                const db = new sqlite3.Database('/opt/.get/domains.db');
+                db.run(
+                    `UPDATE domains SET sslMode = NULL WHERE domain = ?`,
+                    [domain],
+                    (err) => {
+                        if (err) {
+                            console.log(chalk.red('Error resetting SSL mode in database:'), err.message);
+                        } else {
+                            console.log(chalk.green('SSL Configuration method has been reset.'));
+                        }
+                        db.close();
+                    }
+                );
                 break;
             case 'back':
                 return;
             case 'exit':
                 console.log(chalk.blue('Exiting NetGet...'));
-                process.exit(); 
+                process.exit();
             default:
                 console.log(chalk.red('Invalid selection. Please try again.'));
         }
@@ -180,14 +213,29 @@ const issueCertificateForDomain = async (domain, domainConfig) => {
             await obtainSSLCertificates(domain, domainConfig.email);
             domainConfig.SSLCertificatesPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
-            domainConfig.SSLCertificateSqlitePath = `/etc/letsencrypt/archive/${domain}/fullchain1.pem`;
-            domainConfig.SSLCertificateKeySqlitePath = `/etc/letsencrypt/archive/${domain}/privkey1.pem`; 
-            const xConfig = await loadOrCreateXConfig();
-            xConfig.domains[domain] = domainConfig;
-            await saveXConfig({ domains: xConfig.domains });
+
+            // Guardar los cambios en la base de datos en vez de xConfig
+            const db = new sqlite3.Database('/opt/.get/domains.db');
+            db.run(
+                `UPDATE domains SET 
+                    sslCertificate = ?,
+                    sslCertificateKey = ?,
+                 WHERE domain = ?`,
+                [
+                    domainConfig.SSLCertificatesPath,
+                    domainConfig.SSLCertificateKeyPath,
+                    domain
+                ],
+                (err) => {
+                    if (err) {
+                        console.log(chalk.red('Error updating SSL certificate paths in database:'), err.message);
+                    }
+                    db.close();
+                }
+            );
             await storeConfigInDB(domain, 'letsencrypt', domainConfig.SSLCertificateSqlitePath, domainConfig.SSLCertificateKeySqlitePath, domainConfig.target, domainConfig.type, domainConfig.projectPath);
         }
     }
-};
+}
 
 export default domainSSLConfiguration;

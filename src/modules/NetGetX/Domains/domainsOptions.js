@@ -9,51 +9,68 @@ import domainsMenu from './domains.cli.js';
 import sqlite3 from 'sqlite3';
 
 /**
+ * Retrieves and displays the subdomains table for a given domain.
+ * @param {string} domain - The parent domain to list subdomains for.
+ */
+function retrieveSubdomainsTable(domain) {
+    return new Promise((resolve, reject) => {
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        db.all(
+            // Exclude rows where domain === subdomain (shouldn't happen, but just in case)
+            'SELECT domain, target, type, subdomain FROM domains WHERE subdomain = ? AND domain != subdomain ORDER BY domain',
+            [domain],
+            (err, rows) => {
+                db.close();
+                if (err) {
+                    console.log(chalk.red('Error reading subdomains:'), err.message);
+                    return reject(err);
+                }
+            if (rows.length === 0) {
+                // console.log(chalk.yellow('No subdomains configured for this domain.'));
+                return resolve([]);
+            } else {
+                    console.log(chalk.blue('\nSubdomains for domain:'), chalk.green(domain));
+                    const subDomainsTable = rows.map(row => ({
+                        Subdomain: row.domain,
+                        Target: row.target,
+                        Type: row.type
+                    }));
+                    return resolve(subDomainsTable);
+                }
+            }
+        );
+    });
+}
+
+/**
  * Logs the domain information to the console.
  * @memberof module:NetGetX.Domains
  * @param {Object} domainConfig - The domain configuration object.
  * @param {string} domain - The domain name.
  */ 
-const logDomainInfo = (domainConfig, domain) => {
-    if (domainConfig.subDomains && Object.keys(domainConfig.subDomains).length > 0) {
-        console.log(chalk.blue('\nDomain Information:'));
-        const subDomainsTable = Object.keys(domainConfig.subDomains).map(subDomain => ({
-            Subdomain: subDomain,
-            Target: domainConfig.subDomains[subDomain].target,
-            Type: domainConfig.subDomains[subDomain].type
-        }));
-        console.table(subDomainsTable);
-    } else {
-        console.log(chalk.yellow('No subdomains configured.'));
+async function logDomainInfo(domain) {
+    // Mostrar información básica del dominio desde la base de datos
+    // console.table([{
+    //     Domain: domainConfig.domain,
+    //     Target: domainConfig.target,
+    //     Type: domainConfig.type,
+    //     Owner: domainConfig.owner,
+    //     Email: domainConfig.email
+    // }]);
+    try {
+        const subDomainsTable = await retrieveSubdomainsTable(domain);
+        if (subDomainsTable.length > 0) {
+            console.table(subDomainsTable);
+        } else {
+            console.log(chalk.yellow('No subdomains configured for this domain.'));
+        }
+    } catch (err) {
+        console.error(chalk.red('Error retrieving subdomains:'), err.message);
     }
-};
+}
 
 /**
- * Logs the domain information to the console for all domains in the domains object.
- * @memberof module:NetGetX.Domains
- * @param {Array} domains - The domains array from xConfig.
- */ 
-const displayDomains = (domains) => {
-    console.log('\nConfigured Domains:');
-    domains.forEach(domain => console.log(`- ${domain}`));
-};
-
-/**
- * Logs the domain information to the console for all domains in the domains object.
- * @memberof module:NetGetX.Domains
- * @param {Object} domainsConfig - The domains configuration object from xConfig.
- */
-const logAllDomainsTable = (domainsConfig) => {
-    console.log(chalk.blue('\nDomains Information:'));
-    const domainTable = Object.keys(domainsConfig).map(domain => ({
-        Domain: domain,
-        
-    }));
-    console.table(domainTable);
-};
-
-/**
- * Muestra la tabla de dominios leyendo desde la base de datos SQLite3.
+ * Displays the domains table by reading from the SQLite3 database.
  */
 const domainsTable = () => {
     const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err) => {
@@ -90,7 +107,7 @@ const validateDomain = (domain) => {
 
 
 /**
- * Adds a new domain to the xConfig object.
+ * Adds a new domain to the database.
  * @memberof module:NetGetX.Domains
  * @returns {Promise<void>}
  */
@@ -220,43 +237,27 @@ const addNewDomain = async () => {
         }
 
         const { domain, email, owner } = { ...domainAnswer, ...emailAnswer, ...ownerAnswer };
-        const xConfig = await loadOrCreateXConfig();
 
-        if (!xConfig.domains) {
-            xConfig.domains = {};
-        }
-
-        if (xConfig.domains[domain]) {
+        // Verifica si el dominio ya existe en la base de datos
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const exists = await new Promise((resolve) => {
+            db.get('SELECT 1 FROM domains WHERE domain = ? AND subdomain IS NULL', [domain], (err, row) => {
+                db.close();
+                resolve(!!row);
+            });
+        });
+        if (exists) {
             console.log(chalk.red(`Domain ${domain} already exists.`));
             return;
         }
-
-        const newDomainConfig = {
-            sslMode: 'letsencrypt',
-            email: email,
-            target: port,
-            type: type,
-            owner: owner,
-            subDomains:{}
-        };
-
-        // Save only the new domain configuration
-        xConfig.domains[domain] = newDomainConfig;
-        // Sort the domains alphabetically
-        const sortedDomains = Object.keys(xConfig.domains).sort().reduce((acc, key) => {
-            acc[key] = xConfig.domains[key];
-            return acc;
-        }, {});
-        xConfig.domains = sortedDomains;
-        await saveXConfig({ domains: xConfig.domains });
-        await registerDomain(
+        registerDomain(
             domain,
-            domain,
-            email, 
-            'letsencrypt', 
-            '', 
-            '', 
-            port, 
+            domain,  // No subdomain for the main domain
+            email,
+            'letsencrypt',  // Default SSL mode
+            '',
+            '',  
+            port,
             type,
             '',
             owner);
@@ -273,126 +274,144 @@ const addNewDomain = async () => {
  * @returns {Promise<void>}
  */
 const addSubdomain = async (domain) => {
-    const { subdomain } = await inquirer.prompt([
-        {
-            type: 'input',
-            name: 'subdomain',
-            message: 'Enter the subdomain name:',
+    try {
+        const { subdomain } = await inquirer.prompt([
+            {
+                type: 'input',
+                name: 'subdomain',
+                message: 'Enter the subdomain name (type /b to go back):',
+                validate: input => {
+                    if (input === '/b') return true;
+                    if (!input) return 'Subdomain name cannot be empty.';
+                    return true;
+                }
+            }
+        ]);
+
+        if (subdomain === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
         }
-    ]);
 
-    if (!subdomain) {
-        console.log(chalk.red('Subdomain name cannot be empty.'));
-        return;
-    }
-
-    const serviceTypeAnswer = await inquirer.prompt([
-        {
+        const serviceTypeAnswer = await inquirer.prompt([
+            {
             type: 'list',
             name: 'serviceType',
             message: 'Select the type of service for this domain:',
             choices: [
                 { name: 'Serve Static Content', value: 'static' },
-                { name: 'Forward Port', value: 'server' }
+                { name: 'Forward Port', value: 'server' },
+                { name: 'Back', value: 'back' }
             ]
-        }
-    ]);
-
-    let port = '';
-    if (serviceTypeAnswer.serviceType === 'server') {
-        const forwardPortAnswer = await inquirer.prompt([
-            {
-                type: 'input',
-                name: 'server',
-                message: 'Enter the forward port for this domain (type /b to go back):',
-                validate: input => input ? true : 'Forward port is required.'
             }
         ]);
 
-        if (forwardPortAnswer.server === '/b') {
+        if (serviceTypeAnswer.serviceType === 'back') {
             console.log(chalk.blue('Going back to the previous menu...'));
             return;
         }
 
-        port = forwardPortAnswer.server;
-    } else if (serviceTypeAnswer.serviceType === 'static') {
-        const staticPathAnswer = await inquirer.prompt([
-            {
-                type: 'input',
-                name: 'staticPath',
-                message: 'Enter the path to the static file you want to serve (type /b to go back):',
-                validate: input => input ? true : 'Static file path is required.'
-            }
-        ]);
+        let port = '';
+        if (serviceTypeAnswer.serviceType === 'server') {
+            const forwardPortAnswer = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'server',
+                    message: 'Enter the forward port for this domain (type /b to go back):',
+                    validate: input => input ? true : 'Forward port is required.'
+                }
+            ]);
 
-        if (staticPathAnswer.staticPath === '/b') {
-            console.log(chalk.blue('Going back to the previous menu...'));
-            return;
+            if (forwardPortAnswer.server === '/b') {
+                console.log(chalk.blue('Going back to the previous menu...'));
+                return;
+            }
+
+            port = forwardPortAnswer.server;
+        } else if (serviceTypeAnswer.serviceType === 'static') {
+            const staticPathAnswer = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'staticPath',
+                    message: 'Enter the path to the static file you want to serve (type /b to go back):',
+                    validate: input => input ? true : 'Static file path is required.'
+                }
+            ]);
+
+            if (staticPathAnswer.staticPath === '/b') {
+                console.log(chalk.blue('Going back to the previous menu...'));
+                return;
+            }
+
+            port = staticPathAnswer.staticPath;
         }
 
-        port = staticPathAnswer.staticPath;
-    }
-
-    const ownerAnswer = await inquirer.prompt([
-        {
+        const ownerAnswer = await inquirer.prompt([
+            {
             type: 'input',
             name: 'owner',
             message: 'Enter the owner of this subdomain (type /b to go back):',
             validate: input => input ? true : 'Owner is required.'
+            }
+        ]);
+
+        if (ownerAnswer.owner === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
         }
-    ]);
 
-    if (ownerAnswer.owner === '/b') {
-        console.log(chalk.blue('Going back to the previous menu...'));
+        // Retrieve email, SSLCertificateSqlitePath, and SSLCertificateKeySqlitePath from the parent domain in the database
+        let parentDomainConfig;
+        try {
+            const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+            parentDomainConfig = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT email, sslCertificate, sslCertificateKey FROM domains WHERE domain = ?',
+                    [domain],
+                    (err, row) => {
+                        db.close();
+                        if (err) return reject(err);
+                        resolve(row);
+                    }
+                );
+            });
+        } catch (err) {
+            console.log(chalk.red('Error retrieving parent domain config:'), err.message);
+            return;
+        }
+
+        if (!parentDomainConfig) {
+            console.log(chalk.red(`Parent domain ${domain} not found in database.`));
+            return;
+        }
+
+        try {
+            await registerDomain(
+                subdomain,
+                domain,
+                parentDomainConfig.email, 
+                'letsencrypt', 
+                parentDomainConfig.sslCertificate, 
+                parentDomainConfig.sslCertificateKey, 
+                port, 
+                serviceTypeAnswer.serviceType,
+                '',
+                ownerAnswer.owner
+            );
+        } catch (err) {
+            console.log(chalk.red('Error registering subdomain:'), err.message);
+            return;
+        }
+    } catch (err) {
+        console.log(chalk.red('An error occurred while adding the subdomain:'), err.message);
         return;
     }
-
-    const xConfig = await loadOrCreateXConfig();
-
-    if (!xConfig.domains[domain].subDomains) {
-        xConfig.domains[domain].subDomains = {};
-    }
-
-    if (xConfig.domains[domain].subDomains[subdomain]) {
-        console.log(chalk.red(`Subdomain ${subdomain} already exists for domain ${domain}.`));
-        return;
-    }
-
-    const newDomainConfig = {
-        "target": port,
-        "type": serviceTypeAnswer.serviceType,
-        "owner": ownerAnswer.owner
-    }
-
-    xConfig.domains[domain].subDomains[subdomain] = newDomainConfig;
-    const sortedSubdomains = Object.keys(xConfig.domains[domain].subDomains).sort().reduce((acc, key) => {
-        acc[key] = xConfig.domains[domain].subDomains[key];
-        return acc;
-    }, {});
-
-    xConfig.domains[domain].subDomains = sortedSubdomains;
-
-    // Save the updated configuration
-    await saveXConfig({ domains: xConfig.domains });
-
-    // Register the subdomain into the database
-    await registerDomain(
-        subdomain,
-        domain,
-        xConfig.domains[domain].email, 
-        'letsencrypt', 
-        xConfig.domains[domain].SSLCertificateSqlitePath, 
-        xConfig.domains[domain].SSLCertificateKeySqlitePath, 
-        port, 
-        serviceTypeAnswer.serviceType,
-        '',
-        ownerAnswer.owner);
 
     console.log(chalk.green(`Subdomain ${subdomain} added to domain ${domain}.`));
     return;
 };
 
-const editDomainDetails = async (domain, domainConfig) => {
+const editDomainDetails = async (domain) => {
     const editOptions = await inquirer.prompt([
         {
             type: 'list',
@@ -415,37 +434,46 @@ const editDomainDetails = async (domain, domainConfig) => {
                     message: 'Select the new type of service for this domain:',
                     choices: [
                         { name: 'Serve Static Content', value: 'static' },
-                        { name: 'Forward Port', value: 'server' }
+                        { name: 'Forward Port', value: 'server' },
+                        { name: 'Back', value: 'back' }
                     ]
                 }
             ]);
+            if (typeAnswer.serviceType === 'back') {
+                console.log(chalk.blue('Going back to the previous menu...'));
+                return;
+            }
 
-            domainConfig.type = typeAnswer.serviceType;
             await updateDomainType(domain, typeAnswer.serviceType);
             break;
 
         case 'editTarget':
             const targetAnswer = await inquirer.prompt([
-                {
-                    type: 'input',
-                    name: 'target',
-                    message: 'Enter the new target for this domain:',
-                    validate: input => input ? true : 'Target is required.'
+            {
+                type: 'input',
+                name: 'target',
+                message: 'Enter the new target for this domain (type /b to go back):',
+                validate: input => {
+                if (input === '/b') return true;
+                return input ? true : 'Target is required.';
                 }
+            }
             ]);
-
-            domainConfig.target = targetAnswer.target;
+            if (targetAnswer.target === '/b') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+            }
             await updateDomainTarget(domain, targetAnswer.target);
             break;
 
         case 'back':
-            return domainConfig;
+            return;
     }
-    return domainConfig;
+    return;
 };
 
 /**
- * Edits or deletes a domain from the xConfig object.
+ * Edits or deletes a domain from the database.
  * @memberof module:NetGetX.Domains
  * @param {string} domain - The domain to edit or delete.
  * @returns {Promise<void>}
@@ -453,11 +481,18 @@ const editDomainDetails = async (domain, domainConfig) => {
 const editOrDeleteDomain = async (domain) => {
     console.clear();
     try {
-        const xConfig = await loadOrCreateXConfig();
-        const domainConfig = xConfig.domains[domain];
+        // Leer la configuración del dominio desde la base de datos
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const domainConfig = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
+                db.close();
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
 
         if (!domainConfig) {
-            console.log(chalk.red(`Domain ${domain} configuration not found.`));
+            console.log(chalk.red(`Domain ${domain} configuration not found in database.`));
             return;
         }
 
@@ -466,7 +501,7 @@ const editOrDeleteDomain = async (domain) => {
             { name: 'Edit Subdomain', value: 'editSubdomain' },
             { name: 'Delete Domain', value: 'deleteDomain' },
             { name: 'Delete Subdomain', value: 'deleteSubdomain' },
-            { name: 'Back to Domains Menu', value: 'back' }
+            { name: 'Back', value: 'back' }
         ];
 
         const answer = await inquirer.prompt([
@@ -481,64 +516,70 @@ const editOrDeleteDomain = async (domain) => {
         switch (answer.action) {
             case 'editDomain':
                 console.clear();
-                const updatedConfig = await editDomainDetails(domain, domainConfig);
-                xConfig.domains[domain] = updatedConfig;
-                await saveXConfig({ domains: xConfig.domains });
-                console.log(chalk.green(`Domain ${domain} configuration updated successfully.`));
+                await editDomainDetails(domain);
+                console.log(chalk.green(`Domain ${domain} edited successfully.`));
                 return;
-            
             case 'editSubdomain':
-                console.clear();
-                const listsubDomains = Object.keys(xConfig.domains[domain].subDomains || {});
-                if (listsubDomains.length === 0) {
+                // Listar subdominios asociados a este dominio
+                const dbSub = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+                const subdomains = await new Promise((resolve) => {
+                    dbSub.all('SELECT domain FROM domains WHERE subdomain = ? ORDER BY domain', [domain], (err, rows) => {
+                        dbSub.close();
+                        resolve(rows.map(r => r.domain));
+                    });
+                });
+                if (subdomains.length === 0) {
                     console.log(chalk.red('No subdomains available to edit.'));
-                }
-                else {
+                } else {
                     const subDomainToEdit = await inquirer.prompt([
                         {
                             type: 'list',
                             name: 'subDomain',
                             message: 'Select a subdomain to edit:',
-                            choices: [...listsubDomains, { name: 'Back', value: 'back' }]
+                            choices: [...subdomains, { name: 'Back', value: 'back' }]
                         }
                     ]);
-
                     if (subDomainToEdit.subDomain === 'back') {
                         console.log(chalk.blue('Going back to the previous menu...'));
                         return;
                     }
-
-                    const updatedSubDomainConfig = await editDomainDetails(subDomainToEdit.subDomain, xConfig.domains[domain].subDomains[subDomainToEdit.subDomain]);
-                    xConfig.domains[domain].subDomains[subDomainToEdit.subDomain] = updatedSubDomainConfig;
-                    await saveXConfig({ domains: xConfig.domains });
-                    console.log(chalk.green(`Subdomain ${subDomainToEdit.subDomain} configuration updated successfully.`));
+                    await editDomainDetails(subDomainToEdit.subDomain);
                 }
                 return;
-
             case 'deleteDomain':
                 const confirmDelete = await inquirer.prompt([
                     {
-                    type: 'confirm',
-                    name: 'confirm',
-                    message: `Are you sure you want to delete the domain ${domain}?`,
-                    default: false
+                        type: 'confirm',
+                        name: 'confirm',
+                        message: `Are you sure you want to delete the domain ${domain}? (This will also delete all associated subdomains)`,
+                        default: false
                     }
                 ]);
-
                 if (!confirmDelete.confirm) {
                     console.log(chalk.blue('Going back to the previous menu...'));
                     return;
                 }
-
-                delete xConfig.domains[domain];
-                await deleteDomain(domain);
-                await saveXConfig({ domains: xConfig.domains });
-                console.log(chalk.green(`Domain ${domain} deleted successfully.`));
+                // Elimina el dominio y sus subdominios asociados
+                const dbDel = new sqlite3.Database('/opt/.get/domains.db');
+                dbDel.run('DELETE FROM domains WHERE domain = ? OR subdomain = ?', [domain, domain], (err) => {
+                    if (err) {
+                        console.log(chalk.red('Error deleting domain:'), err.message);
+                    } else {
+                        console.log(chalk.green(`Domain ${domain} and its subdomains deleted successfully.`));
+                    }
+                    dbDel.close();
+                });
                 return;
-
             case 'deleteSubdomain':
-                const subDomains = Object.keys(xConfig.domains[domain].subDomains || {});
-                if (subDomains.length === 0) {
+                // Listar subdominios asociados a este dominio
+                const dbSubDel = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+                const subdomainsDel = await new Promise((resolve) => {
+                    dbSubDel.all('SELECT domain FROM domains WHERE subdomain = ? AND subdomain!=domain ORDER BY domain', [domain], (err, rows) => {
+                        dbSubDel.close();
+                        resolve(rows.map(r => r.domain));
+                    });
+                });
+                if (subdomainsDel.length === 0) {
                     console.log(chalk.red('No subdomains available to delete.'));
                 } else {
                     const subDomainToDelete = await inquirer.prompt([
@@ -546,35 +587,36 @@ const editOrDeleteDomain = async (domain) => {
                             type: 'list',
                             name: 'subDomain',
                             message: 'Select a subdomain to delete:',
-                            choices: [...subDomains, { name: 'Back', value: 'back' }]
+                            choices: [...subdomainsDel, { name: 'Back', value: 'back' }]
                         }
                     ]);
-
                     if (subDomainToDelete.subDomain === 'back') {
                         console.log(chalk.blue('Going back to the previous menu...'));
                         return;
                     }
-
-                    const confirmDelete = await inquirer.prompt([
+                    const confirmDeleteSub = await inquirer.prompt([
                         {
-                        type: 'confirm',
-                        name: 'confirm',
-                        message: `Are you sure you want to delete the subdomain ${subDomainToDelete.subDomain}?`,
-                        default: false
+                            type: 'confirm',
+                            name: 'confirm',
+                            message: `Are you sure you want to delete the subdomain ${subDomainToDelete.subDomain}?`,
+                            default: false
                         }
                     ]);
-    
-                    if (!confirmDelete.confirm) {
+                    if (!confirmDeleteSub.confirm) {
                         console.log(chalk.blue('Subdomain deletion was cancelled.'));
                         return;
                     }
-                    delete xConfig.domains[domain].subDomains[subDomainToDelete.subDomain];
-                    await deleteDomain(subDomainToDelete.subDomain);
-                    await saveXConfig({ domains: xConfig.domains });
-                    console.log(chalk.green(`Subdomain ${subDomainToDelete.subDomain} deleted successfully.`));
+                    const dbDelSub = new sqlite3.Database('/opt/.get/domains.db');
+                    dbDelSub.run('DELETE FROM domains WHERE domain = ? AND subdomain = ?', [subDomainToDelete.subDomain, domain], (err) => {
+                        if (err) {
+                            console.log(chalk.red('Error deleting subdomain:'), err.message);
+                        } else {
+                            console.log(chalk.green(`Subdomain ${subDomainToDelete.subDomain} deleted successfully.`));
+                        }
+                        dbDelSub.close();
+                    });
                 }
                 return;
-
             case 'back':
                 return;
         }
@@ -593,28 +635,27 @@ const editOrDeleteDomain = async (domain) => {
  */
 const advanceSettings = async () => {
     try{
-        const xConfig = await loadOrCreateXConfig();
         const answers = await inquirer.prompt({
-            type : 'list',
-            name : 'option',
-            message : 'Select an option:',
+            type: 'list',
+            name: 'action',
+            message: 'Select an option:',
             choices: [
-                'Scan All SSL Certificates Issued',
-                'View Certbot Logs',
-                'Back'
+            { name: 'Scan All SSL Certificates Issued', value: 'scan' },
+            { name: 'View Certbot Logs', value: 'logs' },
+            { name: 'Back', value: 'back' }
             ]
         });
 
-        if (answers.option === 'Back') {
-            console.log(chalk.blue('Going back to the previous menu...'));
-            return;
-        }
-
-        switch (answers.option) {
-            case 'Scan All SSL Certificates Issued':
+        switch (answers.action) {
+            case 'scan':
                 await scanAndLogCertificates();
+            case 'logs':
+                console.log(chalk.yellow('Certbot logs soon to be implemented.'));
+            case 'back':
+                console.log(chalk.blue('Going back to the previous menu...'));
+                return;
         }
-    
+    await advanceSettings();
     } 
     catch (error) {
         console.error(chalk.red('An error occurred in the Advance Domain Menu:', error.message));
@@ -648,13 +689,11 @@ const linkDevelopmentAppProject = async (domain) => {
 };
 
 export {
-    displayDomains,
     validateDomain,
     addNewDomain,
     addSubdomain,
     editOrDeleteDomain,
     logDomainInfo,
-    logAllDomainsTable,
     linkDevelopmentAppProject,
     domainsTable,
     advanceSettings

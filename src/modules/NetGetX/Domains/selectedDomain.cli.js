@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { loadOrCreateXConfig } from '../config/xConfig.js';
 import { editOrDeleteDomain, logDomainInfo, addSubdomain } from './domainsOptions.js';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
+import sqlite3 from 'sqlite3';
 
 /**
  * Domain Menu once a domain is selected
@@ -10,22 +11,30 @@ import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
  * @param {string} domain - The domain to display the menu
  * @returns {Promise<void>} - A promise that resolves when the menu is completed
  */
-const selectedDomainMenu = async (domain) => {
-        try {
-            const xConfig = await loadOrCreateXConfig();
-            const domainConfig = xConfig.domains[domain];
-    
-            if (!domainConfig) {
-                console.log(chalk.red(`Domain ${domain} configuration not found.`));
-                return;
-            }
-    
-        logDomainInfo(domainConfig, domain);
+async function selectedDomainMenu(domain) {
+    try {
+        // Leer la configuración del dominio desde la base de datos
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const domainConfig = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
+                db.close();
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!domainConfig) {
+            console.log(chalk.red(`Domain ${domain} configuration not found in database.`));
+            return;
+        }
+
+        await logDomainInfo(domain);
+
         const options = [
             { name: 'Add Subdomain', value: 'addSubdomain' },
             { name: 'Edit/Delete Domain', value: 'editOrDelete' },
             { name: 'SSL Configuration', value: 'sslConfig' },
-            { name: 'Link Development App Project', value: 'linkDevApp' },
+            // { name: 'Link Development App Project', value: 'linkDevApp' },
             { name: 'Back to Domains Menu', value: 'back' },
         ];
 
@@ -48,9 +57,9 @@ const selectedDomainMenu = async (domain) => {
             case 'sslConfig':
                 await domainSSLConfiguration(domain);
                 break;
-            case 'linkDevApp':
-                await linkDevelopmentAppProject(domain);
-                break;
+            // case 'linkDevApp':
+            //     await linkDevelopmentAppProject(domain);
+            //     break;
             case 'back':
                 return;
             default:
@@ -62,6 +71,6 @@ const selectedDomainMenu = async (domain) => {
     } catch (error) {
         console.error(chalk.red('An error occurred in the Selected Domain Menu:', error.message));
     }
-};
+}
 
 export default selectedDomainMenu;

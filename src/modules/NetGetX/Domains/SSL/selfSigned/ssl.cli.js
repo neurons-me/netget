@@ -1,7 +1,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import fs from 'fs';
-import { loadOrCreateXConfig, saveXConfig } from '../../../config/xConfig.js';
 import checkAndInstallCertbot from '../Certbot/checkAndInstallCertbot.js';
 import { 
     verifySSLCertificate, 
@@ -10,7 +9,7 @@ import {
     checkCertificates 
 } from '../SSLCertificates.js';
 import printCertbotLogs from '../Certbot/certbot.js';
-import { storeConfigInDB } from '../../../../../sqlite/utils_sqlite3.js';
+import { storeConfigInDB, updateSSLCertificatePaths } from '../../../../../sqlite/utils_sqlite3.js';
 import sqlite3 from 'sqlite3';
 
 /**
@@ -25,10 +24,9 @@ const displayCurrentSSLConfiguration = (domainConfig, domain) => {
     console.log(`
 ███████ ███████ ██ .domain: ${chalk.green(domain)}  
 ██      ██      ██ .email: ${chalk.green(domainConfig.email)} 
-███████ ███████ ██ .enforceHttps: ${chalk.green(domainConfig.enforceHttps)}
+███████ ███████ ██ .SSL Mode: ${chalk.green(domainConfig.sslMode || 'Not Set')}
      ██      ██ ██ .SSLCertificatesPath: ${chalk.green(domainConfig.SSLCertificatesPath)}
-███████ ███████ ███████ .SSLCertificatesPath: ${chalk.green(domainConfig.SSLCertificatesPath)}
-.SSL Verification: ${chalk.green("Good/Bad")}`);
+███████ ███████ ███████ .SSLCertificatesKeyPath: ${chalk.green(domainConfig.SSLCertificateKeyPath)}`);
 };
 
 /**
@@ -123,26 +121,7 @@ async function issueCertificateForDomain(domain, domainConfig) {
             domainConfig.SSLCertificatesPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
 
-            // Guardar los cambios en la base de datos en vez de xConfig
-            const db = new sqlite3.Database('/opt/.get/domains.db');
-            db.run(
-                `UPDATE domains SET
-                    sslCertificate = ?,
-                    sslCertificateKey = ?,
-                 WHERE domain = ?`,
-                [
-                    domainConfig.SSLCertificatesPath,
-                    domainConfig.SSLCertificateKeyPath,
-                    domain
-                ],
-                (err) => {
-                    if (err) {
-                        console.log(chalk.red('Error updating SSL certificate paths in database:'), err.message);
-                    }
-                    db.close();
-                }
-            );
-            await storeConfigInDB(domain, 'letsencrypt', domainConfig.SSLCertificateSqlitePath, domainConfig.SSLCertificateKeySqlitePath, domainConfig.target, domainConfig.type, domainConfig.projectPath);
+            await updateSSLCertificatePaths(domain, domainConfig.SSLCertificatesPath, domainConfig.SSLCertificateKeyPath);
         }
 
         displayCurrentSSLConfiguration(domainConfig, domain);

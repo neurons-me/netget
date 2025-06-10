@@ -569,7 +569,7 @@ const editOrDeleteDomain = async (domain) => {
                     }
                     dbDel.close();
                 });
-                return;
+                await domainsMenu(); 
             case 'deleteSubdomain':
                 // Listar subdominios asociados a este dominio
                 const dbSubDel = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);

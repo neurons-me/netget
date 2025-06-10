@@ -118,12 +118,16 @@ export async function getDomainByName(domain) {
  * @param {string} target - The target
  * @param {string} type - The type
  * @param {string} projectPath - The project path
+ * @param {string} owner - The owner of the domain
  * @returns {Promise<void>}
  */
-export async function updateDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
+export async function updateDomain(domain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) {
     try {
         const db = await dbPromise;
-        await db.run('UPDATE domains SET email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ? WHERE domain = ?', [email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domain]);
+        await db.run(
+            'UPDATE domains SET email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?',
+            [email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]
+        );
     }
     catch (error) {
         console.error(`Error updating the domain ${domain}:`, error);
@@ -181,23 +185,25 @@ export async function deleteDomain(domain) {
 /**
  * Function to store configuration in the database
  * @param {string} domain - The domain name
+ * @param {string} subdomain - The subdomain
  * @param {string} sslMode - The SSL mode
  * @param {string} sslCertificate - The SSL certificate
  * @param {string} sslCertificateKey - The SSL certificate key
  * @param {string} target - The target
  * @param {string} type - The type
  * @param {string} projectPath - The project path
+ * @param {string} owner - The owner of the domain
  * @returns {Promise<void>}
  */
-export async function storeConfigInDB(domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath) {
+export async function storeConfigInDB(domain, subdomain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) {
     const db = await dbPromise;
     try {
         const existingDomain = await db.get('SELECT * FROM domains WHERE domain = ?', [domain]);
         const owner = domain.split('.').slice(-2).join('.');
         if (existingDomain) {
-            await db.run('UPDATE domains SET sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?', [sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]);
+            await db.run('UPDATE domains SET subdomain = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?', [subdomain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]);
         } else {
-            await db.run('INSERT INTO domains (domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [domain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
+            await db.run('INSERT INTO domains (domain, subdomain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [domain, subdomain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
         }
     } catch (error) {
         console.error(`Error storing config for domain ${domain}:`, error);
@@ -247,6 +253,36 @@ function getConfig(domain) {
                 resolve(row);
             }
         });
+    });
+}
+
+
+/**
+ * Updates the SSL certificate paths in the database for a domain.
+ * @param {string} domain - The domain name.
+ * @param {string} certPath - Path to the SSL certificate.
+ * @param {string} keyPath - Path to the SSL private key.
+ * @returns {Promise<void>}
+ */
+export async function updateSSLCertificatePaths(domain, certPath, keyPath) {
+    return new Promise((resolve, reject) => {
+        const db = new sqlite3.Database('/opt/.get/domains.db');
+        db.run(
+            `UPDATE domains SET 
+                sslCertificate = ?,
+                sslCertificateKey = ?
+             WHERE domain = ?`,
+            [certPath, keyPath, domain],
+            (err) => {
+                db.close();
+                if (err) {
+                    console.log(chalk.red('Error updating SSL certificate paths in database:'), err.message);
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            }
+        );
     });
 }
 

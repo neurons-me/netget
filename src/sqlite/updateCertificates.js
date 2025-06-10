@@ -10,18 +10,18 @@ async function updateSSLCertificatePaths() {
     });
 
     try {
-        const domains = await db.all('SELECT domain FROM domains');
-
-        for (const { domain } of domains) {
-            const sslCertificatePath = `/etc/letsencrypt/archive/${domain}/fullchain1.pem`;
-            const sslCertificateKeyPath = `/etc/letsencrypt/archive/${domain}/privkey1.pem`;
+        const domains = await db.all('SELECT domain, subdomain FROM domains');
+        
+        for (const { domain, subdomain } of domains) {
+            const sslCertificatePath = `/etc/letsencrypt/live/${subdomain}/fullchain.pem`;
+            const sslCertificateKeyPath = `/etc/letsencrypt/live/${subdomain}/privkey.pem`;
 
             await db.run(
                 `UPDATE domains SET sslCertificate = ?, sslCertificateKey = ? WHERE domain = ?`,
                 [sslCertificatePath, sslCertificateKeyPath, domain]
             );
 
-            console.log(`Updated SSL paths for domain: ${domain}`);
+            console.log(`Updated SSL paths for domain: ${subdomain}`);
         }
     } catch (error) {
         console.error('Error updating SSL certificate paths:', error);

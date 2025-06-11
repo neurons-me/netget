@@ -57,7 +57,7 @@ export default async function NetGetMainMenu() {
     ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
     ║║║├┤  │ ║ ╦├┤  │ 
     ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.6.34`);
+        v2.6.35`);
     console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
     const answers = await inquirer.prompt([
         {

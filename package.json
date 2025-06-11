@@ -1,6 +1,6 @@
 {
     "name": "netget",
-    "version": "2.6.34",
+    "version": "2.6.35",
     "description": "Rette Adepto/ Recibido Directamente.",
     "type": "module",
     "main": "index.js",

@@ -17,7 +17,7 @@ function retrieveSubdomainsTable(domain) {
         const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
         db.all(
             // Exclude rows where domain === subdomain (shouldn't happen, but just in case)
-            'SELECT domain, target, type, subdomain FROM domains WHERE subdomain = ? AND domain != subdomain ORDER BY domain',
+            'SELECT domain, target, type, subdomain FROM domains WHERE subdomain = ? ORDER BY domain',
             [domain],
             (err, rows) => {
                 db.close();
@@ -31,7 +31,7 @@ function retrieveSubdomainsTable(domain) {
             } else {
                     console.log(chalk.blue('\nSubdomains for domain:'), chalk.green(domain));
                     const subDomainsTable = rows.map(row => ({
-                        Subdomain: row.domain,
+                        DomainAndSubdomain: row.domain,
                         Target: row.target,
                         Type: row.type
                     }));
@@ -49,7 +49,6 @@ function retrieveSubdomainsTable(domain) {
  * @param {string} domain - The domain name.
  */ 
 async function logDomainInfo(domain) {
-    // Mostrar información básica del dominio desde la base de datos
     // console.table([{
     //     Domain: domainConfig.domain,
     //     Target: domainConfig.target,
@@ -473,6 +472,91 @@ const editDomainDetails = async (domain) => {
 };
 
 /**
+ * Edit or delete a subdomain for a given domain.
+ * @param {string} domain - The parent domain.
+ * @returns {Promise<void>}
+ */
+const editOrDeleteSubdomain = async (domain) => {
+    console.clear();
+    try {
+        // Listar subdominios asociados a este dominio
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const subdomains = await new Promise((resolve) => {
+            db.all('SELECT domain FROM domains WHERE subdomain = ? ORDER BY domain', [domain], (err, rows) => {
+                db.close();
+                resolve(rows.map(r => r.domain));
+            });
+        });
+
+        if (subdomains.length === 0) {
+            console.log(chalk.red('No subdomains available to edit or delete.'));
+            return;
+        }
+
+        const { subDomain } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'subDomain',
+                message: 'Select a subdomain to edit or delete:',
+                choices: [...subdomains, { name: 'Back', value: 'back' }]
+            }
+        ]);
+
+        if (subDomain === 'back') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
+
+        const { action } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'action',
+                message: `What do you want to do with subdomain ${subDomain}?`,
+                choices: [
+                    { name: 'Edit Subdomain', value: 'edit' },
+                    { name: 'Delete Subdomain', value: 'delete' },
+                    { name: 'Back', value: 'back' }
+                ]
+            }
+        ]);
+
+        if (action === 'back') {
+            console.log(chalk.blue('Going back to the previous menu...'));
+            return;
+        }
+
+        if (action === 'edit') {
+            await editDomainDetails(subDomain);
+            console.log(chalk.green(`Subdomain ${subDomain} edited successfully.`));
+        } else if (action === 'delete') {
+            const { confirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'confirm',
+                    message: `Are you sure you want to delete the subdomain ${subDomain}?`,
+                    default: false
+                }
+            ]);
+            if (!confirm) {
+                console.log(chalk.blue('Subdomain deletion was cancelled.'));
+                return;
+            }
+            const dbDel = new sqlite3.Database('/opt/.get/domains.db');
+            dbDel.run('DELETE FROM domains WHERE domain = ? AND subdomain = ?', [subDomain, domain], (err) => {
+                if (err) {
+                    console.log(chalk.red('Error deleting subdomain:'), err.message);
+                } else {
+                    console.log(chalk.green(`Subdomain ${subDomain} deleted successfully.`));
+                }
+                dbDel.close();
+            });
+        }
+    } catch (error) {
+        console.error(chalk.red('An error occurred in the Edit/Delete Subdomain Menu:', error.message));
+    }
+};
+
+/**
  * Edits or deletes a domain from the database.
  * @memberof module:NetGetX.Domains
  * @param {string} domain - The domain to edit or delete.
@@ -498,9 +582,7 @@ const editOrDeleteDomain = async (domain) => {
 
         const options = [
             { name: 'Edit Domain', value: 'editDomain' },
-            { name: 'Edit Subdomain', value: 'editSubdomain' },
             { name: 'Delete Domain', value: 'deleteDomain' },
-            { name: 'Delete Subdomain', value: 'deleteSubdomain' },
             { name: 'Back', value: 'back' }
         ];
 
@@ -518,33 +600,6 @@ const editOrDeleteDomain = async (domain) => {
                 console.clear();
                 await editDomainDetails(domain);
                 console.log(chalk.green(`Domain ${domain} edited successfully.`));
-                return;
-            case 'editSubdomain':
-                // Listar subdominios asociados a este dominio
-                const dbSub = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
-                const subdomains = await new Promise((resolve) => {
-                    dbSub.all('SELECT domain FROM domains WHERE subdomain = ? ORDER BY domain', [domain], (err, rows) => {
-                        dbSub.close();
-                        resolve(rows.map(r => r.domain));
-                    });
-                });
-                if (subdomains.length === 0) {
-                    console.log(chalk.red('No subdomains available to edit.'));
-                } else {
-                    const subDomainToEdit = await inquirer.prompt([
-                        {
-                            type: 'list',
-                            name: 'subDomain',
-                            message: 'Select a subdomain to edit:',
-                            choices: [...subdomains, { name: 'Back', value: 'back' }]
-                        }
-                    ]);
-                    if (subDomainToEdit.subDomain === 'back') {
-                        console.log(chalk.blue('Going back to the previous menu...'));
-                        return;
-                    }
-                    await editDomainDetails(subDomainToEdit.subDomain);
-                }
                 return;
             case 'deleteDomain':
                 const confirmDelete = await inquirer.prompt([
@@ -570,52 +625,6 @@ const editOrDeleteDomain = async (domain) => {
                     dbDel.close();
                 });
                 await domainsMenu(); 
-            case 'deleteSubdomain':
-                // Listar subdominios asociados a este dominio
-                const dbSubDel = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
-                const subdomainsDel = await new Promise((resolve) => {
-                    dbSubDel.all('SELECT domain FROM domains WHERE subdomain = ? AND subdomain!=domain ORDER BY domain', [domain], (err, rows) => {
-                        dbSubDel.close();
-                        resolve(rows.map(r => r.domain));
-                    });
-                });
-                if (subdomainsDel.length === 0) {
-                    console.log(chalk.red('No subdomains available to delete.'));
-                } else {
-                    const subDomainToDelete = await inquirer.prompt([
-                        {
-                            type: 'list',
-                            name: 'subDomain',
-                            message: 'Select a subdomain to delete:',
-                            choices: [...subdomainsDel, { name: 'Back', value: 'back' }]
-                        }
-                    ]);
-                    if (subDomainToDelete.subDomain === 'back') {
-                        console.log(chalk.blue('Going back to the previous menu...'));
-                        return;
-                    }
-                    const confirmDeleteSub = await inquirer.prompt([
-                        {
-                            type: 'confirm',
-                            name: 'confirm',
-                            message: `Are you sure you want to delete the subdomain ${subDomainToDelete.subDomain}?`,
-                            default: false
-                        }
-                    ]);
-                    if (!confirmDeleteSub.confirm) {
-                        console.log(chalk.blue('Subdomain deletion was cancelled.'));
-                        return;
-                    }
-                    const dbDelSub = new sqlite3.Database('/opt/.get/domains.db');
-                    dbDelSub.run('DELETE FROM domains WHERE domain = ? AND subdomain = ?', [subDomainToDelete.subDomain, domain], (err) => {
-                        if (err) {
-                            console.log(chalk.red('Error deleting subdomain:'), err.message);
-                        } else {
-                            console.log(chalk.green(`Subdomain ${subDomainToDelete.subDomain} deleted successfully.`));
-                        }
-                        dbDelSub.close();
-                    });
-                }
                 return;
             case 'back':
                 return;
@@ -633,16 +642,16 @@ const editOrDeleteDomain = async (domain) => {
  * @memberof module:NetGetX.Domains
  * @returns {Promise<void>}
  */
-const advanceSettings = async () => {
-    try{
+async function advanceSettings() {
+    try {
         const answers = await inquirer.prompt({
             type: 'list',
             name: 'action',
             message: 'Select an option:',
             choices: [
-            { name: 'Scan All SSL Certificates Issued', value: 'scan' },
-            { name: 'View Certbot Logs', value: 'logs' },
-            { name: 'Back', value: 'back' }
+                { name: 'Scan All SSL Certificates Issued', value: 'scan' },
+                { name: 'View Certbot Logs', value: 'logs' },
+                { name: 'Back', value: 'back' }
             ]
         });
 
@@ -655,12 +664,12 @@ const advanceSettings = async () => {
                 console.log(chalk.blue('Going back to the previous menu...'));
                 return;
         }
-    await advanceSettings();
-    } 
+        await advanceSettings();
+    }
     catch (error) {
         console.error(chalk.red('An error occurred in the Advance Domain Menu:', error.message));
-    }    
-};
+    }
+}
 
 const linkDevelopmentAppProject = async (domain) => {
     const { projectPath } = await inquirer.prompt([
@@ -693,6 +702,7 @@ export {
     addNewDomain,
     addSubdomain,
     editOrDeleteDomain,
+    editOrDeleteSubdomain,
     logDomainInfo,
     linkDevelopmentAppProject,
     domainsTable,

@@ -86,6 +86,7 @@ const domainsMenu = async () => {
             ...(await getDomainsFromDB()),
             new inquirer.Separator(),
             { name: 'Add New Domain', value: 'addNewDomain' },
+            { name: 'View Full Table Domains', value: 'viewAllDomains' },
             { name: 'Advance Domain Settings', value: 'advance' },
             { name: 'Back', value: 'back' },
             { name: 'Exit', value: 'exit' }
@@ -104,6 +105,11 @@ const domainsMenu = async () => {
         switch (answer.action) {
             case 'addNewDomain':
                 await addNewDomain();
+                break;
+            case 'viewAllDomains':
+                console.clear();
+                console.log(chalk.blue('All Configured Domains:'));
+                domainsTable();
                 break;
             case 'advance':
                 console.clear();

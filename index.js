@@ -1,5 +1,3 @@
-
-
 import NetGet from './src/netget.js';
 import { verifyInitialization } from './src/scripts/init_dirs.js';
 export { defaultHandler } from './src/routes/defaultHandlers.js';

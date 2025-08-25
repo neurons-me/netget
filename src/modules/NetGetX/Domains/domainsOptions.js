@@ -47,7 +47,7 @@ function retrieveSubdomainsTable(domain) {
  * @memberof module:NetGetX.Domains
  * @param {Object} domainConfig - The domain configuration object.
  * @param {string} domain - The domain name.
- */ 
+ */
 async function logDomainInfo(domain) {
     // console.table([{
     //     Domain: domainConfig.domain,
@@ -104,6 +104,18 @@ const validateDomain = (domain) => {
     return domainRegex.test(domain) ? true : 'Enter a valid domain (e.g., example.com or sub.example.com)';
 };
 
+const validatePort = (port) => {
+    const portNum = Number(port);
+    if (
+        !Number.isInteger(portNum) ||
+        portNum < 1 ||
+        portNum > 65535
+    ) {
+        return 'Enter a valid port number (1-65535)';
+    }
+    return true;
+};
+
 
 /**
  * Adds a new domain to the database.
@@ -112,7 +124,7 @@ const validateDomain = (domain) => {
  */
 const addNewDomain = async () => {
     while (true) {
-        const description_message = 
+        const description_message =
             'Add a new domain to your NetGetX configuration. You can choose to serve static content or forward traffic to a specific port on your server.\n' +
             chalk.blue('Available Service Types:\n' +
             '- Serve Static Content: Host static files (like HTML, CSS, JS, images) from a folder on your server. Great for simple websites or landing pages.\n' +
@@ -142,23 +154,14 @@ const addNewDomain = async () => {
         let port = '';
         if (serviceTypeAnswer.serviceType === 'server') {
             const forwardPortAnswer = await inquirer.prompt([
-            {
-                type: 'input',
-                name: 'server',
-                message: 'Enter the forward port for this domain (type /b to go back):',
-                validate: input => {
-                if (input === '/b') return true;
-                const portNum = Number(input);
-                if (
-                    !Number.isInteger(portNum) ||
-                    portNum < 1 ||
-                    portNum > 65535
-                ) {
-                    return 'Enter a valid port number (1-65535)';
+                {
+                    type: 'input',
+                    name: 'server',
+                    message: 'Enter the forward port for this domain (type /b to go back):',
+                    validate: input => {
+                        return validatePort(input);
+                    }
                 }
-                return true;
-                }
-            }
             ]);
 
             if (forwardPortAnswer.server === '/b') {
@@ -255,7 +258,7 @@ const addNewDomain = async () => {
             email,
             'letsencrypt',  // Default SSL mode
             '',
-            '',  
+            '',
             port,
             type,
             '',
@@ -388,11 +391,11 @@ const addSubdomain = async (domain) => {
             await registerDomain(
                 subdomain,
                 domain,
-                parentDomainConfig.email, 
-                'letsencrypt', 
-                parentDomainConfig.sslCertificate, 
-                parentDomainConfig.sslCertificateKey, 
-                port, 
+                parentDomainConfig.email,
+                'letsencrypt',
+                parentDomainConfig.sslCertificate,
+                parentDomainConfig.sslCertificateKey,
+                port,
                 serviceTypeAnswer.serviceType,
                 '',
                 ownerAnswer.owner
@@ -561,7 +564,7 @@ const editOrDeleteSubdomain = async (domain) => {
  * @memberof module:NetGetX.Domains
  * @param {string} domain - The domain to edit or delete.
  * @returns {Promise<void>}
- */ 
+ */
 const editOrDeleteDomain = async (domain) => {
     console.clear();
     try {
@@ -624,7 +627,7 @@ const editOrDeleteDomain = async (domain) => {
                     }
                     dbDel.close();
                 });
-                await domainsMenu(); 
+                await domainsMenu();
                 return;
             case 'back':
                 return;
@@ -687,8 +690,8 @@ const linkDevelopmentAppProject = async (domain) => {
         domain,
         xConfig.domains[domain].email,
         'letsencrypt',
-        xConfig.domains[domain].SSLCertificateSqlitePath, 
-        xConfig.domains[domain].SSLCertificateKeySqlitePath, 
+        xConfig.domains[domain].SSLCertificateSqlitePath,
+        xConfig.domains[domain].SSLCertificateKeySqlitePath,
         xConfig.domains[domain].target,
         xConfig.domains[domain].type,
         projectPath
@@ -706,5 +709,6 @@ export {
     logDomainInfo,
     linkDevelopmentAppProject,
     domainsTable,
-    advanceSettings
+    advanceSettings,
+    validatePort
 };

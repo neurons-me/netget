@@ -7,9 +7,7 @@ import archiver from 'archiver';
 export class RemoteDeployer {
   constructor(config) {
     this.dbPath = config.dbPath || '/opt/.get/domains.db';
-    this.projectsBasePath = config.projectsBasePath || '/var/www';
-    this.nginxConfigPath = config.nginxConfigPath || '/etc/nginx/sites-available';
-    this.nginxEnabledPath = config.nginxEnabledPath || '/etc/nginx/sites-enabled';
+    this.projectsBasePath = config.projectsBasePath || '/mnt/neuroverse';
     this.authorizedKeys = config.authorizedKeys || [];
   }
 
@@ -131,6 +129,7 @@ export class RemoteDeployer {
         await fs.rm(extractDir, { recursive: true, force: true });
       } catch (error) {
         // Directory might not exist, ignore
+        console.log(`   ❌ Failed to remove existing deployment for ${domain}: ${error.message}`);
       }
 
       // Create extraction directory
@@ -150,6 +149,7 @@ export class RemoteDeployer {
         execSync('npm install --production', { cwd: extractDir });
       } catch (error) {
         // No package.json or npm install failed, continue
+        console.log(`   ❌ Failed to install dependencies for ${domain}: ${error.message}`);
       }
 
       // Build project if build script exists
@@ -161,6 +161,7 @@ export class RemoteDeployer {
         }
       } catch (error) {
         // No build script or build failed, continue
+        console.log(`   ❌ Failed to build ${domain}: ${error.message}`);
       }
 
       return {

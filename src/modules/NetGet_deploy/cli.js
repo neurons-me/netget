@@ -115,7 +115,7 @@ program
         localDbPath: "/opt/.get/domains.db",
         remoteServer: "https://your-remote-server.com",
         remoteApiKey: "your-api-key-here",
-        projectsBasePath: "/mnt/neuroverse",
+        projectsBasePath: "/var/www",
         timestamp: Date.now()
       };
 

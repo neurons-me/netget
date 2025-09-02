@@ -7,7 +7,7 @@ import archiver from 'archiver';
 export class RemoteDeployer {
   constructor(config) {
     this.dbPath = config.dbPath || '/opt/.get/domains.db';
-    this.projectsBasePath = config.projectsBasePath || '/mnt/neuroverse';
+    this.projectsBasePath = config.projectsBasePath || '/var/www';
     this.authorizedKeys = config.authorizedKeys || [];
   }
 

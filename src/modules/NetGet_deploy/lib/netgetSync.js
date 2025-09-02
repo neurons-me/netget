@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import { createWriteStream, createReadStream } from 'fs';
 import sqlite3 from 'sqlite3';
 import axios from 'axios';
 import FormData from 'form-data';
@@ -54,7 +55,7 @@ export class NetGetSync {
     const zipPath = path.join(tempDir, `${domain}.zip`);
     
     return new Promise((resolve, reject) => {
-      const output = fs.createWriteStream(zipPath);
+      const output = createWriteStream(zipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
 
       output.on('close', () => {
@@ -114,7 +115,7 @@ export class NetGetSync {
     try {
       const form = new FormData();
       form.append('domain', domain);
-      form.append('file', fs.createReadStream(zipPath));
+      form.append('file', createReadStream(zipPath));
 
       const response = await axios.post(`${this.remoteServer}/deploy/sync/deploy`, form, {
         headers: {

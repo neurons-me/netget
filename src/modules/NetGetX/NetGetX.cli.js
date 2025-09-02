@@ -27,17 +27,27 @@ export default async function NetGetX_CLI(x) {
     }
     let exit = false;
     while (!exit) {
+        // Check if main server is set in config
+        const mainServerSet = x.mainServerName && typeof x.mainServerName === 'string' && x.mainServerName.trim() !== '';
+        if (!mainServerSet) {
+            console.log(chalk.red('Main server is not configured!'));
+            console.log(chalk.yellow('Please set the main server name using: ') + chalk.cyan('Settings > Main Server Configuration Edit Main Server Name'));
+            console.log(chalk.gray('Local.Netget option will remain locked until you set the main server.'));
+        }
+        const menuChoices = [
+            '1. Domains and Certificates (Manage domains and SSL certificates)',
+            mainServerSet
+                ? '2. Local.Netget (Start Local Dev Server)'
+                : { name: chalk.gray('2. Local.Netget (Set Main Server First)'), disabled: 'Main server not set' },
+            '3. Settings',
+            '4. Back to Main Menu',
+            '0. Exit'
+        ];
         const answers = await inquirer.prompt({
             type: 'list',
             name: 'option',
             message: 'Select an action:',
-            choices: [
-                '1. Domains and Certificates (Manage domains and SSL certificates)',
-                // '2. Local.Netget (Start Local Dev Server)',
-                '3. Settings',
-                '4. Back to Main Menu',
-                '0. Exit'
-            ]
+            choices: menuChoices
         });
 
         switch (answers.option) {
@@ -47,10 +57,14 @@ export default async function NetGetX_CLI(x) {
                 break;
 
             case '2. Local.Netget (Start Local Dev Server)':
+                if (!mainServerSet) {
+                    console.log(chalk.red('You must set the main server before starting Local.Netget. Go to Settings > Edit Main Server Name.'));
+                    break;
+                }
                 console.clear();
                 await LocalNetgetCLI(x);
                 break;
-    
+
             case '3. Settings':
                 console.clear();
                 await netGetXSettingsMenu(x);

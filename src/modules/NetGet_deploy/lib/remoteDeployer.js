@@ -349,12 +349,12 @@ server {
       await this.getDomainConfigs();
 
       // Check nginx status
-      const nginxStatus = execSync('systemctl is-active nginx').toString().trim();
+      const openrestyStatus = execSync('systemctl is-active openresty').toString().trim();
 
       return {
         status: 'healthy',
         database: 'connected',
-        nginx: nginxStatus,
+        openresty: openrestyStatus,
         timestamp: new Date().toISOString()
       };
     } catch (error) {

@@ -4,7 +4,6 @@ import axios from 'axios';
 import FormData from 'form-data';
 import archiver from 'archiver';
 import path from 'path';
-import { promisify } from 'util';
 
 export class NetGetSync {
   constructor(config) {
@@ -92,7 +91,7 @@ export class NetGetSync {
    */
   async syncDomainConfig(domains) {
     try {
-      const response = await axios.post(`${this.remoteServer}/api/sync/domains`, {
+      const response = await axios.post(`${this.remoteServer}/deploy/sync/domains`, {
         domains: domains,
         timestamp: Date.now()
       }, {
@@ -117,7 +116,7 @@ export class NetGetSync {
       form.append('domain', domain);
       form.append('file', fs.createReadStream(zipPath));
 
-      const response = await axios.post(`${this.remoteServer}/api/sync/deploy`, form, {
+      const response = await axios.post(`${this.remoteServer}/deploy/sync/deploy`, form, {
         headers: {
           ...form.getHeaders(),
           'Authorization': `Bearer ${this.remoteApiKey}`
@@ -138,16 +137,19 @@ export class NetGetSync {
    */
   async checkRemoteHealth() {
     try {
-      const response = await axios.get(`${this.remoteServer}/api/health`, {
+      const response = await axios.get(`${this.remoteServer}/deploy/health`, {
         headers: {
-          'Authorization': `Bearer ${this.remoteApiKey}`
-        },
-        timeout: 10000
+          Authorization: `Bearer ${this.remoteApiKey}`
+        }
       });
 
       return response.data;
     } catch (error) {
-      throw new Error(`Remote server not accessible: ${error.message}`);
+      return {
+        status: 'unhealthy',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 
@@ -234,7 +236,7 @@ export class NetGetSync {
       const localDomains = await this.readLocalConfig();
       
       // Get remote config
-      const response = await axios.get(`${this.remoteServer}/api/sync/domains`, {
+      const response = await axios.get(`${this.remoteServer}/deploy/sync/domains`, {
         headers: {
           'Authorization': `Bearer ${this.remoteApiKey}`
         }

@@ -19,7 +19,7 @@ export async function performDeploy() {
 
     // 3. Solicitar firma a NetGet
     const dataString = JSON.stringify(config);
-    const netgetSignatureResponse = await axios.post('http://localhost:3000/signature', {
+    const netgetSignatureResponse = await axios.post('http://localhost:3000/deploy/signature', {
       data: dataString
     });
 

@@ -18,7 +18,8 @@
     "deployment",
     "sync",
     "domains",
-    "nginx"
+    "nginx",
+    "openresty"
   ],
   "author": "NetGet Team",
   "license": "MIT",

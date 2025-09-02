@@ -21,7 +21,7 @@ export class RemoteDeployer {
   /**
    * Update domain configurations in remote database
    */
-  async updateDomainConfigs(domains, { updateTarget = false } = {}) {
+  async updateDomainConfigs(domains, updateTarget = true) {
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
@@ -61,13 +61,9 @@ export class RemoteDeployer {
         let errors = [];
 
         domains.forEach((domain, index) => {
-          // If updateTarget is true, update the target to the new project path
-          // let targetValue = domain.target;
-          let projectPath = path.join(this.projectsBasePath, domain);
-          console.log(`Processing domain: ${domain}, projectPath: ${projectPath}`);
+          // Ensure domain.target is updated if requested
           if (updateTarget) {
-            // Update the target to the new project path
-            domain.target = projectPath;
+            domain.target = path.join(this.projectsBasePath, domain.domain);
           }
           stmt.run([
             domain.domain,

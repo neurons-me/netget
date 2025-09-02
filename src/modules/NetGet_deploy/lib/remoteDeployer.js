@@ -113,7 +113,7 @@ export class RemoteDeployer {
   async deployProject(domain, fileBuffer) {
     try {
       const projectDir = path.join(this.projectsBasePath, domain);
-      
+      console.log(`Deploying project for domain: ${domain} to ${projectDir}`);
       // Create project directory if it doesn't exist
       await fs.mkdir(projectDir, { recursive: true });
 

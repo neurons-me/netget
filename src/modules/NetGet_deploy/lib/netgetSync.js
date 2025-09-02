@@ -47,7 +47,7 @@ export class NetGetSync {
   /**
    * Package project files for deployment
    */
-  async packageProject(projectPath, domain) {
+  async packageProject(target, domain) {
     const tempDir = path.join(process.cwd(), 'temp');
     await fs.mkdir(tempDir, { recursive: true });
     
@@ -70,7 +70,7 @@ export class NetGetSync {
 
       // Add project files to archive (exclude node_modules, .git, etc.)
       archive.glob('**/*', {
-        cwd: projectPath,
+        cwd: target,
         ignore: [
           'node_modules/**',
           '.git/**',
@@ -188,10 +188,10 @@ export class NetGetSync {
         console.log('4. Deploying project files...');
         
         for (const domain of domainsToSync) {
-          if (domain.projectPath && domain.type !== 'redirect') {
+          if (domain.target && domain.type !== 'server') {
             try {
               console.log(`   📦 Packaging ${domain.domain}...`);
-              const zipPath = await this.packageProject(domain.projectPath, domain.domain);
+              const zipPath = await this.packageProject(domain.target, domain.domain);
               
               console.log(`   🚀 Deploying ${domain.domain}...`);
               await this.deployProject(domain.domain, zipPath);

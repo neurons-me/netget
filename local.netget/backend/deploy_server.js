@@ -132,7 +132,7 @@ router.post('/sync/domains', authenticate, async (req, res) => {
     }
 
     // Update database
-    const dbResult = await deployer.updateDomainConfigs(domains);
+    const dbResult = await deployer.updateDomainConfigs(domains, { updateTarget: true });
 
     res.json({
       message: 'Domain configurations synced successfully',

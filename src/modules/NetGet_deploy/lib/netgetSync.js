@@ -111,12 +111,12 @@ export class NetGetSync {
   /**
    * Deploy project files to remote server
    */
-  async deployProject(domain, zipPath) {
+    async deployProject(domain, zipPath) {
     try {
       const form = new FormData();
       form.append('domain', domain);
       form.append('file', createReadStream(zipPath));
-
+  
       const response = await axios.post(`${this.remoteServer}/deploy/sync/deploy`, form, {
         headers: {
           ...form.getHeaders(),
@@ -126,10 +126,23 @@ export class NetGetSync {
         maxBodyLength: Infinity,
         timeout: 300000 // 5 minutes
       });
-
+  
       return response.data;
     } catch (error) {
-      throw new Error(`Failed to deploy project: ${error.response?.data?.error || error.message}`);
+      // Gather more error details
+      let details = '';
+      if (error.response) {
+        details += `\nStatus: ${error.response.status}`;
+        details += `\nResponse data: ${JSON.stringify(error.response.data)}`;
+        details += `\nHeaders: ${JSON.stringify(error.response.headers)}`;
+      }
+      if (error.code) {
+        details += `\nError code: ${error.code}`;
+      }
+      if (error.stack) {
+        details += `\nStack trace: ${error.stack}`;
+      }
+      throw new Error(`Failed to deploy project: ${error.message}${details}`);
     }
   }
 

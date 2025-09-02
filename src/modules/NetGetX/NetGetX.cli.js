@@ -17,7 +17,7 @@ export default async function NetGetX_CLI(x) {
      ██╗  ██╗ 
      ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
       ╚███╔╝  .localIP: ${chalk.green(x.localIP)}
-      ██╔██╗  .mainServer: ${chalk.green('netget.site')} 
+      ██╔██╗  .mainServer: ${chalk.green('' + (x.mainServerName || 'Not Set'))} 
      ██╔╝ ██╗ 
      ╚═╝  ╚═╝ `); 
     x = x ?? await i_DefaultNetGetX();
@@ -31,7 +31,7 @@ export default async function NetGetX_CLI(x) {
         const mainServerSet = x.mainServerName && typeof x.mainServerName === 'string' && x.mainServerName.trim() !== '';
         if (!mainServerSet) {
             console.log(chalk.red('Main server is not configured!'));
-            console.log(chalk.yellow('Please set the main server name using: ') + chalk.cyan('Settings > Main Server Configuration Edit Main Server Name'));
+            console.log(chalk.yellow('Please set the main server name using: ') + chalk.cyan('Settings > Main Server Configuration > Edit Main Server Name'));
             console.log(chalk.gray('Local.Netget option will remain locked until you set the main server.'));
         }
         const menuChoices = [

@@ -19,7 +19,7 @@
     "sync",
     "domains",
     "nginx",
-    "openresty"
+    "OpenResty"
   ],
   "author": "NetGet Team",
   "license": "MIT",

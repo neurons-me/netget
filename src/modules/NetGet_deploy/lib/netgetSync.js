@@ -51,9 +51,9 @@ export class NetGetSync {
   async packageProject(target, domain) {
     const tempDir = path.join(process.cwd(), 'temp');
     await fs.mkdir(tempDir, { recursive: true });
-    
+
     const zipPath = path.join(tempDir, `${domain}.zip`);
-    
+
     return new Promise((resolve, reject) => {
       const output = createWriteStream(zipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
@@ -111,12 +111,12 @@ export class NetGetSync {
   /**
    * Deploy project files to remote server
    */
-    async deployProject(domain, zipPath) {
+  async deployProject(domain, zipPath) {
     try {
       const form = new FormData();
       form.append('domain', domain);
       form.append('file', createReadStream(zipPath));
-  
+
       const response = await axios.post(`${this.remoteServer}/deploy/sync/deploy`, form, {
         headers: {
           ...form.getHeaders(),
@@ -126,7 +126,7 @@ export class NetGetSync {
         maxBodyLength: Infinity,
         timeout: 300000 // 5 minutes
       });
-  
+
       return response.data;
     } catch (error) {
       // Gather more error details
@@ -172,7 +172,7 @@ export class NetGetSync {
    */
   async sync(options = {}) {
     const { includeProjects = false, domains: specificDomains = null } = options;
-    
+
     console.log('🚀 Starting NetGet sync process...\n');
 
     try {
@@ -184,9 +184,9 @@ export class NetGetSync {
       // 2. Read local configuration
       console.log('2. Reading local NetGet configuration...');
       const allDomains = await this.readLocalConfig();
-      
+
       // Filter domains if specific domains are requested
-      const domainsToSync = specificDomains 
+      const domainsToSync = specificDomains
         ? allDomains.filter(d => specificDomains.includes(d.domain))
         : allDomains;
 
@@ -200,19 +200,19 @@ export class NetGetSync {
       // 4. Deploy projects if requested
       if (includeProjects) {
         console.log('4. Deploying project files...');
-        
+
         for (const domain of domainsToSync) {
           if (domain.target && domain.type !== 'server') {
             try {
               console.log(`   📦 Packaging ${domain.domain}...`);
               const zipPath = await this.packageProject(domain.target, domain.domain);
-              
+
               console.log(`   🚀 Deploying ${domain.domain}...`);
               await this.deployProject(domain.domain, zipPath);
-              
+
               // Clean up temp file
               await fs.unlink(zipPath);
-              
+
               console.log(`   ✓ ${domain.domain} deployed successfully`);
             } catch (error) {
               console.log(`   ❌ Failed to deploy ${domain.domain}: ${error.message}`);
@@ -223,7 +223,7 @@ export class NetGetSync {
       }
 
       console.log('🎉 NetGet sync completed successfully!');
-      
+
       return {
         success: true,
         syncedDomains: domainsToSync.length,
@@ -248,7 +248,7 @@ export class NetGetSync {
 
       // Get local config
       const localDomains = await this.readLocalConfig();
-      
+
       // Get remote config
       const response = await axios.get(`${this.remoteServer}/deploy/sync/domains`, {
         headers: {

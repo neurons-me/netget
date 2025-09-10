@@ -4,9 +4,10 @@ import chalk from 'chalk';
 import open from 'open';
 import { i_DefaultNetGetX } from './config/i_DefaultNetGetX.js';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
-import netGetXSettingsMenu from './NetGetX_Settings.cli.js'; 
+import netGetXSettingsMenu from './NetGetX_Settings.cli.js';
 import domainsMenu from './Domains/domains.cli.js';
 import LocalNetgetCLI from '../../../local.netget/backend/local.netget.cli.js';
+import netGetXDeployMenu from './NetGetX_DeployMenu.cli.js';
 
 /**
  * NetGetX_CLI
@@ -19,7 +20,7 @@ export default async function NetGetX_CLI(x) {
       ╚███╔╝  .localIP: ${chalk.green(x.localIP)}
       ██╔██╗  .mainServer: ${chalk.green('' + (x.mainServerName || 'Not Set'))} 
      ██╔╝ ██╗ 
-     ╚═╝  ╚═╝ `); 
+     ╚═╝  ╚═╝ `);
     x = x ?? await i_DefaultNetGetX();
     if (x.localIP === 'local.netget') {
         console.log(chalk.blue('Initiating server in browser...'));
@@ -39,8 +40,9 @@ export default async function NetGetX_CLI(x) {
             mainServerSet
                 ? '2. Local.Netget (Start Local Dev Server)'
                 : { name: chalk.gray('2. Local.Netget (Set Main Server First)'), disabled: 'Main server not set' },
-            '3. Settings',
-            '4. Back to Main Menu',
+            '3. NetGet Deploy',
+            '4. Settings',
+            '5. Back to Main Menu',
             '0. Exit'
         ];
         const answers = await inquirer.prompt({
@@ -64,18 +66,22 @@ export default async function NetGetX_CLI(x) {
                 console.clear();
                 await LocalNetgetCLI(x);
                 break;
+            case '3. NetGet Deploy':
+                console.clear();
+                await netGetXDeployMenu(x);
+                break;
 
-            case '3. Settings':
+            case '4. Settings':
                 console.clear();
                 await netGetXSettingsMenu(x);
                 break;
-            case '4. Back to Main Menu':
+            case '5. Back to Main Menu':
                 console.log(chalk.blue('Returning to the main menu...'));
                 await NetGetMainMenu();
                 break;
             case '0. Exit':
                 console.log(chalk.blue('Exiting NetGet...'));
-                process.exit(); 
+                process.exit();
             default:
                 console.log(chalk.red('Invalid choice, please try again.'));
                 break;

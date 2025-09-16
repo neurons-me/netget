@@ -46,9 +46,9 @@ const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'production';
 const JWT_SECRET = process.env.JWT_SECRET;
 const ENCRYPTION_SECRET = process.env.ENCRYPTION_SECRET;
-const CORS_ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS.split(',');
+const CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '').split(',');
 const USE_HTTPS = process.env.USE_HTTPS;
-const AUTHORIZED_KEYS = process.env.AUTHORIZED_KEYS.split(',');
+const AUTHORIZED_KEYS = (process.env.AUTHORIZED_KEYS || '').split(',');
 const PROJECTS_PATH = process.env.PROJECTS_PATH || '/var/www';
 
 // Database configuration

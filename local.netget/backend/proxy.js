@@ -335,9 +335,10 @@ function parseNginxAccessLog(line, index) {
         const method = requestParts[0] || 'UNKNOWN';
         const path = requestParts[1] || '';
         
-        // Sanitize user agent - remove potentially sensitive information
+        // Sanitize user agent - remove potentially sensitive information.
+        // Allow common user agent characters: alphanumerics, whitespace, dash, dot, parentheses, slash, semicolon, colon, comma, plus, equals, underscore, single/double quote, at, percent.
         const sanitizedUserAgent = userAgent && userAgent !== '-' 
-            ? userAgent.substring(0, 150).replace(/[^\w\s\-\.\(\)\/;:]/g, '') 
+            ? userAgent.substring(0, 150).replace(/[^\w\s\-.,;:\/\(\)\+\=\_\'\"\@\%]/g, '') 
             : null;
         
         return {

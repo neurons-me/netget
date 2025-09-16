@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { NetGetSync } from './lib/netgetSync.js';
+
 import fs from 'fs/promises';
 
 const program = new Command();
@@ -86,13 +87,16 @@ program
   .option('-c, --config <path>', 'Configuration file path', './deploy.config.json')
   .action(async (options) => {
     try {
+      // Print which config file is being used
+      console.log(`🔍 Reading configuration from: ${options.config}`);
       const sync = await createSyncInstance(options.config);
       const health = await sync.checkRemoteHealth();
-      
+      console.log('--- Raw health response ---');
+      console.log(health);
       console.log('� Remote Server Status:');
       console.log(`   Status: ${health.status}`);
       console.log(`   Database: ${health.database}`);
-      console.log(`   Nginx: ${health.nginx}`);
+      console.log(`   Openresty: ${health.openresty}`);
       console.log(`   Timestamp: ${health.timestamp}`);
     } catch (error) {
       console.error(`❌ Remote server unreachable: ${error.message}`);
@@ -111,7 +115,7 @@ program
         localDbPath: "/opt/.get/domains.db",
         remoteServer: "https://your-remote-server.com",
         remoteApiKey: "your-api-key-here",
-        projectsBasePath: "/mnt/neuroverse",
+        projectsBasePath: "/var/www",
         timestamp: Date.now()
       };
 

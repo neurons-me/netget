@@ -17,11 +17,11 @@ async function deploy(configPath) {
   const { server, apiKey, target } = config;
 
   // 1. Authenticate
-  const authRes = await axios.post(`${server}/api/deploy/auth`, { apiKey });
+  const authRes = await axios.post(`${server}/deploy/auth`, { apiKey });
   const token = authRes.data.token;
 
   // 2. Validate domain/port
-  await axios.post(`${server}/api/deploy/validate`, {
+  await axios.post(`${server}/deploy/validate`, {
     domain: target.domain,
     port: target.port
   }, { headers: { Authorization: `Bearer ${token}` } });
@@ -33,7 +33,7 @@ async function deploy(configPath) {
   const form = new FormData();
   form.append('file', fs.createReadStream(zipPath));
 
-  await axios.post(`${server}/api/deploy/upload`, form, {
+  await axios.post(`${server}/deploy/upload`, form, {
     headers: {
       ...form.getHeaders(),
       Authorization: `Bearer ${token}`
@@ -41,7 +41,7 @@ async function deploy(configPath) {
   });
 
   // 4. Deploy to destination
-  const installRes = await axios.post(`${server}/api/deploy/install`, {
+  const installRes = await axios.post(`${server}/deploy/install`, {
     destination: target.destination,
     startCommand: target.startCommand
   }, { headers: { Authorization: `Bearer ${token}` } });

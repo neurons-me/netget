@@ -8,8 +8,6 @@ export class RemoteDeployer {
   constructor(config) {
     this.dbPath = config.dbPath || '/opt/.get/domains.db';
     this.projectsBasePath = config.projectsBasePath || '/var/www';
-    this.nginxConfigPath = config.nginxConfigPath || '/etc/nginx/sites-available';
-    this.nginxEnabledPath = config.nginxEnabledPath || '/etc/nginx/sites-enabled';
     this.authorizedKeys = config.authorizedKeys || [];
   }
 
@@ -23,7 +21,7 @@ export class RemoteDeployer {
   /**
    * Update domain configurations in remote database
    */
-  async updateDomainConfigs(domains) {
+  async updateDomainConfigs(domains, updateTarget = true) {
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
@@ -63,6 +61,10 @@ export class RemoteDeployer {
         let errors = [];
 
         domains.forEach((domain, index) => {
+          // Ensure domain.target is updated if requested
+          if (updateTarget) {
+            domain.target = path.join(this.projectsBasePath, domain.domain);
+          }
           stmt.run([
             domain.domain,
             domain.subdomain,
@@ -115,7 +117,7 @@ export class RemoteDeployer {
   async deployProject(domain, fileBuffer) {
     try {
       const projectDir = path.join(this.projectsBasePath, domain);
-      
+      console.log(`Deploying project for domain: ${domain} to ${projectDir}`);
       // Create project directory if it doesn't exist
       await fs.mkdir(projectDir, { recursive: true });
 
@@ -131,6 +133,7 @@ export class RemoteDeployer {
         await fs.rm(extractDir, { recursive: true, force: true });
       } catch (error) {
         // Directory might not exist, ignore
+        console.log(`   ❌ Failed to remove existing deployment for ${domain}: ${error.message}`);
       }
 
       // Create extraction directory
@@ -150,6 +153,7 @@ export class RemoteDeployer {
         execSync('npm install --production', { cwd: extractDir });
       } catch (error) {
         // No package.json or npm install failed, continue
+        console.log(`   ❌ Failed to install dependencies for ${domain}: ${error.message}`);
       }
 
       // Build project if build script exists
@@ -161,6 +165,7 @@ export class RemoteDeployer {
         }
       } catch (error) {
         // No build script or build failed, continue
+        console.log(`   ❌ Failed to build ${domain}: ${error.message}`);
       }
 
       return {
@@ -170,142 +175,6 @@ export class RemoteDeployer {
 
     } catch (error) {
       throw new Error(`Deployment failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Generate nginx configuration for a domain
-   */
-  generateNginxConfig(domain) {
-    const config = domain;
-    let nginxConfig = '';
-
-    if (config.type === 'static') {
-      nginxConfig = `
-server {
-    listen 80;
-    server_name ${config.domain};
-    
-    root ${config.target};
-    index index.html index.htm;
-    
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header X-Content-Type-Options "nosniff" always;
-}`;
-    } else if (config.type === 'server') {
-      const [host, port] = config.target.split(':');
-      nginxConfig = `
-server {
-    listen 80;
-    server_name ${config.domain};
-    
-    location / {
-        proxy_pass http://${host}:${port};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}`;
-    }
-
-    // Add SSL configuration if enabled
-    if (config.sslMode === 'letsencrypt') {
-      nginxConfig += `
-
-server {
-    listen 443 ssl http2;
-    server_name ${config.domain};
-    
-    ssl_certificate ${config.sslCertificate};
-    ssl_certificate_key ${config.sslCertificateKey};
-    
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    
-    ${config.type === 'static' ? `
-    root ${config.target};
-    index index.html index.htm;
-    
-    location / {
-        try_files $uri $uri/ /index.html;
-    }` : `
-    location / {
-        proxy_pass http://${config.target};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }`}
-}`;
-    }
-
-    return nginxConfig;
-  }
-
-  /**
-   * Update nginx configurations
-   */
-  async updateNginxConfigs(domains) {
-    try {
-      const results = [];
-
-      for (const domain of domains) {
-        const configContent = this.generateNginxConfig(domain);
-        const configPath = path.join(this.nginxConfigPath, domain.domain);
-        const enabledPath = path.join(this.nginxEnabledPath, domain.domain);
-
-        // Write nginx config
-        await fs.writeFile(configPath, configContent);
-
-        // Enable site by creating symlink
-        try {
-          await fs.unlink(enabledPath);
-        } catch (error) {
-          // File might not exist
-        }
-        
-        await fs.symlink(configPath, enabledPath);
-
-        results.push({
-          domain: domain.domain,
-          configPath,
-          status: 'updated'
-        });
-      }
-
-      // Test nginx configuration
-      try {
-        execSync('nginx -t');
-        execSync('systemctl reload nginx');
-        
-        return {
-          message: `Updated nginx configurations for ${results.length} domains`,
-          results,
-          nginxReloaded: true
-        };
-      } catch (error) {
-        throw new Error(`Nginx configuration test failed: ${error.message}`);
-      }
-
-    } catch (error) {
-      throw new Error(`Failed to update nginx configs: ${error.message}`);
     }
   }
 
@@ -349,12 +218,12 @@ server {
       await this.getDomainConfigs();
 
       // Check nginx status
-      const nginxStatus = execSync('systemctl is-active nginx').toString().trim();
+      const openrestyStatus = execSync('systemctl is-active openresty').toString().trim();
 
       return {
         status: 'healthy',
         database: 'connected',
-        nginx: nginxStatus,
+        openresty: openrestyStatus,
         timestamp: new Date().toISOString()
       };
     } catch (error) {

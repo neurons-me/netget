@@ -16,7 +16,6 @@ async function loadOrCreateXConfig() {
             console.log(chalk.yellow('Default xConfig file does not exist. Creating...'));
             const defaultConfig = {
                 mainServerName: "",
-                xMainOutPutPort: 3432,
                 domains: {},               
                 publicIP: "",
                 localIP: "",

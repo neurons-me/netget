@@ -17,6 +17,7 @@ node_modules/
 
 # Dependency lock files
 package-lock.json
+deploy.config.json
 yarn.lock
 
 # OS generated files

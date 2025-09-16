@@ -1,10 +1,10 @@
 import fs from 'fs/promises';
+import { createWriteStream, createReadStream } from 'fs';
 import sqlite3 from 'sqlite3';
 import axios from 'axios';
 import FormData from 'form-data';
 import archiver from 'archiver';
 import path from 'path';
-import { promisify } from 'util';
 
 export class NetGetSync {
   constructor(config) {
@@ -48,14 +48,14 @@ export class NetGetSync {
   /**
    * Package project files for deployment
    */
-  async packageProject(projectPath, domain) {
+  async packageProject(target, domain) {
     const tempDir = path.join(process.cwd(), 'temp');
     await fs.mkdir(tempDir, { recursive: true });
-    
+
     const zipPath = path.join(tempDir, `${domain}.zip`);
-    
+
     return new Promise((resolve, reject) => {
-      const output = fs.createWriteStream(zipPath);
+      const output = createWriteStream(zipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
 
       output.on('close', () => {
@@ -71,7 +71,7 @@ export class NetGetSync {
 
       // Add project files to archive (exclude node_modules, .git, etc.)
       archive.glob('**/*', {
-        cwd: projectPath,
+        cwd: target,
         ignore: [
           'node_modules/**',
           '.git/**',
@@ -92,7 +92,7 @@ export class NetGetSync {
    */
   async syncDomainConfig(domains) {
     try {
-      const response = await axios.post(`${this.remoteServer}/api/sync/domains`, {
+      const response = await axios.post(`${this.remoteServer}/deploy/sync/domains`, {
         domains: domains,
         timestamp: Date.now()
       }, {
@@ -115,9 +115,9 @@ export class NetGetSync {
     try {
       const form = new FormData();
       form.append('domain', domain);
-      form.append('file', fs.createReadStream(zipPath));
+      form.append('file', createReadStream(zipPath));
 
-      const response = await axios.post(`${this.remoteServer}/api/sync/deploy`, form, {
+      const response = await axios.post(`${this.remoteServer}/deploy/sync/deploy`, form, {
         headers: {
           ...form.getHeaders(),
           'Authorization': `Bearer ${this.remoteApiKey}`
@@ -129,7 +129,20 @@ export class NetGetSync {
 
       return response.data;
     } catch (error) {
-      throw new Error(`Failed to deploy project: ${error.response?.data?.error || error.message}`);
+      // Gather more error details
+      let details = '';
+      if (error.response) {
+        details += `\nStatus: ${error.response.status}`;
+        details += `\nResponse data: ${JSON.stringify(error.response.data)}`;
+        details += `\nHeaders: ${JSON.stringify(error.response.headers)}`;
+      }
+      if (error.code) {
+        details += `\nError code: ${error.code}`;
+      }
+      if (error.stack) {
+        details += `\nStack trace: ${error.stack}`;
+      }
+      throw new Error(`Failed to deploy project: ${error.message}${details}`);
     }
   }
 
@@ -138,16 +151,19 @@ export class NetGetSync {
    */
   async checkRemoteHealth() {
     try {
-      const response = await axios.get(`${this.remoteServer}/api/health`, {
+      const response = await axios.get(`${this.remoteServer}/deploy/health`, {
         headers: {
-          'Authorization': `Bearer ${this.remoteApiKey}`
-        },
-        timeout: 10000
+          Authorization: `Bearer ${this.remoteApiKey}`
+        }
       });
 
       return response.data;
     } catch (error) {
-      throw new Error(`Remote server not accessible: ${error.message}`);
+      return {
+        status: 'unhealthy',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 
@@ -156,7 +172,7 @@ export class NetGetSync {
    */
   async sync(options = {}) {
     const { includeProjects = false, domains: specificDomains = null } = options;
-    
+
     console.log('🚀 Starting NetGet sync process...\n');
 
     try {
@@ -168,9 +184,9 @@ export class NetGetSync {
       // 2. Read local configuration
       console.log('2. Reading local NetGet configuration...');
       const allDomains = await this.readLocalConfig();
-      
+
       // Filter domains if specific domains are requested
-      const domainsToSync = specificDomains 
+      const domainsToSync = specificDomains
         ? allDomains.filter(d => specificDomains.includes(d.domain))
         : allDomains;
 
@@ -184,19 +200,19 @@ export class NetGetSync {
       // 4. Deploy projects if requested
       if (includeProjects) {
         console.log('4. Deploying project files...');
-        
+
         for (const domain of domainsToSync) {
-          if (domain.projectPath && domain.type !== 'redirect') {
+          if (domain.target && domain.type !== 'server') {
             try {
               console.log(`   📦 Packaging ${domain.domain}...`);
-              const zipPath = await this.packageProject(domain.projectPath, domain.domain);
-              
+              const zipPath = await this.packageProject(domain.target, domain.domain);
+
               console.log(`   🚀 Deploying ${domain.domain}...`);
               await this.deployProject(domain.domain, zipPath);
-              
+
               // Clean up temp file
               await fs.unlink(zipPath);
-              
+
               console.log(`   ✓ ${domain.domain} deployed successfully`);
             } catch (error) {
               console.log(`   ❌ Failed to deploy ${domain.domain}: ${error.message}`);
@@ -207,7 +223,7 @@ export class NetGetSync {
       }
 
       console.log('🎉 NetGet sync completed successfully!');
-      
+
       return {
         success: true,
         syncedDomains: domainsToSync.length,
@@ -232,9 +248,9 @@ export class NetGetSync {
 
       // Get local config
       const localDomains = await this.readLocalConfig();
-      
+
       // Get remote config
-      const response = await axios.get(`${this.remoteServer}/api/sync/domains`, {
+      const response = await axios.get(`${this.remoteServer}/deploy/sync/domains`, {
         headers: {
           'Authorization': `Bearer ${this.remoteApiKey}`
         }

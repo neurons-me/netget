@@ -1,6 +1,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { loadOrCreateXConfig } from '../config/xConfig.js';
+import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
 
 /**
  * Menu for managing the Main Server configuration.
@@ -8,52 +8,59 @@ import { loadOrCreateXConfig } from '../config/xConfig.js';
  * @param {Object} x - The user configuration object.
  */
 async function mainServerMenu(x) {
-    let exit = false;
-    while (!exit) {
-        const xConfig = await loadOrCreateXConfig();
-        const mainServerName = xConfig.mainServerName;
-        console.log(`Current Main Server Name: ${mainServerName}`);
-        const answers = await inquirer.prompt({
-            type: 'list',
-            name: 'option',
-            message: 'Main Server Menu - Select an action:',
-            choices: [
-                'View Main Server Configuration',
-                'Back to NetGetX Menu',
-                'Exit'
-            ]
-        });
-        
-        switch (answers.option) {
-            case 'View Main Server Configuration':
-                console.log(chalk.blue('Displaying current main server configuration...'));
-                console.log(chalk.blue('Main Server Output Port:', x.xMainOutPutPort));
-                console.log(chalk.blue('Static Path:', x.static));
-                
-                const mainDomain = x.domains[mainServerName];
-                if (!mainDomain) {
-                    console.log(chalk.blue('No available domains.'));
-                } else {
-                    console.log(chalk.blue('Main Domain:', mainServerName));
-                    const subDomains = mainDomain.subDomains || {};
-                    const subDomainNames = Object.keys(subDomains);
-                    if (subDomainNames.length === 0) {
-                        console.log(chalk.blue('No available subdomains.'));
-                    } else {
-                        console.log(chalk.blue('Subdomains:', subDomainNames));
+    console.log(chalk.blue('Displaying current main server configuration...'));
+    console.log(chalk.blue('Static Path:', x.static));
+    
+    const mainDomain = x.mainServerName;
+    if (!mainDomain) {
+        console.log(chalk.blue('No available domains.'));
+    } else {
+        console.log(chalk.blue('Main Domain:', x.mainServerName));
+    }
+    let back = false;
+    while (!back) {
+        const mainServerMenuOptions = [
+            { name: 'Edit Main Server Name', value: 'editMainServer' },
+            { name: 'Back', value: 'back' }
+        ];
+        const { mainServerMenuAction } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'mainServerMenuAction',
+                message: chalk.cyan('Main Server Configuration:'),
+                choices: mainServerMenuOptions
+            }
+        ]);
+        switch (mainServerMenuAction) {
+            case 'editMainServer':
+                let editBack = false;
+                while (!editBack) {
+                    const { newMainServer } = await inquirer.prompt([
+                        {
+                            type: 'input',
+                            name: 'newMainServer',
+                            message: chalk.yellow('Enter new main server name (or type /b to return):'),
+                            validate: input => input ? true : 'Server name cannot be empty.'
+                        }
+                    ]);
+                    if (newMainServer.trim() === '/b') {
+                        editBack = true;
+                        break;
+                    }
+                    // Save to xConfig
+                    try {
+                        await saveXConfig({ mainServerName: newMainServer });
+                        const updatedConfig = await loadOrCreateXConfig();
+                        Object.assign(x, updatedConfig); // update x in place
+                        console.log(chalk.green(`Main server updated to: ${newMainServer}`));
+                        editBack = true;
+                    } catch (err) {
+                        console.log(chalk.red('Failed to update main server name:', err));
                     }
                 }
-                
-                // Implement viewing logic here
                 break;
-            case 'Back to NetGetX Menu':
-                exit = true;
-                break;
-            case 'Exit':
-                console.log(chalk.blue('Exiting netGet...'));
-                process.exit();
-            default:
-                console.log(chalk.red('Invalid choice, please try again.'));
+            case 'back':
+                back = true;
                 break;
         }
     }

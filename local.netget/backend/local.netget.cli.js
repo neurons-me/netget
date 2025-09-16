@@ -92,8 +92,8 @@ export default async function LocalNetgetCLI(x) {
                         console.log(chalk.red(`Port ${BACKEND_PORT} is in use. Server may already be running.`));
                     } else {
                         // Use path.join and __dirname to build the backend path dynamically
-                        const backendPath = path.join(__dirname, 'server.js');
-                        backendProcess = exec(`node "${backendPath}"`, (err) => {
+                        const backendPath = path.join(__dirname, 'proxy.js');
+                        backendProcess = exec(`node "${backendPath} --development"`, (err) => {
                         });
                         backendProcess.stdout.pipe(process.stdout);
                         backendProcess.stderr.pipe(process.stderr);

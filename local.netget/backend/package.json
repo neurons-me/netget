@@ -1,12 +1,12 @@
 {
-  "name": "backend",
+  "name": "backend-local-netget",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "proxy.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "prod": "NODE_ENV=production node server.js"
+    "start": "node proxy.js",
+    "dev": "nodemon proxy.js",
+    "prod": "NODE_ENV=production node proxy.js"
   },
   "type": "module",
   "keywords": [],
@@ -25,8 +25,13 @@
     "inquirer": "^8.2.4",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.13.1",
+    "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
     "open": "^8.4.0",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10",
+    "pm2": "^6.0.10"
   }
 }

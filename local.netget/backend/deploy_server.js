@@ -1,11 +1,21 @@
 import express from 'express';
 import multer from 'multer';
-import { RemoteDeployer } from './lib/remoteDeployer.js';
+import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeployer.js';
 import fs from 'fs/promises';
 import path from 'path';
+import dotenvFlow from 'dotenv-flow';
 
-const app = express();
-const port = process.env.PORT || 3005;
+// Load environment variables
+dotenvFlow.config({
+  path: './env',
+  pattern: '.env[.node_env]',
+  default_node_env: 'production'
+});
+
+const AUTHORIZED_KEYS = process.env.AUTHORIZED_KEYS.split(',');
+const PROJECTS_PATH = process.env.PROJECTS_PATH;
+
+const router = express.Router();
 
 // Configuration
 const config = {
@@ -19,8 +29,8 @@ const config = {
 const deployer = new RemoteDeployer(config);
 
 // Middleware
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+router.use(express.json({ limit: '1mb' }));
+router.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Authentication middleware
 const authenticate = (req, res, next) => {
@@ -31,6 +41,8 @@ const authenticate = (req, res, next) => {
 
   const apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
   if (!deployer.verifyApiKey(apiKey)) {
+    console.log('Invalid API key:', apiKey);
+    console.log('Authorized keys:', config.authorizedKeys);
     return res.status(403).json({ error: 'Invalid API key' });
   }
 
@@ -45,8 +57,41 @@ const upload = multer({
   }
 });
 
+router.post('/', async (req, res) => {
+        try {
+                const config = req.body;
+
+                // 1. Validaciones mínimas
+                if (!config.token || !config.routes || !config.server) {
+                        return res.status(400).json({ error: 'Faltan campos obligatorios' });
+                }
+
+                // 2. Validación del token (ej. contra NetGet o BD local)
+                if (config.token !== process.env.DEPLOY_TOKEN) {
+                        return res.status(403).json({ error: 'Token inválido' });
+                }
+
+                // 3. Simular ejecución del despliegue
+                console.log("📦 Recibido para deploy:", config);
+
+                // 4. Si todo va bien
+                return res.status(200).json({
+                        success: true,
+                        message: 'Despliegue ejecutado correctamente',
+                        details: {
+                                deployedTo: config.server,
+                                routes: config.routes.length
+                        }
+                });
+
+        } catch (err) {
+                console.error("❌ Error en deploy:", err.message);
+                return res.status(500).json({ error: 'Error interno en el servidor' });
+        }
+});
+
 // Health check endpoint
-app.get('/api/health', authenticate, async (req, res) => {
+router.get('/health', authenticate, async (req, res) => {
   try {
     const health = await deployer.healthCheck();
     res.json(health);
@@ -59,7 +104,7 @@ app.get('/api/health', authenticate, async (req, res) => {
 });
 
 // Get current domain configurations
-app.get('/api/sync/domains', authenticate, async (req, res) => {
+router.get('/sync/domains', authenticate, async (req, res) => {
   try {
     const domains = await deployer.getDomainConfigs();
     res.json({
@@ -76,7 +121,7 @@ app.get('/api/sync/domains', authenticate, async (req, res) => {
 });
 
 // Sync domain configurations
-app.post('/api/sync/domains', authenticate, async (req, res) => {
+router.post('/sync/domains', authenticate, async (req, res) => {
   try {
     const { domains } = req.body;
 
@@ -89,13 +134,10 @@ app.post('/api/sync/domains', authenticate, async (req, res) => {
     // Update database
     const dbResult = await deployer.updateDomainConfigs(domains);
 
-    // Update nginx configurations
-    const nginxResult = await deployer.updateNginxConfigs(domains);
-
     res.json({
       message: 'Domain configurations synced successfully',
       database: dbResult,
-      nginx: nginxResult,
+      // nginx: nginxResult,
       timestamp: new Date().toISOString()
     });
 
@@ -109,7 +151,7 @@ app.post('/api/sync/domains', authenticate, async (req, res) => {
 });
 
 // Deploy project files
-app.post('/api/sync/deploy', authenticate, upload.single('file'), async (req, res) => {
+router.post('/sync/deploy', authenticate, upload.single('file'), async (req, res) => {
   try {
     const { domain } = req.body;
     const file = req.file;
@@ -157,7 +199,7 @@ app.post('/api/sync/deploy', authenticate, upload.single('file'), async (req, re
 });
 
 // Get deployment status for a domain
-app.get('/api/sync/status/:domain', authenticate, async (req, res) => {
+router.get('/sync/status/:domain', authenticate, async (req, res) => {
   try {
     const { domain } = req.params;
     
@@ -209,7 +251,7 @@ app.get('/api/sync/status/:domain', authenticate, async (req, res) => {
 });
 
 // Error handling middleware
-app.use((error, req, res, next) => {
+router.use((error, req, res, next) => {
   console.error('Server error:', error);
   res.status(500).json({
     error: 'Internal server error',
@@ -218,20 +260,11 @@ app.use((error, req, res, next) => {
 });
 
 // 404 handler
-app.use((req, res) => {
+router.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
     path: req.path
   });
 });
 
-// Start server
-app.listen(port, () => {
-  console.log(`🚀 NetGet Deploy Server running on port ${port}`);
-  console.log(`📁 Projects path: ${config.projectsBasePath}`);
-  console.log(`🗄️  Database path: ${config.dbPath}`);
-  console.log(`⚙️  Nginx config path: ${config.nginxConfigPath}`);
-  console.log(`🔐 Authorized keys: ${config.authorizedKeys.length} configured`);
-});
-
-export default app;
+export default router;

@@ -10,7 +10,7 @@ import displayStateAndConfig from './config/x_StateAndConfig.js';
  * @returns {Promise<void>} - A promise that resolves when the menu is displayed 
  */
 const netGetXSettingsMenu = async (x) => {
-    const mainServerSet = x.mainServer && typeof x.mainServer === 'string' && x.mainServer.trim() !== '';
+    const mainServerSet = x.mainServerName && typeof x.mainServerName === 'string' && x.mainServerName.trim() !== '';
     const options = [
         { name: 'Main Server Configuration', value: 'Main Server' },
         { name: 'xConfig/xState', value: 'xConfig/xState' },
@@ -23,7 +23,7 @@ const netGetXSettingsMenu = async (x) => {
         console.log(chalk.red('Main server is not set!') + ' ' + chalk.yellow(' Please use "Edit Main Server Name" to set it before accessing Local.Netget.'));
         console.log(chalk.gray('Local.Netget option will remain locked until you set the main server.'));
     } else {
-        console.log(chalk.green('Main server is set: ') + chalk.cyan(x.mainServer));
+        console.log(chalk.green('Main server is set: ') + chalk.cyan(x.mainServerName));
     }
 
     const answer = await inquirer.prompt([

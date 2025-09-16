@@ -29,8 +29,8 @@ const config = {
 const deployer = new RemoteDeployer(config);
 
 // Middleware
-router.use(express.json({ limit: '100mb' }));
-router.use(express.urlencoded({ extended: true, limit: '100mb' }));
+router.use(express.json({ limit: '1mb' }));
+router.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Authentication middleware
 const authenticate = (req, res, next) => {

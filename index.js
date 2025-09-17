@@ -1,6 +1,5 @@
 import NetGet from './src/netget.js';
 import { verifyInitialization } from './src/scripts/init_dirs.js';
-export { defaultHandler } from './src/routes/defaultHandlers.js';
 // Verify directory initialization
 const getInit = verifyInitialization();
 let get = "undefined";
@@ -12,4 +11,4 @@ if (!getInit) {
     console.log(".get set.");
 }
 export default NetGet;
-console.log("NetGet Loaded v2.5;");
+console.log("NetGet Loaded v2.6.41;");

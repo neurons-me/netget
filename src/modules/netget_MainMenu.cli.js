@@ -5,6 +5,7 @@ import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.js';
 import NetGetX_CLI from './NetGetX/NetGetX.cli.js';
 import { Srvrs_CLI } from './Srvrs/srvrs.cli.js';
 import { PortManagement_CLI } from './PortManagement/portManagement.cli.js';
+import netGetXDeployMenu from './NetGet_deploy/NetGetX_DeployMenu.cli.js';
 
 /**
  * Entry point of NetGet node module.
@@ -57,7 +58,7 @@ export default async function NetGetMainMenu() {
     ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
     ║║║├┤  │ ║ ╦├┤  │ 
     ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.6.40`);
+        v2.6.41`);
     console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
     const answers = await inquirer.prompt([
         {
@@ -65,7 +66,8 @@ export default async function NetGetMainMenu() {
             name: 'action',
             message: 'Main Menu',
             choices: [
-                'HTTPS, Domains and Routes',
+                'NetGetX',
+                'NetGet Deploy',
                 //'Srvrs - (Port Services)',
                 //'Statics - (Static files)',
                 new inquirer.Separator(),
@@ -77,7 +79,7 @@ export default async function NetGetMainMenu() {
     ]);
 
     switch (answers.action) {
-        case 'HTTPS, Domains and Routes':
+        case 'NetGetX':
             const x = await i_DefaultNetGetX();
             if (x) {
                 /*
@@ -90,6 +92,10 @@ export default async function NetGetMainMenu() {
             } else {
                 console.log(chalk.red('Setup verification failed. Please resolve any issues before proceeding.'));
             }
+            break;
+        case 'NetGet Deploy':
+            console.clear();
+            await netGetXDeployMenu();
             break;
 
         case 'Srvrs - (Port Services)':

@@ -1,6 +1,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { NetGetSync } from '../NetGet_deploy/lib/netgetSync.js';
+import { NetGetSync } from './lib/netgetSync.js';
 import fs from 'fs/promises';
 
 // Helper to load config
@@ -26,7 +26,7 @@ async function createSyncInstance(configPath) {
     });
 }
 
-export default async function netGetXDeployMenu(x) {
+export default async function netGetXDeployMenu() {
     let exit = false;
     while (!exit) {
         const { option } = await inquirer.prompt({

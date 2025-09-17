@@ -7,7 +7,6 @@ import NetGetMainMenu from '../netget_MainMenu.cli.js';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.js';
 import domainsMenu from './Domains/domains.cli.js';
 import LocalNetgetCLI from '../../../local.netget/backend/local.netget.cli.js';
-import netGetXDeployMenu from './NetGetX_DeployMenu.cli.js';
 
 /**
  * NetGetX_CLI
@@ -40,9 +39,8 @@ export default async function NetGetX_CLI(x) {
             mainServerSet
                 ? '2. Local.Netget (Start Local Dev Server)'
                 : { name: chalk.gray('2. Local.Netget (Set Main Server First)'), disabled: 'Main server not set' },
-            '3. NetGet Deploy',
-            '4. Settings',
-            '5. Back to Main Menu',
+            '3. Settings',
+            '4. Back to Main Menu',
             '0. Exit'
         ];
         const answers = await inquirer.prompt({
@@ -66,16 +64,12 @@ export default async function NetGetX_CLI(x) {
                 console.clear();
                 await LocalNetgetCLI(x);
                 break;
-            case '3. NetGet Deploy':
-                console.clear();
-                await netGetXDeployMenu(x);
-                break;
 
-            case '4. Settings':
+            case '3. Settings':
                 console.clear();
                 await netGetXSettingsMenu(x);
                 break;
-            case '5. Back to Main Menu':
+            case '4. Back to Main Menu':
                 console.log(chalk.blue('Returning to the main menu...'));
                 await NetGetMainMenu();
                 break;

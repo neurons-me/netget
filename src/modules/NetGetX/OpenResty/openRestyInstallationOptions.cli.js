@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import inquirer from 'inquirer';
 import NetGetX_CLI from '../NetGetX.cli.js';
-import { i_DefaultNetGetX } from '../../lib/netgetSync.js';
+import { i_DefaultNetGetX } from '../config/i_DefaultNetGetX.js';
 /**
  * Provides options to install OpenResty.
  * @memberof module:NetGetX.OpenResty

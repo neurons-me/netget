@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import inquirer from 'inquirer';
 import NetGetX_CLI from '../NetGetX.cli.js';
-
+import { i_DefaultNetGetX } from '../../lib/netgetSync.js';
 /**
  * Provides options to install OpenResty.
  * @memberof module:NetGetX.OpenResty
@@ -34,7 +34,16 @@ export default async function openRestyInstallationOptions() {
             break;
         case '2':
             console.log('Exiting installation options.');
-            await NetGetX_CLI();
+            const x = await i_DefaultNetGetX();
+            if (x) {
+                /*
+                Netget X (The Router/Conductor)
+                Role: Acts as the central orchestrator,
+                running an Nginx server and managing domain routing.
+                */
+                await NetGetX_CLI(x);
+                break;
+            }
             break;
         default:
             console.log('Invalid choice. Exiting.');

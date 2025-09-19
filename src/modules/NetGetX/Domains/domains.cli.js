@@ -1,7 +1,6 @@
 //netget/src/modules/NetGetX/Domains/domains.cli.js
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { loadOrCreateXConfig } from '../config/xConfig.js';
 import selectedDomainMenu from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
 import sqlite3 from 'sqlite3';

@@ -1,6 +1,6 @@
 {
     "name": "netget",
-    "version": "2.6.45",
+    "version": "2.6.46",
     "description": "Rette Adepto/ Recibido Directamente.",
     "type": "module",
     "main": "index.js",
@@ -11,8 +11,7 @@
         "doc": "jsdoc -c jsdoc.json"
     },
     "bin": {
-        "netget": "./src/netget.cli.js",
-        ".get": "./src/netget.cli.js"
+        "netget": "./src/netget.cli.js"
     },
     "keywords": [
         "netget",
@@ -32,21 +31,15 @@
     "dependencies": {
         "archiver": "^7.0.1",
         "axios": "^1.12.2",
-        "chalk": "^5.3.0",
-        "commander": "^12.0.0",
-        "ejs": "^3.1.10",
-        "express": "^4.19.2",
+        "chalk": "^5.6.2",
+        "commander": "^14.0.1",
         "form-data": "^4.0.4",
-        "inquirer": "^9.2.17",
-        "morgan": "^1.10.0",
-        "multer": "^2.0.2",
+        "inquirer": "^12.9.6",
         "node-fetch": "^3.3.2",
-        "open": "^8.4.0",
+        "open": "^10.2.0",
         "pm2": "^6.0.11",
         "sqlite": "^5.1.1",
-        "sqlite3": "^5.1.7",
-        "sudo-prompt": "^9.2.1",
-        "uuid": "^10.0.0"
+        "sqlite3": "^5.1.7"
     },
     "repository": {
         "type": "git",

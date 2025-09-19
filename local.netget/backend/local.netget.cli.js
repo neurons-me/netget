@@ -4,9 +4,17 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
+import dotenvFlow from 'dotenv-flow';
 
-const BACKEND_PORT = 3000;
-const FRONTEND_PORT = 5173;
+dotenvFlow.config({
+  path: process.cwd() + '/local.netget/backend/env',
+  pattern: '.env[.node_env]',
+  default_node_env: 'development'
+});
+
+const BACKEND_PORT = process.env.LOCAL_BACKEND_PORT || 3000;
+const FRONTEND_PORT = process.env.LOCAL_FRONTEND_PORT || 5173;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,8 +50,6 @@ function killProcessOnPort(port) {
     });
 }
 
-import { spawn } from 'child_process';
-
 async function viewLogs() {
     console.log(chalk.yellow('\n=== Viewing Logs ===\n'));
 
@@ -54,7 +60,7 @@ async function viewLogs() {
 }
 
 
-export default async function LocalNetgetCLI(x) {
+export default async function LocalNetgetCLI() {
     console.log(chalk.blue('Welcome to Local NetGet!'));
 
     let backendProcess, frontendProcess;
@@ -91,25 +97,29 @@ export default async function LocalNetgetCLI(x) {
                     if (!isBackendFree) {
                         console.log(chalk.red(`Port ${BACKEND_PORT} is in use. Server may already be running.`));
                     } else {
-                        // Use path.join and __dirname to build the backend path dynamically
                         const backendPath = path.join(__dirname, 'proxy.js');
-                        backendProcess = exec(`node "${backendPath} --development"`, (err) => {
+                        backendProcess = spawn('node', [backendPath], {
+                            stdio: 'inherit',
+                            detached: true
                         });
-                        backendProcess.stdout.pipe(process.stdout);
-                        backendProcess.stderr.pipe(process.stderr);
                         console.log(chalk.green(`Backend started on port ${BACKEND_PORT}`));
                     }
 
                     if (!isFrontendFree) {
                         console.log(chalk.red(`Port ${FRONTEND_PORT} is in use. Server may already be running.`));
                     } else {
-                        // Construye la ruta al frontend dinámicamente usando __dirname
-                        const frontendDir = path.join(__dirname, '..', '..', '..', 'domains', 'local.netget', 'frontend');
-                        frontendProcess = exec('npm run dev', { cwd: frontendDir }, (err) => {
+                        const frontendDir = path.join(process.cwd(), 'local.netget', 'frontend');
+                        // Open a new terminal window and run 'npm run dev'
+                        const terminalCmd = process.platform === 'win32'
+                            ? `start cmd /k "cd /d ${frontendDir} && npm run dev"`
+                            : `gnome-terminal -- bash -c "cd '${frontendDir}' && npm run dev; exec bash"`;
+
+                        exec(terminalCmd, (err) => {
+                            if (err) {
+                                console.error(chalk.red(`Error opening terminal for frontend: ${err.message}`));
+                            }
                         });
-                        frontendProcess.stdout.pipe(process.stdout);
-                        frontendProcess.stderr.pipe(process.stderr);
-                        console.log(chalk.green(`Frontend started on port ${FRONTEND_PORT}`));
+                        console.log(chalk.green(`Frontend started on port ${FRONTEND_PORT} in a new terminal window.`));
                     }
                 } catch (error) {
                     console.error(chalk.red(`Error starting servers: ${error.message}`));

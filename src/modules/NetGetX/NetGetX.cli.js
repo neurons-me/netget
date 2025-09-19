@@ -13,6 +13,7 @@ import LocalNetgetCLI from '../../../local.netget/backend/local.netget.cli.js';
  * @memberof module:NetGetX 
  */
 export default async function NetGetX_CLI(x) {
+    console.clear();
     console.log(`
      ██╗  ██╗ 
      ╚██╗██╔╝ .publicIP: ${chalk.green(x.publicIP)}
@@ -62,7 +63,7 @@ export default async function NetGetX_CLI(x) {
                     break;
                 }
                 console.clear();
-                await LocalNetgetCLI(x);
+                await LocalNetgetCLI();
                 break;
 
             case '3. Settings':

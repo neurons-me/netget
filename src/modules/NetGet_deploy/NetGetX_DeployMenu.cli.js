@@ -2,6 +2,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { NetGetSync } from './lib/netgetSync.js';
 import fs from 'fs/promises';
+import NetGetMainMenu from '../netget_MainMenu.cli.js';
 
 // Helper to load config
 async function loadConfig(configPath) {
@@ -27,6 +28,17 @@ async function createSyncInstance(configPath) {
 }
 
 export default async function netGetXDeployMenu() {
+    console.clear();
+    // ASCII art for "DEPLOY" (styled like NetGet art)
+    console.log(`
+    ██████ ╗██████╗ ███████╗██╗      ██████╗ ██╗ ██╗
+    ██   ██║██╔═══╝ ██╔══██║██║     ██║   ██║██║ ██║
+    ██   ██║█████╗  ██████╔╝██║     ██║   ██║╚████╔╝
+    ██   ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║ ╚██╔╝
+    ██████╔╝███████╗██║     ╚██████ ╚██████╔╝  ██║
+    ╚═════╝ ╚══════╝╚═╝      ╚═════╝ ╚═════╝   ╚═╝
+ `);
+    
     let exit = false;
     while (!exit) {
         const { option } = await inquirer.prompt({
@@ -159,7 +171,7 @@ export default async function netGetXDeployMenu() {
             }
             case '0. Back':
                 exit = true;
-                break;
+                await NetGetMainMenu();
             default:
                 break;
         }

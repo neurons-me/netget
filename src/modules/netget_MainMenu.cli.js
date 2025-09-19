@@ -53,69 +53,77 @@ import netGetXDeployMenu from './NetGet_deploy/NetGetX_DeployMenu.cli.js';
  */
 
 export default async function NetGetMainMenu() {
-    console.clear();
-    console.log(`
-    ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
-    ║║║├┤  │ ║ ╦├┤  │ 
-    ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-        v2.6.45`);
-    console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
-    const answers = await inquirer.prompt([
-        {
-            type: 'list',
-            name: 'action',
-            message: 'Main Menu',
-            choices: [
-                'NetGetX',
-                'NetGet Deploy',
-                //'Srvrs - (Port Services)',
-                //'Statics - (Static files)',
-                new inquirer.Separator(),
-                'Port Management',
-                new inquirer.Separator(),
-                'Exit',
-                new inquirer.Separator()],
-        },
-    ]);
+    try {
+        console.clear();
+        console.log(`
+        ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
+        ║║║├┤  │ ║ ╦├┤  │ 
+        ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
+            v2.6.46`);
+        console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
+        const answers = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'action',
+                message: 'Main Menu',
+                choices: [
+                    'NetGetX',
+                    'NetGet Deploy',
+                    new inquirer.Separator(),
+                    'Port Management',
+                    new inquirer.Separator(),
+                    'Srvrs - (Port Services)',
+                    'Statics - (Static files)',
+                    new inquirer.Separator(),
+                    'Exit',
+                    new inquirer.Separator()],
+            },
+        ]);
 
-    switch (answers.action) {
-        case 'NetGetX':
-            const x = await i_DefaultNetGetX();
-            if (x) {
-                /*
-                Netget X (The Router/Conductor)
-                Role: Acts as the central orchestrator,
-                running an Nginx server and managing domain routing.
-                */
-                await NetGetX_CLI(x);
+        switch (answers.action) {
+            case 'NetGetX':
+                const x = await i_DefaultNetGetX();
+                if (x) {
+                    /*
+                    Netget X (The Router/Conductor)
+                    Role: Acts as the central orchestrator,
+                    running an Nginx server and managing domain routing.
+                    */
+                    await NetGetX_CLI(x);
+                    break;
+                } else {
+                    console.log(chalk.red('Setup verification failed. Please resolve any issues before proceeding.'));
+                }
                 break;
-            } else {
-                console.log(chalk.red('Setup verification failed. Please resolve any issues before proceeding.'));
-            }
-            break;
-        case 'NetGet Deploy':
-            console.clear();
-            await netGetXDeployMenu();
-            break;
+            case 'NetGet Deploy':
+                console.clear();
+                await netGetXDeployMenu();
+                break;
 
-        case 'Srvrs - (Port Services)':
-            /*
-            Role: Manages and adds backend services listening on specific ports.
-            */
-            await Srvrs_CLI();
-            break;
+            case 'Port Management':
+                await PortManagement_CLI();
+                break;
 
-        case 'Statics - (Static files)':
-            console.log(chalk.yellow('Selected Gets'));
-            // Call Gets functionality here
-            break;
+            case 'Srvrs - (Port Services)':
+                /*
+                Role: Manages and adds backend services listening on specific ports.
+                */
+                await Srvrs_CLI();
+                break;
 
-        case 'Port Management':
-            await PortManagement_CLI();
-            break;
+            case 'Statics - (Static files)':
+                console.log(chalk.yellow('Still in development...'));
+                // Call Gets functionality here
+                await NetGetMainMenu();
+                break;
 
-        case 'Exit':
-            console.log(chalk.green('Exiting NetGet CLI.'));
-            process.exit();
+            case 'Exit':
+                console.log(chalk.green('Exiting NetGet CLI.'));
+                process.exit();
+        }
+    } catch (err) {
+        console.log(chalk.red('An error occurred:'), err.message);
+        // Optionally, prompt user to return to menu or exit
+        process.exit(1);
     }
 }

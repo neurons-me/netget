@@ -15,35 +15,18 @@ import deployRoutes from './deploy_server.js'
 
 // Load environment variables
 dotenvFlow.config({
-  path: './env',
-  pattern: '.env[.node_env]',
-  default_node_env: 'production'
+    path: process.cwd() + '/local.netget/backend/env',
+    pattern: '.env[.node_env]',
+    default_node_env: 'development'
 });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const logFilePath = path.join(__dirname, 'server.log');
 
-// Centralized environment variable checker
-const checkEnvVariables = (requiredVars) => {
-  const missingVars = requiredVars.filter((envVar) => !process.env[envVar]);
-  if (missingVars.length > 0) {
-    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  }
-};
-
-// Check required environment variables
-try {
-  checkEnvVariables(['JWT_SECRET', 'ENCRYPTION_SECRET']);
-      console.log(chalk.green('Environment variables validated successfully.'));
-} catch (error) {
-  console.error(chalk.red(error.message));
-  process.exit(1);
-}
-
 const app = express();
 const PORT = process.env.PORT || 3000;
-const NODE_ENV = process.env.NODE_ENV || 'production';
+const NODE_ENV = process.env.NODE_ENV || 'development';
 const JWT_SECRET = process.env.JWT_SECRET;
 const ENCRYPTION_SECRET = process.env.ENCRYPTION_SECRET;
 const CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || '').split(',');
@@ -56,22 +39,9 @@ const DB_PATH = process.env.DB_PATH || "/opt/.get/domains.db";
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 const SERVER_LOG_PATH = process.env.SERVER_LOG_PATH || "./server.log";
 
-// // MongoDB configuration
-// const MONGO_HOST = process.env.MONGO_HOST;
-// const MONGO_PORT = process.env.MONGO_PORT || '27017';
-// const MONGO_DB = process.env.MONGO_DB;
-// const MONGO_USER = process.env.MONGO_USER;
-// const MONGO_PASSWORD = process.env.MONGO_PASSWORD;
-
-console.log(chalk.blue(`Starting server in ${NODE_ENV} mode`));
-console.log(chalk.blue(`Port: ${PORT}`));
-console.log(chalk.blue(`HTTPS: ${USE_HTTPS}`));
-
 const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, (err) => {
   if (err) {
     console.error(chalk.red("Error connecting to SQLite:", err.message));
-  } else {
-    console.log(chalk.green("Connected to SQLite successfully"));
   }
 });
 
@@ -108,16 +78,6 @@ app.use(
     })
 );
 
-// Cleaker Middleware Configuration
-// app.use(
-//     cleaker.me({
-//       ledger: 'http://api.cleaker.me/ledger', // Replace with your ledger URL
-//       blockchain: null, // Full decentralized network
-//       jwtCookieName: 'cleakerToken', // Name of the JWT cookie
-//       requireAuth: true, // Enforce authentication globally
-//     })
-//   );
-
 app.options("*", (req, res) => {
     res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
     res.header("Access-Control-Allow-Credentials", "true");
@@ -125,25 +85,6 @@ app.options("*", (req, res) => {
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     res.sendStatus(200);
 });
-
-// // MongoDB connection (if configured)
-// if (MONGO_HOST && MONGO_DB && MONGO_USER && MONGO_PASSWORD) {
-//     const MONGO_URI = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`;
-//     mongoose.connect(MONGO_URI, {
-//         useNewUrlParser: true,
-//         useUnifiedTopology: true,
-//     })
-//     .then(() => console.log(chalk.green("MongoDB connected!")))
-//     .catch((err) => {
-//         console.error(chalk.red("MongoDB connection error:", err));
-//         // Don't exit on MongoDB connection failure in development
-//         if (NODE_ENV === 'production') {
-//             process.exit(1);
-//         }
-//     });
-// } else {
-//     console.log(chalk.yellow("MongoDB configuration not found, skipping connection"));
-// }
 
 // Middleware to verify the cookie
 function verifyCookie(req, res, next) {
@@ -633,13 +574,15 @@ app.use('/networks', networksRoutes);
 app.use('/deploy', deployRoutes);
 
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(chalk.green(`✓ Server running on port ${PORT}`));
+    console.log('');
+    console.log(chalk.blue(`Starting server in ${NODE_ENV} mode`));
+    if (NODE_ENV === 'development') {
+        console.log(chalk.yellow('Development mode - some security features may be relaxed'));
+    }
+    console.log(chalk.green(`Server running on port ${PORT}`));
     console.log(chalk.blue(`Environment: ${NODE_ENV}`));
     console.log(chalk.blue(`HTTPS: ${USE_HTTPS}`));
     console.log(chalk.blue(`Database: ${DB_PATH}`));
     console.log(chalk.blue(`Authorized Keys: ${AUTHORIZED_KEYS.join(', ')}`));
     console.log(chalk.blue(`Projects Path: ${PROJECTS_PATH}`));
-    if (NODE_ENV === 'development') {
-        console.log(chalk.yellow('Development mode - some security features may be relaxed'));
-    }
 });

@@ -5,7 +5,6 @@ import {
   getNetworkByName,
   updateNetwork,
   deleteNetwork,
-  networkExists,
   getNetworksCount,
   migrateNetworksFromLocalStorage
 } from '../utils/networks_db.js';

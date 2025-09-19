@@ -1,6 +1,5 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { loadOrCreateXConfig } from '../config/xConfig.js';
 import { editOrDeleteDomain, logDomainInfo, addSubdomain, editOrDeleteSubdomain } from './domainsOptions.js';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
 import sqlite3 from 'sqlite3';

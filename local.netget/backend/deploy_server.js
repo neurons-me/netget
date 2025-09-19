@@ -7,13 +7,10 @@ import dotenvFlow from 'dotenv-flow';
 
 // Load environment variables
 dotenvFlow.config({
-  path: './env',
+  path: process.cwd() + '/local.netget/backend/env',
   pattern: '.env[.node_env]',
-  default_node_env: 'production'
+  default_node_env: 'development'
 });
-
-const AUTHORIZED_KEYS = process.env.AUTHORIZED_KEYS.split(',');
-const PROJECTS_PATH = process.env.PROJECTS_PATH;
 
 const router = express.Router();
 

@@ -16,7 +16,6 @@
   "dependencies": {
     "body-parser": "^1.20.3",
     "chalk": "^4.1.2",
-    "cleaker": "^2.6.62",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv-flow": "^4.1.0",
@@ -24,14 +23,10 @@
     "express-session": "^1.18.1",
     "inquirer": "^8.2.4",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.13.1",
     "multer": "^2.0.2",
-    "node-fetch": "^3.3.2",
-    "open": "^8.4.0",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10",
-    "pm2": "^6.0.10"
+    "nodemon": "^3.1.10"
   }
 }

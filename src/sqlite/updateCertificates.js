@@ -1,7 +1,8 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import { getDomainsDbPath } from '../utils/netgetPaths.js';
 
-const DATABASE_PATH = '/opt/.get/domains.db';
+const DATABASE_PATH = getDomainsDbPath();
 
 async function updateSSLCertificatePaths() {
     const db = await open({

@@ -3,6 +3,9 @@ import chalk from 'chalk';
 import { editOrDeleteDomain, logDomainInfo, addSubdomain, editOrDeleteSubdomain } from './domainsOptions.js';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
 import sqlite3 from 'sqlite3';
+import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
+
+const DOMAINS_DB_PATH = getDomainsDbPath();
 
 /**
  * Domain Menu once a domain is selected
@@ -13,7 +16,7 @@ import sqlite3 from 'sqlite3';
 async function selectedDomainMenu(domain) {
     try {
         // Leer la configuración del dominio desde la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
         const domainConfig = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
                 db.close();

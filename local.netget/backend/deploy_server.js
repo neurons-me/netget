@@ -4,6 +4,7 @@ import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeploy
 import fs from 'fs/promises';
 import path from 'path';
 import dotenvFlow from 'dotenv-flow';
+import { getDomainsDbPath } from '../../src/utils/netgetPaths.js';
 
 // Load environment variables
 dotenvFlow.config({
@@ -16,7 +17,7 @@ const router = express.Router();
 
 // Configuration
 const config = {
-  dbPath: process.env.DB_PATH || '/opt/.get/domains.db',
+  dbPath: process.env.DB_PATH || getDomainsDbPath(),
   projectsBasePath: process.env.PROJECTS_PATH || '/var/www',
   nginxConfigPath: process.env.NGINX_CONFIG_PATH || '/etc/nginx/sites-available',
   nginxEnabledPath: process.env.NGINX_ENABLED_PATH || '/etc/nginx/sites-enabled',

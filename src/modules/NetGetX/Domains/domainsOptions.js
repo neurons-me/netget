@@ -6,6 +6,9 @@ import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
 import { registerDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.js';
 import domainsMenu from './domains.cli.js';
 import sqlite3 from 'sqlite3';
+import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
+
+const DOMAINS_DB_PATH = getDomainsDbPath();
 
 /**
  * Retrieves and displays the subdomains table for a given domain.
@@ -13,7 +16,7 @@ import sqlite3 from 'sqlite3';
  */
 function retrieveSubdomainsTable(domain) {
     return new Promise((resolve, reject) => {
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
         db.all(
             // Exclude rows where domain === subdomain (shouldn't happen, but just in case)
             'SELECT domain, target, type, subdomain FROM domains WHERE subdomain = ? ORDER BY domain',
@@ -71,7 +74,7 @@ async function logDomainInfo(domain) {
  * Displays the domains table by reading from the SQLite3 database.
  */
 const domainsTable = () => {
-    const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err) => {
+    const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY, (err) => {
         if (err) {
             console.log(chalk.red('Error opening database:'), err.message);
             return;
@@ -240,7 +243,7 @@ const addNewDomain = async () => {
         const { domain, email, owner } = { ...domainAnswer, ...emailAnswer, ...ownerAnswer };
 
         // Verifica si el dominio ya existe en la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
         const exists = await new Promise((resolve) => {
             db.get('SELECT 1 FROM domains WHERE domain = ? AND subdomain IS NULL', [domain], (err, row) => {
                 db.close();
@@ -364,7 +367,7 @@ const addSubdomain = async (domain) => {
         // Retrieve email, SSLCertificateSqlitePath, and SSLCertificateKeySqlitePath from the parent domain in the database
         let parentDomainConfig;
         try {
-            const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+            const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
             parentDomainConfig = await new Promise((resolve, reject) => {
                 db.get(
                     'SELECT email, sslCertificate, sslCertificateKey FROM domains WHERE domain = ?',
@@ -482,7 +485,7 @@ const editOrDeleteSubdomain = async (domain) => {
     console.clear();
     try {
         // Listar subdominios asociados a este dominio
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
         const subdomains = await new Promise((resolve) => {
             db.all('SELECT domain FROM domains WHERE subdomain = ? ORDER BY domain', [domain], (err, rows) => {
                 db.close();
@@ -543,7 +546,7 @@ const editOrDeleteSubdomain = async (domain) => {
                 console.log(chalk.blue('Subdomain deletion was cancelled.'));
                 return;
             }
-            const dbDel = new sqlite3.Database('/opt/.get/domains.db');
+            const dbDel = new sqlite3.Database(DOMAINS_DB_PATH);
             dbDel.run('DELETE FROM domains WHERE domain = ? AND subdomain = ?', [subDomain, domain], (err) => {
                 if (err) {
                     console.log(chalk.red('Error deleting subdomain:'), err.message);
@@ -568,7 +571,7 @@ const editOrDeleteDomain = async (domain) => {
     console.clear();
     try {
         // Leer la configuración del dominio desde la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
         const domainConfig = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
                 db.close();
@@ -617,7 +620,7 @@ const editOrDeleteDomain = async (domain) => {
                     return;
                 }
                 // Elimina el dominio y sus subdominios asociados
-                const dbDel = new sqlite3.Database('/opt/.get/domains.db');
+                const dbDel = new sqlite3.Database(DOMAINS_DB_PATH);
                 dbDel.run('DELETE FROM domains WHERE domain = ? OR subdomain = ?', [domain, domain], (err) => {
                     if (err) {
                         console.log(chalk.red('Error deleting domain:'), err.message);

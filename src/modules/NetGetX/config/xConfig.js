@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
-const CONFIG_DIR = path.join('/opt/','.get');
+const CONFIG_DIR = getNetgetDataDir();
 const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'xConfig.json');
 
 /**

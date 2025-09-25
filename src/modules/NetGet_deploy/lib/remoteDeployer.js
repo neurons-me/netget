@@ -2,10 +2,11 @@ import sqlite3 from 'sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
+import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
 
 export class RemoteDeployer {
   constructor(config) {
-    this.dbPath = config.dbPath || '/opt/.get/domains.db';
+    this.dbPath = config.dbPath || getDomainsDbPath();
     this.projectsBasePath = config.projectsBasePath || '/var/www';
     this.authorizedKeys = config.authorizedKeys || [];
   }

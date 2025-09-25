@@ -4,6 +4,9 @@ import chalk from 'chalk';
 import selectedDomainMenu from './selectedDomain.cli.js';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.js';
 import sqlite3 from 'sqlite3';
+import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
+
+const DOMAINS_DB_PATH = getDomainsDbPath();
 
 /**
  * Obtiene los dominios de la base de datos SQLite3.
@@ -11,7 +14,7 @@ import sqlite3 from 'sqlite3';
  */
 const getDomainsFromDB = () => {
     return new Promise((resolve, reject) => {
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err) => {
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY, (err) => {
             if (err) return reject(err);
         });
 

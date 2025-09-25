@@ -1,9 +1,10 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import fs from 'fs';
+import { getDomainsDbPath } from '../utils/netgetPaths.js';
 
 
-const USER_CONFIG_FILE = '/opt/.get/domains.db'; // Update this path
+const USER_CONFIG_FILE = getDomainsDbPath();
 
 
 /**

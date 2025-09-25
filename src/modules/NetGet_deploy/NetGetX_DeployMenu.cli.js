@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { NetGetSync } from './lib/netgetSync.js';
 import fs from 'fs/promises';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
+import { getDomainsDbPath } from '../../utils/netgetPaths.js';
 
 // Helper to load config
 async function loadConfig(configPath) {
@@ -59,7 +60,7 @@ export default async function netGetXDeployMenu() {
             case '1. Initialize deployment config': {
                 const { output } = await inquirer.prompt({ type: 'input', name: 'output', message: 'Output config file:', default: './deploy.config.json' });
                 const config = {
-                    localDbPath: '/opt/.get/domains.db',
+                    localDbPath: getDomainsDbPath(),
                     remoteServer: 'https://your-remote-server.com',
                     remoteApiKey: 'your-api-key-here',
                     projectsBasePath: '/var/www',

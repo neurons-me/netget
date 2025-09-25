@@ -2,6 +2,7 @@ import inquirer from 'inquirer';
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
+import { getDomainsDbPath, getHtmlRootDir } from '../../../utils/netgetPaths.js';
 
 /**
  * Configuration file in order to set the nginx.conf file for OpenResty.
@@ -14,7 +15,8 @@ const configPath = '/usr/local/openresty/nginx/conf';
 const nginxConfigPath = path.join(configPath, 'nginx.conf');
 const sslSelfSignedCertPath = '/etc/ssl/certs/cert.pem';
 const sslSelfSignedKeyPath = '/etc/ssl/private/privkey.key';
-const sqliteDatabasePath = '/opt/.get/domains.db';
+const sqliteDatabasePath = getDomainsDbPath();
+const htmlRoot = getHtmlRootDir();
 
 /**
  * The content of the nginx.conf file.
@@ -376,12 +378,12 @@ http {
         # Error page redirection
         error_page 500 /500.html;
         location = /500.html {
-            root /opt/.get/html;
+            root ${htmlRoot};
         }
 
         error_page 502 /502.html;
         location = /502.html {
-            root /opt/.get/html;
+            root ${htmlRoot};
         }
     }
 }`;

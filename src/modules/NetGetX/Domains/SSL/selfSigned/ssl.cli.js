@@ -11,6 +11,9 @@ import {
 import printCertbotLogs from '../Certbot/certbot.js';
 import { storeConfigInDB, updateSSLCertificatePaths } from '../../../../../sqlite/utils_sqlite3.js';
 import sqlite3 from 'sqlite3';
+import { getDomainsDbPath } from '../../../../../utils/netgetPaths.js';
+
+const DOMAINS_DB_PATH = getDomainsDbPath();
 
 /**
  * Display the current SSL Configuration for a domain
@@ -58,7 +61,7 @@ const domainSSLConfiguration = async (domain) => {
         }
 
         // Leer configuración del dominio desde la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
         const domainConfig = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
                 db.close();
@@ -155,7 +158,7 @@ async function issueCertificateForDomain(domain, domainConfig) {
                 break;
             case 'editSSLMethod':
                 // Eliminar el método SSL en la base de datos (opcional)
-                const db = new sqlite3.Database('/opt/.get/domains.db');
+                const db = new sqlite3.Database(DOMAINS_DB_PATH);
                 db.run(
                     `UPDATE domains SET sslMode = NULL WHERE domain = ?`,
                     [domain],
@@ -194,7 +197,7 @@ async function issueCertificateForDomain(domain, domainConfig) {
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
 
             // Guardar los cambios en la base de datos en vez de xConfig
-            const db = new sqlite3.Database('/opt/.get/domains.db');
+            const db = new sqlite3.Database(DOMAINS_DB_PATH);
             db.run(
                 `UPDATE domains SET 
                     sslCertificate = ?,

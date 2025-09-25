@@ -2,9 +2,10 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
 import fs from 'fs';
+import { getDomainsDbPath, getNetgetDataDir } from '../utils/netgetPaths.js';
 
-const CONFIG_DIR = path.join('/opt/', '.get');
-const USER_CONFIG_FILE = path.join(CONFIG_DIR, 'domains.db');
+const CONFIG_DIR = getNetgetDataDir();
+const USER_CONFIG_FILE = getDomainsDbPath();
 
 /**
  * Function to create the table in the database
@@ -265,7 +266,7 @@ function getConfig(domain) {
  */
 export async function updateSSLCertificatePaths(domain, certPath, keyPath) {
     return new Promise((resolve, reject) => {
-        const db = new sqlite3.Database('/opt/.get/domains.db');
+        const db = new sqlite3.Database(USER_CONFIG_FILE);
         db.run(
             `UPDATE domains SET 
                 sslCertificate = ?,

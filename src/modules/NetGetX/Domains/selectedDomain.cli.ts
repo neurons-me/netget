@@ -1,24 +1,30 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { editOrDeleteDomain, logDomainInfo, addSubdomain, editOrDeleteSubdomain } from './domainsOptions.ts';
+import { logDomainInfo, addSubdomain, editOrDeleteDomain, editOrDeleteSubdomain, linkDevelopmentAppProject } from './domainsOptions.ts';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.ts';
 import sqlite3 from 'sqlite3';
+import { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
+
+// Interface for menu answers
+interface SelectedDomainMenuAnswers {
+    action: string;
+}
 
 /**
  * Domain Menu once a domain is selected
  * @memberof NetGetX.Domains
- * @param {string} domain - The domain to display the menu
- * @returns {Promise<void>} - A promise that resolves when the menu is completed
+ * @param domain - The domain to display the menu
+ * @returns A promise that resolves when the menu is completed
  */
-async function selectedDomainMenu(domain) {
+async function selectedDomainMenu(domain: string): Promise<void> {
     try {
         // Leer la configuración del dominio desde la base de datos
         const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
-        const domainConfig = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err, row) => {
+        const domainConfig: DomainRecord | null = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err: Error | null, row: DomainRecord) => {
                 db.close();
                 if (err) return reject(err);
-                resolve(row);
+                resolve(row || null);
             });
         });
 
@@ -29,21 +35,25 @@ async function selectedDomainMenu(domain) {
 
         await logDomainInfo(domain);
 
-        const options = [
+        console.log(chalk.blue(`Selected Domain: ${domain}`));
+        
+        const choices = [
             { name: 'Add Subdomain', value: 'addSubdomain' },
             { name: 'Edit/Delete Domain', value: 'editOrDelete' },
             { name: 'Edit/Delete Subdomain', value: 'editOrDeleteSubdomain' },
             { name: 'SSL Configuration', value: 'sslConfig' },
-            // { name: 'Link Development App Project', value: 'linkDevApp' },
+            { name: 'Link Development App Project', value: 'linkDevApp' },
+            { name: 'View Domain Configuration', value: 'view' },
             { name: 'Back to Domains Menu', value: 'back' },
+            { name: 'Exit', value: 'exit' }
         ];
 
-        const answer = await inquirer.prompt([
+        const answer: SelectedDomainMenuAnswers = await inquirer.prompt([
             {
                 type: 'list',
                 name: 'action',
-                message: 'Select an option:',
-                choices: options
+                message: `What would you like to do with ${domain}?`,
+                choices: choices
             }
         ]);
 
@@ -60,18 +70,28 @@ async function selectedDomainMenu(domain) {
             case 'sslConfig':
                 await domainSSLConfiguration(domain);
                 break;
-            // case 'linkDevApp':
-            //     await linkDevelopmentAppProject(domain);
-            //     break;
+            case 'linkDevApp':
+                await linkDevelopmentAppProject(domain);
+                break;
+            case 'view':
+                console.table(domainConfig);
+                await selectedDomainMenu(domain);
+                break;
             case 'back':
                 return;
+            case 'exit':
+                console.log(chalk.blue('Exiting NetGet...'));
+                process.exit(0);
+                break;
             default:
-                console.log(chalk.red('Invalid selection. Please try again.'));
+                console.log(chalk.yellow('Invalid selection'));
+                await selectedDomainMenu(domain);
         }
 
         // After an action, redisplay the menu
         await selectedDomainMenu(domain);
-    } catch (error) {
+
+    } catch (error: any) {
         console.error(chalk.red('An error occurred in the Selected Domain Menu:', error.message));
     }
 }

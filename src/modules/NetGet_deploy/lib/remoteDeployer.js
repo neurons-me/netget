@@ -2,7 +2,6 @@ import sqlite3 from 'sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
-import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
 
 export class RemoteDeployer {
   constructor(config) {

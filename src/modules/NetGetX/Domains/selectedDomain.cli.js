@@ -1,7 +1,7 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { editOrDeleteDomain, logDomainInfo, addSubdomain, editOrDeleteSubdomain } from './domainsOptions.js';
-import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.js';
+import { editOrDeleteDomain, logDomainInfo, addSubdomain, editOrDeleteSubdomain } from './domainsOptions.ts';
+import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.ts';
 import sqlite3 from 'sqlite3';
 import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
 

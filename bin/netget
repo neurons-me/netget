@@ -1,0 +1,19 @@
+#!/usr/bin/env node
+
+import { spawn } from 'child_process';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const netgetPath = join(__dirname, '..', 'src', 'netget.cli.ts');
+
+const child = spawn('node', ['--loader', 'ts-node/esm', '--no-warnings', netgetPath], {
+    stdio: 'inherit',
+    cwd: join(__dirname, '..')
+});
+
+child.on('exit', (code) => {
+    process.exit(code);
+});

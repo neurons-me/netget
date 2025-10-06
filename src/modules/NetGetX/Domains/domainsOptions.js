@@ -1,10 +1,10 @@
-//netget/src/modules/NetGetX/Domains/domainsOptions.js
+//netget/src/modules/NetGetX/Domains/domainsOptions.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.js';
-import { scanAndLogCertificates } from './SSL/SSLCertificates.js';
-import { registerDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.js';
-import domainsMenu from './domains.cli.js';
+import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.ts';
+import { scanAndLogCertificates } from './SSL/SSLCertificates.ts';
+import { registerDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.ts';
+import domainsMenu from './domains.cli.ts';
 import sqlite3 from 'sqlite3';
 import { getDomainsDbPath } from '../../../utils/netgetPaths.js';
 

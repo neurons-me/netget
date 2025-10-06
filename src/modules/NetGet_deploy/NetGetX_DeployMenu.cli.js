@@ -3,7 +3,6 @@ import chalk from 'chalk';
 import { NetGetSync } from './lib/netgetSync.js';
 import fs from 'fs/promises';
 import NetGetMainMenu from '../netget_MainMenu.cli.js';
-import { getDomainsDbPath } from '../../utils/netgetPaths.js';
 
 // Helper to load config
 async function loadConfig(configPath) {

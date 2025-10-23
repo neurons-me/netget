@@ -1,9 +1,11 @@
 //netget/src/modules/NetGetX/Domains/domainsOptions.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { loadOrCreateXConfig, saveXConfig, XConfig } from '../config/xConfig.ts';
+import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.ts';
+import type { XConfig } from '../config/xConfig.ts';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.ts'; // Now available in TypeScript
-import { registerDomain, updateDomainTarget, updateDomainType, DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
+import { registerDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.ts';
+import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
 import domainsMenu from './domains.cli.ts';
 import sqlite3 from 'sqlite3';
 
@@ -533,16 +535,35 @@ const linkDevelopmentAppProject = async (domain: string): Promise<void> => {
     ]);
 
     try {
-        const xConfig: XConfig = await loadOrCreateXConfig();
-        if (!xConfig.domains[domain]) {
-            console.log(chalk.red(`Domain ${domain} not found in configuration.`));
+        // Leer la configuración del dominio desde la base de datos
+        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const domainConfig: DomainRecord | null = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err: Error | null, row: DomainRecord) => {
+                db.close();
+                if (err) return reject(err);
+                resolve(row || null);
+            });
+        });
+
+        if (!domainConfig) {
+            console.log(chalk.red(`Domain ${domain} not found in database.`));
             return;
         }
 
-        xConfig.domains[domain].projectPath = projectPathAnswer.projectPath;
-        await saveXConfig(xConfig);
+        domainConfig.projectPath = projectPathAnswer.projectPath;
+        // Update the domain record in the database
+        const dbUpdate = new sqlite3.Database('/opt/.get/domains.db');
+        dbUpdate.run(
+            'UPDATE domains SET projectPath = ? WHERE domain = ?',
+            [domainConfig.projectPath, domain],
+            (err: Error | null) => {
+                if (err) {
+                    console.log(chalk.red('Error updating domain with project path:'), err.message);
+                }
+                dbUpdate.close();
+            }
+        );
 
-        // Note: updateDomain function would need to be imported and implemented
         console.log(chalk.yellow('Domain update in database temporarily simplified during migration.'));
         console.log(chalk.green(`Linked development app project at ${projectPathAnswer.projectPath} with domain ${domain}.`));
     } catch (error: any) {
@@ -761,7 +782,7 @@ const editOrDeleteDomain = async (domain: string): Promise<void> => {
                     }
                     dbDel.close();
                 });
-                return;
+                return await domainsMenu();
             case 'back':
                 return;
         }

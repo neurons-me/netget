@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeployer.js';
+import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeployer.ts';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenvFlow from 'dotenv-flow';

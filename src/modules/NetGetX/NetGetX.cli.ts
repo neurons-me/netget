@@ -3,11 +3,11 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import open from 'open';
 import { i_DefaultNetGetX } from './config/i_DefaultNetGetX.ts';
-import { XStateData } from './xState.ts';
+import type { XStateData } from './xState.ts';
 import NetGetMainMenu from '../netget_MainMenu.cli.ts';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.ts';
 import domainsMenu from './Domains/domains.cli.ts';
-// import LocalNetgetCLI from '../../../local.netget/backend/local.netget.cli.js';
+import LocalNetgetCLI from '../../../local.netget/backend/local.netget.cli.ts';
 
 interface MenuAnswers {
     option: string;
@@ -18,7 +18,7 @@ interface MenuAnswers {
  * @memberof module:NetGetX 
  */
 export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
-    console.clear();
+    // console.clear();
     console.log(`
      ██╗  ██╗ 
      ╚██╗██╔╝ .publicIP: ${chalk.green(x?.publicIP || 'Not Set')}
@@ -77,8 +77,7 @@ export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
                     break;
                 }
                 console.clear();
-                console.log(chalk.yellow('Local.Netget CLI temporarily disabled during TypeScript migration'));
-                // await LocalNetgetCLI();
+                await LocalNetgetCLI();
                 break;
 
             case '3. Settings':

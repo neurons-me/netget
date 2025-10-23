@@ -1,7 +1,7 @@
-// netget/src/modules/Srvrs/srvrs.cli.js
+// netget/src/modules/Srvrs/srvrs.cli.ts
 import inquirer from "inquirer";
 import chalk from "chalk";
-import NetGetMainMenu from "../netget_MainMenu.cli.js";
+import NetGetMainMenu from "../netget_MainMenu.cli.ts";
 /**
  * Displays the Gateways Menu and handles user input.
  * @category Gateways
@@ -9,7 +9,7 @@ import NetGetMainMenu from "../netget_MainMenu.cli.js";
  * @module Srvrs_CLI
  */
 
-export async function Srvrs_CLI() {
+export async function Srvrs_CLI(): Promise<void> {
     console.clear();
     console.log(`
              __________________ 
@@ -35,6 +35,6 @@ HTTPS--->>> |_______.R.________|---->>>
              await NetGetMainMenu();
              return;
      }
-};
+}
 
 export default Srvrs_CLI;

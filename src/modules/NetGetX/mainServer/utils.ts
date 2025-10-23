@@ -1,6 +1,6 @@
 import fs from 'fs';
 import chalk from 'chalk';
-// import { handlePermission } from '../../utils/handlePermissions.js'; // Temporarily disabled - needs migration
+import { handlePermission } from '../../utils/handlePermissions.ts';
 import { loadOrCreateXConfig, saveXConfig, XConfig } from '../config/xConfig.js';
 
 /**

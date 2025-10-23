@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { XConfig } from './xConfig.ts';
+import type { XConfig } from './xConfig.ts';
 
 const CONFIG_DIR: string = path.join('/opt/', '.get');
 const USER_CONFIG_FILE: string = path.join(CONFIG_DIR, 'xConfig.json');

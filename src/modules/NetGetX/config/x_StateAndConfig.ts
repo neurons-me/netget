@@ -1,7 +1,7 @@
 // netget/src/modules/NetGetX/config/x_StateAndConfig.ts
 import { getConfig } from './getConfig.ts';
-import { XConfig } from './xConfig.ts';
-import { XStateData } from '../xState.ts';
+import type { XConfig } from './xConfig.ts';
+import type { XStateData } from '../xState.ts';
 
 // Interface for comparison table data
 interface ComparisonData {

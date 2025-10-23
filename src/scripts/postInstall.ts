@@ -1,5 +1,5 @@
 // scripts/postInstall.ts
-import { initializeDirectories } from './init_dirs.js';  // Adjust the path as necessary depending on your project structure
+import { initializeDirectories } from './init_dirs.ts';  // Adjust the path as necessary depending on your project structure
 
 /**
  * This script is executed after the package is installed.

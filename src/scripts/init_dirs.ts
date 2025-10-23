@@ -1,6 +1,6 @@
 // netget/src/scripts/init_dirs.ts
 import * as path from 'path';
-import { ensureDirectoryExists, pathExists } from './pathUtils.js';
+import { ensureDirectoryExists, pathExists } from './pathUtils.ts';
 
 interface DirectoryPaths {
     getPath: string;

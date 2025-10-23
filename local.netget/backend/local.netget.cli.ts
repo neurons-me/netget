@@ -1,10 +1,10 @@
-import { exec } from 'child_process';
+// local.netget.cli.ts
+import { exec, spawn, ChildProcess } from 'child_process';
 import net from 'net';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
 import dotenvFlow from 'dotenv-flow';
 
 dotenvFlow.config({
@@ -13,15 +13,15 @@ dotenvFlow.config({
   default_node_env: 'development'
 });
 
-const BACKEND_PORT = process.env.LOCAL_BACKEND_PORT || 3000;
-const FRONTEND_PORT = process.env.LOCAL_FRONTEND_PORT || 5173;
+const BACKEND_PORT: number = parseInt(process.env.LOCAL_BACKEND_PORT || '3000', 10);
+const FRONTEND_PORT: number = parseInt(process.env.LOCAL_FRONTEND_PORT || '5173', 10);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const logFilePath = path.join(__dirname, 'server.log');
+const logFilePath: string = path.join(__dirname, 'server.log');
 
 // Function to check if a port is available
-function checkPort(port) {
+function checkPort(port: number): Promise<boolean> {
     return new Promise((resolve) => {
         const server = net.createServer();
         server.once('error', () => resolve(false)); // Port in use
@@ -33,7 +33,7 @@ function checkPort(port) {
 }
 
 // Function to kill a process by port
-function killProcessOnPort(port) {
+function killProcessOnPort(port: number): Promise<void> {
     return new Promise((resolve) => {
         const cmd = process.platform === 'win32' 
             ? `for /f "tokens=5" %a in ('netstat -ano | findstr :${port}') do taskkill /PID %a /F`
@@ -50,7 +50,7 @@ function killProcessOnPort(port) {
     });
 }
 
-async function viewLogs() {
+async function viewLogs(): Promise<void> {
     console.log(chalk.yellow('\n=== Viewing Logs ===\n'));
 
     const logs = spawn('tail', ['-f', logFilePath]);
@@ -59,24 +59,28 @@ async function viewLogs() {
     logs.stderr.pipe(process.stderr);
 }
 
+interface MenuAnswers {
+    option: string;
+}
 
-export default async function LocalNetgetCLI() {
+export default async function LocalNetgetCLI(): Promise<void> {
     console.log(chalk.blue('Welcome to Local NetGet!'));
 
-    let backendProcess, frontendProcess;
+    let backendProcess: ChildProcess | undefined;
+    let frontendProcess: ChildProcess | undefined;
 
     let exit = false;
     while (!exit) {
-        const answers = await inquirer.prompt({
+        const answers = await inquirer.prompt<MenuAnswers>({
             type: 'list',
             name: 'option',
             message: 'Select an action:',
             choices: [
-            '1. Start Local NetGet Server',
-            '2. Stop Local NetGet Server',
-            '3. View Logs',
-            '4. Back',
-            '5. Exit'
+                '1. Start Local NetGet Server',
+                '2. Stop Local NetGet Server',
+                '3. View Logs',
+                '4. Back',
+                '5. Exit'
             ]
         });
 
@@ -121,7 +125,7 @@ export default async function LocalNetgetCLI() {
                         });
                         console.log(chalk.green(`Frontend started on port ${FRONTEND_PORT} in a new terminal window.`));
                     }
-                } catch (error) {
+                } catch (error: any) {
                     console.error(chalk.red(`Error starting servers: ${error.message}`));
                 }
                 break;

@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import { logDomainInfo, addSubdomain, editOrDeleteDomain, editOrDeleteSubdomain, linkDevelopmentAppProject } from './domainsOptions.ts';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.ts';
 import sqlite3 from 'sqlite3';
-import { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
+import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
 
 // Interface for menu answers
 interface SelectedDomainMenuAnswers {
@@ -75,8 +75,7 @@ async function selectedDomainMenu(domain: string): Promise<void> {
                 break;
             case 'view':
                 console.table(domainConfig);
-                await selectedDomainMenu(domain);
-                break;
+                return await selectedDomainMenu(domain);
             case 'back':
                 return;
             case 'exit':

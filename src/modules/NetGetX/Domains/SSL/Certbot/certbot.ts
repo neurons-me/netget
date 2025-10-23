@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import chalk from 'chalk';
-// import { handlePermission } from '../../../../utils/handlePermissions.js'; // Temporarily disabled - needs migration
+import { handlePermission } from '../../../../utils/handlePermissions.ts'; 
 
 /**
  * Print the latest Certbot logs.
@@ -14,10 +14,8 @@ const printCertbotLogs = async (): Promise<void> => {
         console.log(stdout);
     } catch (error: any) {
         if (error.message.includes('Permission denied')) {
-            console.log(chalk.yellow('Permission handling temporarily simplified during TypeScript migration'));
-            console.log(chalk.blue('Would handle permissions for retrieving Certbot logs'));
-            // const manualInstructions = 'Please check the permissions of the log file and ensure you have read access.';
-            // await handlePermission('retrieving Certbot logs', 'sudo tail -n 50 /var/log/letsencrypt/letsencrypt.log', manualInstructions);
+            const manualInstructions = 'Please check the permissions of the log file and ensure you have read access.';
+            await handlePermission('retrieving Certbot logs', 'sudo tail -n 50 /var/log/letsencrypt/letsencrypt.log', manualInstructions);
         } else {
             console.error(chalk.red(`Failed to retrieve Certbot logs: ${error.message}`));
         }

@@ -3,7 +3,10 @@ import chalk from 'chalk';
 import fs from 'fs';
 import checkAndInstallCertbot from '../Certbot/checkAndInstallCertbot.ts';
 import { 
-    checkCertificateExists 
+    checkCertificateExists, 
+    obtainSSLCertificates, 
+    verifySSLCertificate, 
+    renewSSLCertificate 
 } from '../SSLCertificates.ts';
 import printCertbotLogs from '../Certbot/certbot.ts';
 import { storeConfigInDB, updateSSLCertificatePaths } from '../../../../../sqlite/utils_sqlite3.ts';
@@ -15,6 +18,7 @@ const DOMAINS_DB_PATH = getDomainsDbPath();
 // Type definitions
 interface DomainConfig {
     domain: string;
+    subdomain?: string;
     email: string;
     sslMode?: string;
     SSLCertificatesPath?: string;
@@ -25,6 +29,7 @@ interface DomainConfig {
     target?: string;
     type?: string;
     projectPath?: string;
+    owner?: string;
 }
 
 interface InquirerAnswer {
@@ -156,6 +161,8 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
         displayCurrentSSLConfiguration(domainConfig, domain);
 
         const options = [
+            { name: 'Verify SSL Certificate', value: 'verifyCertificate' },
+            { name: 'Renew SSL Certificate', value: 'renewCertificate' },
             { name: 'View Certbot Logs', value: 'viewLogs' },
             { name: 'Back to Domains Menu', value: 'back' },
             { name: 'Exit', value: 'exit' }
@@ -171,6 +178,12 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
         ]);
 
         switch (answer.action) {
+            case 'verifyCertificate':
+                await verifySSLCertificate(domain);
+                break;
+            case 'renewCertificate':
+                await renewSSLCertificate(domain);
+                break;
             case 'viewLogs':
                 await printCertbotLogs();
                 break;
@@ -210,9 +223,7 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
         ]);
 
         if (issueCertificates) {
-            // Simplified certificate issuance - temporarily simplified during migration
-            console.log(chalk.yellow(`Certificate issuance for ${domain} would be executed here.`));
-            console.log(chalk.blue('Full SSL certificate automation will be available after complete migration.'));
+            await obtainSSLCertificates(domain, domainConfig.email);
             
             domainConfig.SSLCertificatesPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
@@ -222,7 +233,7 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
             db.run(
                 `UPDATE domains SET 
                     sslCertificate = ?,
-                    sslCertificateKey = ?,
+                    sslCertificateKey = ?
                  WHERE domain = ?`,
                 [
                     domainConfig.SSLCertificatesPath,
@@ -238,12 +249,14 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
             );
             await storeConfigInDB(
                 domain, 
+                domainConfig.subdomain || '',
                 'letsencrypt', 
                 domainConfig.SSLCertificateSqlitePath || '', 
                 domainConfig.SSLCertificateKeySqlitePath || '', 
                 domainConfig.target || '', 
                 domainConfig.type || '', 
-                domainConfig.projectPath || ''
+                domainConfig.projectPath || '',
+                domainConfig.owner || ''
             );
         }
     }

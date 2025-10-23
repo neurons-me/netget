@@ -1,22 +1,31 @@
+// NetGetX_DeployMenu.cli.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { NetGetSync } from './lib/netgetSync.js';
+import { NetGetSync } from './lib/netgetSync.ts';
 import fs from 'fs/promises';
-import NetGetMainMenu from '../netget_MainMenu.cli.js';
+import NetGetMainMenu from '../netget_MainMenu.cli.ts';
+
+interface DeployConfig {
+    localDbPath: string;
+    remoteServer: string;
+    remoteApiKey: string;
+    projectsBasePath: string;
+    timestamp?: number;
+}
 
 // Helper to load config
-async function loadConfig(configPath) {
+async function loadConfig(configPath: string): Promise<DeployConfig | null> {
     try {
         const configFile = await fs.readFile(configPath || './deploy.config.json', 'utf8');
         return JSON.parse(configFile);
-    } catch (error) {
+    } catch (error: any) {
         console.error(chalk.red(`Failed to load config: ${error.message}`));
         return null;
     }
 }
 
 // Helper to create NetGetSync instance
-async function createSyncInstance(configPath) {
+async function createSyncInstance(configPath: string): Promise<NetGetSync | null> {
     const config = await loadConfig(configPath);
     if (!config) return null;
     return new NetGetSync({
@@ -27,7 +36,7 @@ async function createSyncInstance(configPath) {
     });
 }
 
-export default async function netGetXDeployMenu() {
+export default async function netGetXDeployMenu(): Promise<void> {
     console.clear();
     // ASCII art for "DEPLOY" (styled like NetGet art)
     console.log(`
@@ -38,7 +47,7 @@ export default async function netGetXDeployMenu() {
     ██████╔╝███████╗██║     ╚██████ ╚██████╔╝  ██║
     ╚═════╝ ╚══════╝╚═╝      ╚═════╝ ╚═════╝   ╚═╝
  `);
-    
+
     let exit = false;
     while (!exit) {
         const { option } = await inquirer.prompt({
@@ -57,9 +66,14 @@ export default async function netGetXDeployMenu() {
 
         switch (option) {
             case '1. Initialize deployment config': {
-                const { output } = await inquirer.prompt({ type: 'input', name: 'output', message: 'Output config file:', default: './deploy.config.json' });
-                const config = {
-                    localDbPath: getDomainsDbPath(),
+                const { output } = await inquirer.prompt({ 
+                    type: 'input', 
+                    name: 'output', 
+                    message: 'Output config file:', 
+                    default: './deploy.config.json' 
+                });
+                const config: DeployConfig = {
+                    localDbPath: '/opt/.get/domains.db',
                     remoteServer: 'https://your-remote-server.com',
                     remoteApiKey: 'your-api-key-here',
                     projectsBasePath: '/var/www',
@@ -77,46 +91,60 @@ export default async function netGetXDeployMenu() {
                     console.log(`   - remoteApiKey: Your API key for authentication`);
                     console.log(`   - localDbPath: Path to your local NetGet database`);
                     console.log(`   - projectsBasePath: Base path for your projects`);
-                } catch (error) {
+                } catch (error: any) {
                     console.log(chalk.red(`Failed to create config: ${error.message}`));
                 }
                 break;
             }
             case '2. Compare local and remote': {
-                const { config } = await inquirer.prompt({ type: 'input', name: 'config', message: 'Config file path:', default: './deploy.config.json' });
+                const { config } = await inquirer.prompt({ 
+                    type: 'input', 
+                    name: 'config', 
+                    message: 'Config file path:', 
+                    default: './deploy.config.json' 
+                });
                 const sync = await createSyncInstance(config);
                 if (!sync) break;
                 try {
                     await sync.compare();
-                } catch (error) {
+                } catch (error: any) {
                     console.log(chalk.red(`Compare failed: ${error.message}`));
                 }
                 break;
             }
             case '3. Check remote server status': {
-                const { config } = await inquirer.prompt({ type: 'input', name: 'config', message: 'Config file path:', default: './deploy.config.json' });
+                const { config } = await inquirer.prompt({ 
+                    type: 'input', 
+                    name: 'config', 
+                    message: 'Config file path:', 
+                    default: './deploy.config.json' 
+                });
                 console.log(chalk.blue(`Reading configuration from: ${config}`));
                 const sync = await createSyncInstance(config);
                 if (!sync) break;
                 try {
                     const health = await sync.checkRemoteHealth();
-                    // console.log(chalk.gray('--- Raw health response ---'));
-                    // console.log(health);
                     console.log(chalk.green('Remote Server Status:'));
                     console.log(`   Status: ${health.status}`);
                     console.log(`   Database: ${health.database}`);
                     console.log(`   Openresty: ${health.openresty}`);
                     console.log(`   Timestamp: ${health.timestamp}`);
-                } catch (error) {
+                } catch (error: any) {
                     console.log(chalk.red(`Check remote server status failed: ${error.message}`));
                 }
+                break;
             }
             case '4. Validate deployment config': {
-                const { config } = await inquirer.prompt({ type: 'input', name: 'config', message: 'Config file path:', default: './deploy.config.json' });
+                const { config } = await inquirer.prompt({ 
+                    type: 'input', 
+                    name: 'config', 
+                    message: 'Config file path:', 
+                    default: './deploy.config.json' 
+                });
                 const loadedConfig = await loadConfig(config);
                 if (!loadedConfig) break;
                 console.log(chalk.blue('Validating configuration...\n'));
-                const required = ['remoteServer', 'remoteApiKey', 'localDbPath'];
+                const required: (keyof DeployConfig)[] = ['remoteServer', 'remoteApiKey', 'localDbPath'];
                 const missing = required.filter(field => !loadedConfig[field]);
                 if (missing.length > 0) {
                     console.log(chalk.red(`Missing required fields: ${missing.join(', ')}`));
@@ -133,10 +161,12 @@ export default async function netGetXDeployMenu() {
                 }
                 try {
                     const sync = await createSyncInstance(config);
-                    await sync.checkRemoteHealth();
-                    console.log(chalk.green('Remote server accessible'));
-                    console.log(chalk.gray(`URL: ${loadedConfig.remoteServer}`));
-                } catch (error) {
+                    if (sync) {
+                        await sync.checkRemoteHealth();
+                        console.log(chalk.green('Remote server accessible'));
+                        console.log(chalk.gray(`URL: ${loadedConfig.remoteServer}`));
+                    }
+                } catch (error: any) {
                     console.log(chalk.red(`Remote server not accessible: ${error.message}`));
                     console.log(chalk.gray(`URL: ${loadedConfig.remoteServer}`));
                     break;
@@ -146,9 +176,24 @@ export default async function netGetXDeployMenu() {
             }
             case '5. Sync local config to remote': {
                 const { config, includeProjects, domains } = await inquirer.prompt([
-                    { type: 'input', name: 'config', message: 'Config file path:', default: './deploy.config.json' },
-                    { type: 'confirm', name: 'includeProjects', message: 'Include project files in sync?', default: false },
-                    { type: 'input', name: 'domains', message: 'Domains to sync (comma-separated, blank for all):', default: '' }
+                    { 
+                        type: 'input', 
+                        name: 'config', 
+                        message: 'Config file path:', 
+                        default: './deploy.config.json' 
+                    },
+                    { 
+                        type: 'confirm', 
+                        name: 'includeProjects', 
+                        message: 'Include project files in sync?', 
+                        default: false 
+                    },
+                    { 
+                        type: 'input', 
+                        name: 'domains', 
+                        message: 'Domains to sync (comma-separated, blank for all):', 
+                        default: '' 
+                    }
                 ]);
 
                 const sync = await createSyncInstance(config);
@@ -156,7 +201,7 @@ export default async function netGetXDeployMenu() {
                 try {
                     const syncOptions = {
                         includeProjects,
-                        domains: domains ? domains.split(',').map(d => d.trim()) : null
+                        domains: domains ? domains.split(',').map((d: string) => d.trim()) : null
                     };
                     const result = await sync.sync(syncOptions);
                     if (result.success) {
@@ -164,7 +209,7 @@ export default async function netGetXDeployMenu() {
                     } else {
                         console.log(chalk.red(`\nSync failed: ${result.error}`));
                     }
-                } catch (error) {
+                } catch (error: any) {
                     console.log(chalk.red(`Sync failed: ${error.message}`));
                 }
                 break;
@@ -172,6 +217,7 @@ export default async function netGetXDeployMenu() {
             case '0. Back':
                 exit = true;
                 await NetGetMainMenu();
+                break;
             default:
                 break;
         }

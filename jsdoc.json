@@ -5,54 +5,64 @@
   
       "./index.js",
 
-      "./src/modules/NetGetX/NetGetX.cli.js",
-      "./src/modules/NetGetX/NetGetX_Settings.cli.js",
+      "./src/modules/NetGetX/NetGetX.cli.ts",
+      "./src/modules/NetGetX/NetGetX_Settings.cli.ts",
       
-      "./src/modules/NetGetX/config/getConfig.js",
-      "./src/modules/NetGetX/config/i_DefaultNetGetX.js",
-      "./src/modules/NetGetX/config/NginxPaths.js",
-      "./src/modules/NetGetX/config/xConfig.js",
+      "./src/modules/NetGetX/config/i_DefaultNetGetX.ts",
+      "./src/modules/NetGetX/config/NginxPaths.ts",
+      "./src/modules/NetGetX/config/xConfig.ts",
+      "./src/modules/NetGetX/config/x_StateAndConfig.ts",
 
-      "./src/modules/NetGetX/Domains/SSL/Certbot/certbot.js",
-      "./src/modules/NetGetX/Domains/SSL/Certbot/checkAndInstallCertbot.js",
-      "./src/modules/NetGetX/Domains/SSL/letsEncrypt/letsEncrypt.js",
-      "./src/modules/NetGetX/Domains/SSL/selfSigned/certGenerator.js",
-      "./src/modules/NetGetX/Domains/SSL/selfSigned/ssl.cli.js",
-      "./src/modules/NetGetX/Domains/SSL/selfSignedCertificates.js",
-      "./src/modules/NetGetX/Domains/SSL/SSLCertificates.js",
-      "./src/modules/NetGetX/Domains/domains.cli.js",
-      "./src/modules/NetGetX/Domains/domainsOptions.js",
-      "./src/modules/NetGetX/Domains/handleErrors.js",
-      "./src/modules/NetGetX/Domains/selectedDomain.cli.js",
-      "./src/modules/NetGetX/Domains/viewNginxConfig.js",
+      "./src/modules/NetGetX/Domains/SSL/Certbot/checkAndInstallCertbot.ts",
+      "./src/modules/NetGetX/Domains/SSL/letsEncrypt/letsEncrypt.ts",
+      "./src/modules/NetGetX/Domains/SSL/selfSigned/ssl.cli.ts",
+      "./src/modules/NetGetX/Domains/SSL/SSLCertificates.ts",
+      "./src/modules/NetGetX/Domains/domains.cli.ts",
+      "./src/modules/NetGetX/Domains/domainsOptions.ts",
+      "./src/modules/NetGetX/Domains/selectedDomain.cli.ts",
+      "./src/modules/NetGetX/Domains/viewNginxConfig.ts",
 
-      "./src/modules/NetGetX/mainServer/mainServer.cli.js",
-      "./src/modules/NetGetX/mainServer/serverBlockConfigOptions.cli.js",
-      "./src/modules/NetGetX/mainServer/setDefaultServerBlock.js",
-      "./src/modules/NetGetX/mainServer/utils.js",
-      "./src/modules/NetGetX/mainServer/verifyServerBlock.js",
-      "./src/modules/NetGetX/OpenResty/openRestyInstallationOptions.cli.js",
-      "./src/modules/NetGetX/OpenResty/setNginxConfigFile.js",
-      "./src/modules/NetGetX/OpenResty/verifyOpenRestyInstallation.js",
+      "./src/modules/NetGetX/mainServer/mainServer.cli.ts",
+      "./src/modules/NetGetX/OpenResty/openRestyInstallationOptions.cli.ts",
 
-      "./src/modules/NetGetX/xState.js",
+      "./src/modules/NetGetX/xState.ts",
 
-      "./src/modules/PortManagement/portManagement.cli.js",
+      "./src/modules/PortManagement/portManagement.cli.ts",
 
-      "./src/modules/Srvrs/srvrs.cli.js",
+      "./src/modules/Srvrs/srvrs.cli.ts",
       
-      "./src/modules/utils/GETDirs.js",
-      "./src/modules/utils/execShellCommand.js",
-      "./src/modules/utils/handlePermissionErrorForEnsureDir.js",
-      "./src/modules/utils/handlePermissions.js",
-      "./src/modules/utils/ipUtils.js",
-      "./src/modules/utils/pathUtils.js",
-      "./src/modules/utils/promptForDomainAndEmail.js",
+      "./src/modules/Gets/Gets.ts",
       
-      "./src/modules/netget_MainMenu.cli.js",
+      "./src/modules/utils/GETDirs.ts",
+      "./src/modules/utils/execShellCommand.ts",
+      "./src/modules/utils/handlePermissionErrorForEnsureDir.ts",
+      "./src/modules/utils/handlePermissions.ts",
+      "./src/modules/utils/ipUtils.ts",
+      "./src/modules/utils/localHosts.ts",
+      "./src/modules/utils/pathUtils.ts",
+      "./src/modules/utils/promptForDomainAndEmail.ts",
       
-      "./src/netget.cli.js",
-      "./src/netget.js"]
+      "./src/modules/NetGet_deploy/NetGetX_DeployMenu.cli.ts",
+      "./src/modules/NetGet_deploy/lib/netgetSync.ts",
+      "./src/modules/NetGet_deploy/lib/remoteDeployer.ts",
+      "./src/modules/NetGet_deploy/lib/validateConfig.ts",
+      
+      "./src/modules/netget_MainMenu.cli.ts",
+      
+      "./src/sqlite/getConfig.ts",
+      "./src/sqlite/migrate.ts",
+      "./src/sqlite/migrateTable.ts",
+      "./src/sqlite/updateCertificates.ts",
+      "./src/sqlite/utils_sqlite3.ts",
+      
+      "./src/scripts/init_dirs.ts",
+      "./src/scripts/pathUtils.ts",
+      "./src/scripts/postInstall.ts",
+      
+      "./local.netget/backend/local.netget.cli.ts",
+      
+      "./src/netget.cli.ts",
+      "./src/netget.ts"]
   },
   "opts": {
     "destination": "/mnt/neuroverse/https-neurons/subDomains/docs/public/netget",

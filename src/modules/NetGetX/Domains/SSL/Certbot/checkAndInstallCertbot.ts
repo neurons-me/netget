@@ -1,24 +1,24 @@
 //netget/src/modules/NetGetX/Domains/SSL/Certbot/checkAndInstallCertbot.ts
 import { exec } from 'child_process';
+import { promisify } from 'util';
 import chalk from 'chalk';
+
+const execAsync = promisify(exec);
 
 /**
  * Check if Certbot and Certbot NGINX plugin are installed, and install them if necessary.
  * @returns Promise resolving to true if Certbot and its NGINX plugin are installed, false otherwise.
  * @memberof module:NetGetX.SSL.SSL
  */
-const checkAndInstallCertbot = (): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-        exec('certbot --version', (error, stdout, stderr) => {
-            if (error) {
-                console.log(chalk.yellow('Certbot is not installed. Installing Certbot...'));
-                installCertbot().then(resolve).catch(reject);
-            } else {
-                console.log(chalk.green('Certbot is already installed.'));
-                checkCertbotNginxPlugin().then(resolve).catch(reject);
-            }
-        });
-    });
+const checkAndInstallCertbot = async (): Promise<boolean> => {
+    try {
+        await execAsync('certbot --version');
+        console.log(chalk.green('Certbot is already installed.'));
+        return await checkCertbotNginxPlugin();
+    } catch (error) {
+        console.log(chalk.yellow('Certbot is not installed. Installing Certbot...'));
+        return await installCertbot();
+    }
 };
 
 /**
@@ -26,25 +26,24 @@ const checkAndInstallCertbot = (): Promise<boolean> => {
  * @memberof module:NetGetX.SSL
  * @returns Promise resolving to true if Certbot is installed successfully, false otherwise.
  */
-const installCertbot = (): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-        console.log(chalk.yellow('Certbot installation temporarily simplified during TypeScript migration'));
-        console.log(chalk.blue('Would install Certbot with: sudo apt-get install -y certbot'));
+const installCertbot = async (): Promise<boolean> => {
+    try {
+        console.log(chalk.blue('Installing Certbot...'));
+        console.log(chalk.blue('Running: sudo apt-get install -y certbot'));
         
-        // Implementation temporarily simplified during migration
-        // exec('sudo apt-get install -y certbot', (error, stdout, stderr) => {
-        //     if (error) {
-        //         console.error(chalk.red(`Failed to install Certbot: ${error.message}`));
-        //         reject(false);
-        //         return;
-        //     }
-        //     console.log(chalk.green('Certbot installed successfully.'));
-        //     checkCertbotNginxPlugin().then(resolve).catch(reject);
-        // });
+        const { stdout, stderr } = await execAsync('sudo apt-get install -y certbot');
         
-        console.log(chalk.green('Certbot would be installed successfully.'));
-        checkCertbotNginxPlugin().then(resolve).catch(reject);
-    });
+        if (stderr && !stderr.includes('Reading')) {
+            console.warn(chalk.yellow(`Installation warnings: ${stderr}`));
+        }
+        
+        console.log(chalk.green('Certbot installed successfully.'));
+        return await checkCertbotNginxPlugin();
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red(`Failed to install Certbot: ${errorMessage}`));
+        throw new Error(`Certbot installation failed: ${errorMessage}`);
+    }
 };
 
 /**
@@ -52,18 +51,21 @@ const installCertbot = (): Promise<boolean> => {
  * @memberof module:NetGetX.SSL
  * @returns Promise resolving to true if Certbot NGINX plugin is installed, false otherwise.
  */
-const checkCertbotNginxPlugin = (): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-        exec('certbot plugins', (error, stdout, stderr) => {
-            if (error || !stdout.includes('nginx')) {
-                console.log(chalk.yellow('Certbot NGINX plugin is not installed. Installing plugin...'));
-                installCertbotNginxPlugin().then(resolve).catch(reject);
-            } else {
-                console.log(chalk.green('Certbot NGINX plugin is already installed.'));
-                resolve(true);
-            }
-        });
-    });
+const checkCertbotNginxPlugin = async (): Promise<boolean> => {
+    try {
+        const { stdout } = await execAsync('certbot plugins');
+        
+        if (!stdout.includes('nginx')) {
+            console.log(chalk.yellow('Certbot NGINX plugin is not installed. Installing plugin...'));
+            return await installCertbotNginxPlugin();
+        }
+        
+        console.log(chalk.green('Certbot NGINX plugin is already installed.'));
+        return true;
+    } catch (error) {
+        console.log(chalk.yellow('Could not check Certbot plugins. Installing NGINX plugin...'));
+        return await installCertbotNginxPlugin();
+    }
 };
 
 /**
@@ -71,25 +73,24 @@ const checkCertbotNginxPlugin = (): Promise<boolean> => {
  * @memberof module:NetGetX.SSL
  * @returns Promise resolving to true if Certbot NGINX plugin is installed successfully, false otherwise.
  */
-const installCertbotNginxPlugin = (): Promise<boolean> => {
-    return new Promise((resolve, reject) => {
-        console.log(chalk.yellow('Certbot NGINX plugin installation temporarily simplified during TypeScript migration'));
-        console.log(chalk.blue('Would install plugin with: sudo apt-get install -y python3-certbot-nginx'));
+const installCertbotNginxPlugin = async (): Promise<boolean> => {
+    try {
+        console.log(chalk.blue('Installing Certbot NGINX plugin...'));
+        console.log(chalk.blue('Running: sudo apt-get install -y python3-certbot-nginx'));
         
-        // Implementation temporarily simplified during migration
-        // exec('sudo apt-get install -y python3-certbot-nginx', (error, stdout, stderr) => {
-        //     if (error) {
-        //         console.error(chalk.red(`Failed to install Certbot NGINX plugin: ${error.message}`));
-        //         reject(false);
-        //         return;
-        //     }
-        //     console.log(chalk.green('Certbot NGINX plugin installed successfully.'));
-        //     resolve(true);
-        // });
+        const { stdout, stderr } = await execAsync('sudo apt-get install -y python3-certbot-nginx');
         
-        console.log(chalk.green('Certbot NGINX plugin would be installed successfully.'));
-        resolve(true);
-    });
+        if (stderr && !stderr.includes('Reading')) {
+            console.warn(chalk.yellow(`Installation warnings: ${stderr}`));
+        }
+        
+        console.log(chalk.green('Certbot NGINX plugin installed successfully.'));
+        return true;
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red(`Failed to install Certbot NGINX plugin: ${errorMessage}`));
+        throw new Error(`Certbot NGINX plugin installation failed: ${errorMessage}`);
+    }
 };
 
 export default checkAndInstallCertbot;

@@ -133,6 +133,7 @@ export async function getDomainByName(domain: string): Promise<DomainRecord | un
  */
 export async function updateDomain(
     domain: string, 
+    subdomain?: string, 
     email?: string, 
     sslMode?: string, 
     sslCertificate?: string, 
@@ -145,8 +146,8 @@ export async function updateDomain(
     try {
         const db = await dbPromise;
         await db.run(
-            'UPDATE domains SET email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?',
-            [email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]
+            'UPDATE domains SET subdomain = ?, email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?',
+            [subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]
         );
     }
     catch (error: any) {

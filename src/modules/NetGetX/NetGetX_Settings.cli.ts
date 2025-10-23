@@ -1,6 +1,6 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { XStateData } from './xState.ts';
+import type { XStateData } from './xState.ts';
 import mainServerMenu from './mainServer/mainServer.cli.ts';
 import displayStateAndConfig from './config/x_StateAndConfig.ts';
 

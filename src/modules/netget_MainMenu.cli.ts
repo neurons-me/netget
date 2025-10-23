@@ -3,10 +3,10 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.ts';
 import NetGetX_CLI from './NetGetX/NetGetX.cli.ts';
-// import { Srvrs_CLI } from './Srvrs/srvrs.cli.js';  // Temporarily disabled
-// import { PortManagement_CLI } from './PortManagement/portManagement.cli.js'; // Temporarily disabled
-// import netGetXDeployMenu from './NetGet_deploy/NetGetX_DeployMenu.cli.js'; // Temporarily disabled
-import { XStateData } from './NetGetX/xState.ts';
+import { Srvrs_CLI } from './Srvrs/srvrs.cli.ts';
+import { PortManagement_CLI } from './PortManagement/portManagement.cli.ts';
+import netGetXDeployMenu from './NetGet_deploy/NetGetX_DeployMenu.cli.ts';
+import type { XStateData } from './NetGetX/xState.ts';
 
 // Inquirer Choice Interface
 interface MenuChoice {
@@ -86,7 +86,7 @@ export default async function NetGetMainMenu(): Promise<void> {
         ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
         ║║║├┤  │ ║ ╦├┤  │ 
         ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-            v2.6.46`);
+            v2.6.47`);
         console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
         
         const menuQuestion: MenuChoice = {
@@ -126,22 +126,18 @@ export default async function NetGetMainMenu(): Promise<void> {
                 break;
                 
             case 'NetGet Deploy':
-                console.clear();
-                console.log(chalk.yellow('NetGet Deploy temporarily disabled during TypeScript migration.'));
-                await NetGetMainMenu();
+                await netGetXDeployMenu();
                 break;
 
             case 'Port Management':
-                console.log(chalk.yellow('Port Management temporarily disabled during TypeScript migration.'));
-                await NetGetMainMenu();
+                await PortManagement_CLI();
                 break;
 
             case 'Srvrs - (Port Services)':
                 /*
                 Role: Manages and adds backend services listening on specific ports.
                 */
-                console.log(chalk.yellow('Srvrs temporarily disabled during TypeScript migration.'));
-                await NetGetMainMenu();
+                await Srvrs_CLI();
                 break;
 
             case 'Statics - (Static files)':

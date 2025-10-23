@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 
 const netgetPath = join(__dirname, '..', 'src', 'netget.cli.ts');
 
-const child = spawn('node', ['--loader', 'ts-node/esm', '--no-warnings', netgetPath], {
+const child = spawn('node', ['--import', 'tsx', '--no-warnings', netgetPath], {
     stdio: 'inherit',
     cwd: join(__dirname, '..')
 });

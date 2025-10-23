@@ -1,7 +1,7 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { saveXConfig } from '../config/xConfig.ts';
-import { XStateData } from '../xState.ts';
+import type { XStateData } from '../xState.ts';
 
 // Interface for menu options
 interface MainServerMenuOption {

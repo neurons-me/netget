@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import chalk from 'chalk';
-import { handlePermission } from './handlePermissions.js';
+import { handlePermission } from './handlePermissions.ts';
 
 // Determine the path to the hosts file based on the platform
 const hostsFilePath: string = os.platform() === 'win32'

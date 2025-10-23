@@ -1,13 +1,13 @@
 import express from 'express';
 import multer from 'multer';
-import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeployer.js';
+import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeployer.ts';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenvFlow from 'dotenv-flow';
 
 // Load environment variables
 dotenvFlow.config({
-  path: process.cwd() + '/local.netget/backend/env',
+  path: process.cwd() + '/env',
   pattern: '.env[.node_env]',
   default_node_env: 'development'
 });

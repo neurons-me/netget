@@ -1,19 +1,25 @@
-// portManagement.cli.js
+// portManagement.cli.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { exec } from 'child_process';
 import util from 'util';
 import pm2 from 'pm2';
-import NetGetMainMenu from '../netget_MainMenu.cli.js';
+import NetGetMainMenu from '../netget_MainMenu.cli.ts';
 
 const execPromise = util.promisify(exec);
+
+interface PM2Process {
+  name: string;
+  pid: number;
+  [key: string]: any;
+}
 
 /**
  * Port Management CLI  
  * @memberof module:PortManagement
  *  
  */
-export async function PortManagement_CLI() {
+export async function PortManagement_CLI(): Promise<void> {
     console.clear();
     console.log(chalk.green('Port Management Menu'));
 
@@ -32,7 +38,7 @@ export async function PortManagement_CLI() {
                 type: 'input',
                 name: 'portToCheck',
                 message: 'Enter the port number to check:',
-                validate: value => !isNaN(value) || 'Please enter a valid number',
+                validate: (value: string) => !isNaN(Number(value)) || 'Please enter a valid number',
             });
 
             try {
@@ -44,7 +50,7 @@ export async function PortManagement_CLI() {
                 } else {
                     console.log(chalk.green(`Processes running on port ${portToCheck}:\n`), stdout);
                 }
-            } catch (error) {
+            } catch (error: any) {
                 if (error.code === 1) {
                     console.log(chalk.yellow(`No processes running on port ${portToCheck}.`));
                 } else {
@@ -58,7 +64,7 @@ export async function PortManagement_CLI() {
                 type: 'input',
                 name: 'portToKill',
                 message: 'Enter the port number to kill processes on:',
-                validate: value => !isNaN(value) || 'Please enter a valid number',
+                validate: (value: string) => !isNaN(Number(value)) || 'Please enter a valid number',
             });
 
             try {
@@ -73,8 +79,8 @@ export async function PortManagement_CLI() {
 
                             // Check if the process is managed by PM2
                             const { stdout: pm2List } = await execPromise(`pm2 jlist`);
-                            const pm2Processes = JSON.parse(pm2List);
-                            const pm2Process = pm2Processes.find(proc => proc.pid == pid);
+                            const pm2Processes: PM2Process[] = JSON.parse(pm2List);
+                            const pm2Process = pm2Processes.find(proc => proc.pid == Number(pid));
 
                             if (pm2Process) {
                                 console.log(chalk.yellow(`Process with PID ${pid} is managed by PM2.`));
@@ -121,7 +127,7 @@ export async function PortManagement_CLI() {
     await PortManagement_CLI(); // Show the Port Management menu again after an action
 }
 
-async function stopPM2Process(processName) {
+async function stopPM2Process(processName: string): Promise<void> {
     return new Promise((resolve, reject) => {
         pm2.connect(err => {
             if (err) {

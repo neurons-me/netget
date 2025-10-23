@@ -1,11 +1,14 @@
 //i_DefaultNetGetX.ts
 import * as fs from 'fs';
 import chalk from 'chalk';
-import { loadOrCreateXConfig, saveXConfig, XConfig } from './xConfig.ts';
-import { initializeState, XStateData } from '../xState.ts';
+import { loadOrCreateXConfig, saveXConfig } from './xConfig.ts';
+import type { XConfig } from './xConfig.ts';
+import { initializeState } from '../xState.ts';
+import type { XStateData } from '../xState.ts';
 import { getLocalIP, getPublicIP } from '../../utils/ipUtils.ts';
-import { pathExists } from '../../utils/pathUtils.js';
-import { initializeDirectories, getDirectoryPaths, DirectoryPaths } from '../../utils/GETDirs.ts';
+import { pathExists } from '../../utils/pathUtils.ts';
+import { initializeDirectories, getDirectoryPaths } from '../../utils/GETDirs.ts';
+import type { DirectoryPaths } from '../../utils/GETDirs.ts';
 import { checkSelfSignedCertificates, generateSelfSignedCert } from '../Domains/SSL/selfSignedCertificates.ts';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.ts';
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.ts';
@@ -64,23 +67,12 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
             return false;
         }
 
-        const validateNginxConfig = (): boolean => {
-            const nginxConfigPath = '/usr/local/openresty/nginx/conf/nginx.conf';
-            if (fs.existsSync(nginxConfigPath)) {
-                // Note: nginxConfigContent is not defined in the original code - this might be an issue
-                // const existingContent = fs.readFileSync(nginxConfigPath, 'utf8');
-                // return existingContent === nginxConfigContent;
-                return true; // Temporary fix
-            }
-            return false;
-        };
-
         // NGINX configuration file validation
         try {
             const nginxConfigPath: string = '/usr/local/openresty/nginx/conf/nginx.conf';
             if (!pathExists(nginxConfigPath)) {
                 await ensureNginxConfigFile();
-                if (!pathExists(nginxConfigPath) && validateNginxConfig()) {
+                if (!pathExists(nginxConfigPath)) {
                     await setNginxConfigFile();
                     xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
                 } else {

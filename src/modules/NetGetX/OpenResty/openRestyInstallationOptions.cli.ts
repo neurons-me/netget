@@ -44,10 +44,9 @@ export default async function openRestyInstallationOptions(): Promise<void> {
                 console.log('OpenResty installation temporarily simplified during TypeScript migration');
                 console.log('Would install OpenResty from source...');
                 
-                // Implementation temporarily simplified during migration
-                // execSync('wget https://openresty.org/download/openresty-1.27.1.1.tar.gz');
-                // execSync('tar -xzvf openresty-1.27.1.1.tar.gz');
-                // execSync('cd openresty-1.27.1.1 && ./configure && make && sudo make install');
+                execSync('wget https://openresty.org/download/openresty-1.27.1.1.tar.gz');
+                execSync('tar -xzvf openresty-1.27.1.1.tar.gz');
+                execSync('cd openresty-1.27.1.1 && ./configure && make && sudo make install');
                 
                 console.log('OpenResty installation would complete successfully');
                 await askToAddToPath();
@@ -73,23 +72,25 @@ export default async function openRestyInstallationOptions(): Promise<void> {
     }
 }
 
-/**
- * Asks the user if they want to add OpenResty to PATH.
- */
-async function askToAddToPath(): Promise<void> {
-    const { addToPath }: PathAnswers = await inquirer.prompt([
+async function askToAddToPath() {
+    const answer = await inquirer.prompt([
         {
             type: 'confirm',
             name: 'addToPath',
-            message: 'Would you like to add OpenResty to your PATH?',
+            message: 'Do you want to add OpenResty to your PATH?',
             default: true
         }
     ]);
 
-    if (addToPath) {
-        console.log('Adding OpenResty to PATH would happen here during migration');
-        // Implementation temporarily simplified during migration
+    if (answer.addToPath) {
+        try {
+            execSync('echo "export PATH=/usr/local/openresty/bin:$PATH" >> ~/.bashrc');
+            execSync('source ~/.bashrc');
+            console.log('OpenResty added to PATH successfully.');
+        } catch (error) {
+            console.error('Failed to add OpenResty to PATH.');
+        }
     } else {
-        console.log('OpenResty will not be added to PATH.');
+        console.log('OpenResty not added to PATH.');
     }
 }

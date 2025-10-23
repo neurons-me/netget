@@ -1,17 +1,17 @@
 {
     "name": "netget",
-    "version": "2.6.46",
+    "version": "2.6.47",
     "description": "Rette Adepto/ Recibido Directamente.",
     "type": "module",
     "main": "index.js",
     "scripts": {
         "start": "node index.js",
         "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "node --import ts-node/register/esm --no-warnings src/scripts/postInstall.ts",
+        "postinstall": "node --loader ts-node/esm --no-warnings src/scripts/postInstall.ts",
         "doc": "jsdoc -c jsdoc.json",
         "build": "tsc",
-    "dev": "node --import ts-node/register/esm src/netget.cli.ts",
-    "dev:main": "node --import ts-node/register/esm src/netget.ts",
+        "dev": "node --loader ts-node/esm src/netget.cli.ts",
+        "dev:main": "ts-node src/netget.ts",
         "type-check": "tsc --noEmit"
     },
     "bin": {
@@ -63,8 +63,8 @@
         "@types/node-fetch": "^2.6.13",
         "@types/sqlite3": "^3.1.11",
         "nodemon": "^3.1.10",
-        "tsx": "^4.19.1",
         "ts-node": "^10.9.2",
+        "tsx": "^4.19.1",
         "typescript": "^5.9.3"
     }
 }

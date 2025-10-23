@@ -15,23 +15,28 @@ import localNetgetRoutes from './routes/localNetget.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Load environment variables
-console.log(chalk.blue('Loading environment variables...'));
-console.log(chalk.blue(`Current working directory: ${process.cwd()}`));
-console.log(chalk.blue(`Script directory: ${__dirname}`));
-
 const envPath = path.join(__dirname, 'env');
-console.log(chalk.blue(`Loading env from: ${envPath}`));
 
 dotenvFlow.config({
     path: envPath,
     pattern: '.env[.node_env]',
     default_node_env: 'development'
 });
+
+if (dotenvFlow.config({
+    path: envPath,
+    pattern: '.env[.node_env]',
+    default_node_env: 'development'
+})) {
+    console.log(chalk.green('Environment variables loaded successfully.'));
+} else {
+    console.error(chalk.red('Failed to load environment variables.'));
+    console.log(chalk.blue('Loading environment variables...'));
+    console.log(chalk.blue(`Current working directory: ${process.cwd()}`));
+    console.log(chalk.blue(`Script directory: ${__dirname}`));
+
+    console.log(chalk.blue(`Loading env from: ${envPath}`));
+}
 
 const logFilePath = path.join(__dirname, 'server.log');
 
@@ -49,8 +54,6 @@ const PROJECTS_PATH = process.env.PROJECTS_PATH || '/var/www';
 const DB_PATH = process.env.DB_PATH || "/opt/.get/domains.db";
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 const SERVER_LOG_PATH = process.env.SERVER_LOG_PATH || "./server.log";
-
-
 
 app.use(cookieParser());
 app.use(bodyParser.json());

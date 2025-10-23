@@ -167,7 +167,7 @@ export class RemoteDeployer {
             await fs.writeFile(tempZipPath, fileBuffer);
 
             // Extract zip file
-            const extractDir = path.join(projectDir, 'current');
+            const extractDir = path.join(projectDir, 'dist');
 
             // Remove existing deployment
             try {

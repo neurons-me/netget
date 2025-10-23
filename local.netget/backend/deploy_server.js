@@ -4,12 +4,24 @@ import { RemoteDeployer } from '../../src/modules/NetGet_deploy/lib/remoteDeploy
 import fs from 'fs/promises';
 import path from 'path';
 import dotenvFlow from 'dotenv-flow';
+import chalk from 'chalk';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
+console.log(chalk.blue('Loading environment variables...'));
+console.log(chalk.blue(`Current working directory: ${process.cwd()}`));
+console.log(chalk.blue(`Script directory: ${__dirname}`));
+
+const envPath = path.join(__dirname, 'env');
+console.log(chalk.blue(`Loading env from: ${envPath}`));
+
 dotenvFlow.config({
-  path: process.cwd() + '/local.netget/backend/env',
-  pattern: '.env[.node_env]',
-  default_node_env: 'development'
+    path: envPath,
+    pattern: '.env[.node_env]',
+    default_node_env: 'development'
 });
 
 const router = express.Router();

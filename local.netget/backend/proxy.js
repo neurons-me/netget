@@ -13,16 +13,22 @@ import { fileURLToPath } from 'url';
 import networksRoutes from './routes/networks.js';
 import deployRoutes from './deploy_server.js'
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Load environment variables
+console.log(chalk.blue('Loading environment variables...'));
+console.log(chalk.blue(`Current working directory: ${process.cwd()}`));
+console.log(chalk.blue(`Script directory: ${__dirname}`));
+
+const envPath = path.join(__dirname, 'env');
+console.log(chalk.blue(`Loading env from: ${envPath}`));
+
 dotenvFlow.config({
-    path: process.cwd() + '/local.netget/backend/env',
+    path: envPath,
     pattern: '.env[.node_env]',
     default_node_env: 'development'
 });
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const logFilePath = path.join(__dirname, 'server.log');
 
 const app = express();
 const PORT = process.env.PORT || 3000;

@@ -51,7 +51,7 @@ const AUTHORIZED_KEYS = (process.env.AUTHORIZED_KEYS || '').split(',');
 const PROJECTS_PATH = process.env.PROJECTS_PATH || '/var/www';
 
 // Database configuration
-const DB_PATH = process.env.DB_PATH || "/opt/.get/domains.db";
+const DB_PATH = process.env.DB_PATH || getDomainsDbPath();
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 const SERVER_LOG_PATH = process.env.SERVER_LOG_PATH || "./server.log";
 

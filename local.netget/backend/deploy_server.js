@@ -28,7 +28,7 @@ const router = express.Router();
 
 // Configuration
 const config = {
-  dbPath: process.env.DB_PATH || '/opt/.get/domains.db',
+  dbPath: process.env.DB_PATH || getDomainsDbPath(),
   projectsBasePath: process.env.PROJECTS_PATH || '/var/www',
   nginxConfigPath: process.env.NGINX_CONFIG_PATH || '/etc/nginx/sites-available',
   nginxEnabledPath: process.env.NGINX_ENABLED_PATH || '/etc/nginx/sites-enabled',

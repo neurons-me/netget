@@ -1,8 +1,9 @@
 // updateCertificates.ts
 import sqlite3 from 'sqlite3';
-import { open, Database } from 'sqlite';
+import { open } from 'sqlite';
+import { getDomainsDbPath } from '../utils/netgetPaths.js';
 
-const DATABASE_PATH = '/opt/.get/domains.db';
+const DATABASE_PATH = getDomainsDbPath();
 
 interface Domain {
     domain: string;
@@ -36,9 +37,6 @@ async function updateSSLCertificatePaths(): Promise<void> {
     }
 }
 
-// Uncomment to run
-// updateSSLCertificatePaths().catch(err => {
-//     console.error(err);
-// });
-
-export { updateSSLCertificatePaths };
+updateSSLCertificatePaths().catch(err => {
+    console.error(err);
+});

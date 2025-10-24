@@ -1,6 +1,6 @@
 //netget/src/modules/utils/GETDirs.ts
 import * as path from 'path';
-import { ensureDirectoryExists } from './pathUtils.ts';
+import { ensureDirectoryExists, checkPermissions } from './pathUtils.ts';
 
 interface DirectoryPaths {
     getPath: string;
@@ -31,12 +31,10 @@ It simply moves on without changing anything in the existing directory structure
 /**
  * Initializes all necessary directories and checks their permissions.
  */
-function initializeDirectories(): void {
-    Object.values(DIRECTORIES).forEach((dir: string) => {
-        ensureDirectoryExists(dir);
-        // Optional: Check and correct permissions after creation
-        // checkPermissions(dir, 0o755); // Uncomment if needed
-    });
+async function initializeDirectories(): Promise<void> {
+    for (const dir of Object.values(DIRECTORIES)) {
+        await ensureDirectoryExists(dir);
+    }
 }
 
 /**

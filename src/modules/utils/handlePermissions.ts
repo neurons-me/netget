@@ -42,7 +42,7 @@ const handlePermission = async (
         { name: 'Cancel operation', value: 'cancel' }
     ];
 
-    console.log(chalk.blue(`Prompting user for action: ${taskDescription}`));
+    console.log(chalk.blue(`\nPrompting user for action: ${taskDescription}`));
     const { action } = await inquirer.prompt<ActionPromptResult>({
         type: 'list',
         name: 'action',
@@ -95,13 +95,16 @@ const tryElevatedPrivileges = async (
     manualInstructions: string
 ): Promise<void> => {
     try {
-        console.log(chalk.blue(`Attempting to run command with elevated privileges: ${command}`));
+        console.log(chalk.blue(`\nAttempting to run command with elevated privileges: ${command}`));
         const result = await execShellCommand(`sudo ${command}`);
         console.log(chalk.green('Command executed with elevated privileges.'));
         console.log(result);
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(chalk.red(`Failed with elevated privileges: ${errorMessage}`));
+        console.error(chalk.red(`\nFailed with elevated privileges: ${errorMessage}`));
+        console.log(chalk.yellow('It is possible that sudo requires a password or cannot be run non-interactively.'));
+        console.log(chalk.yellow('Please copy and run the following command manually in your terminal:'));
+        console.log(chalk.cyan(`sudo ${command}`));
         displayManualInstructions(manualInstructions);
     }
 };

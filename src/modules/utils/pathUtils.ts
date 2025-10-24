@@ -19,7 +19,7 @@ const checkPermissions = (dirPath: string, desiredMode: number): void => {
  * @param {string} directory - The directory path to check or create.
  * @param {number} [desiredMode=0o755] - The desired permission mode to set if the directory is created or permissions are incorrect.
 */
-function ensureDirectoryExists(directory: string, desiredMode: number = 0o755): void {
+async function ensureDirectoryExists(directory: string, desiredMode: number = 0o757): Promise<void> {
     try {
         let directoryExists = fs.existsSync(directory);
         if (!directoryExists) {

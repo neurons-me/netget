@@ -39,6 +39,7 @@ async function ensureDirectoryExists(directory: string, desiredMode: number = 0o
                 `sudo mkdir -p ${directory} && sudo chmod ${desiredMode.toString(8)} ${directory}`,
                 `sudo mkdir -p ${directory} && sudo chmod ${desiredMode.toString(8)} ${directory}`
             );
+            return;
             throw new Error(`PermissionError: ${error.message}`);
         } else {
             console.error(chalk.red(`An error occurred while trying to ensure directory exists at ${directory}: ${error.message}`));

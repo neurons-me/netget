@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import { initializeDirectories } from '../modules/utils/GETDirs.ts';
 
 // Ensure necessary directories exist before database operations
-// await initializeDirectories();
+await initializeDirectories();
 
 const CONFIG_DIR: string = path.join('/opt/', '.get');
 const USER_CONFIG_FILE: string = path.join(CONFIG_DIR, 'domains.db');

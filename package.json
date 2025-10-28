@@ -1,6 +1,6 @@
 {
     "name": "netget",
-    "version": "2.6.49",
+    "version": "2.6.50",
     "description": "Rette Adepto/ Recibido Directamente.",
     "type": "module",
     "main": "index.js",
@@ -46,6 +46,7 @@
         "pm2": "^6.0.11",
         "sqlite": "^5.1.1",
         "sqlite3": "^5.1.7",
+        "this.me": "^3.0.23",
         "ts-node": "^10.9.2",
         "tsx": "^4.19.1",
         "typescript": "^5.9.3"

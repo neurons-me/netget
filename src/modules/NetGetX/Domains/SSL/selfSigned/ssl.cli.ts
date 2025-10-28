@@ -11,9 +11,8 @@ import {
 import printCertbotLogs from '../Certbot/certbot.ts';
 import { storeConfigInDB, updateSSLCertificatePaths } from '../../../../../sqlite/utils_sqlite3.ts';
 import sqlite3 from 'sqlite3';
-import { getDomainsDbPath } from '../../../../../utils/netgetPaths.js';
 
-const DOMAINS_DB_PATH = getDomainsDbPath();
+const DOMAINS_DB_PATH = '/opt/.get/domains.db';
 
 // Type definitions
 interface DomainConfig {

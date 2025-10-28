@@ -6,6 +6,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { handlePermission } from '../modules/utils/handlePermissions.ts';
 import chalk from 'chalk';
+import { initializeDirectories } from '../modules/utils/GETDirs.ts';
+
+// Ensure necessary directories exist before database operations
+// await initializeDirectories();
 
 const CONFIG_DIR: string = path.join('/opt/', '.get');
 const USER_CONFIG_FILE: string = path.join(CONFIG_DIR, 'domains.db');
@@ -36,31 +40,13 @@ interface DomainConfigResult {
 /**
  * Function to create the table in the database
  */
-export async function createTable(): Promise<void> {
+async function createTable(): Promise<void> {
     try {
-        console.log(chalk.green("Here is inside createTable() and before opening DB"));
-
-        // Ensure the database file exists (open will create it but ensure directory exists first)
-        try {
-            if (!fs.existsSync(USER_CONFIG_FILE)) {
-                fs.writeFileSync(USER_CONFIG_FILE, '', { mode: 0o644 });
-            }
-        } catch (touchErr: any) {
-            console.error(chalk.red(`Failed to create database file ${USER_CONFIG_FILE}: ${touchErr.message}`));
-            await handlePermission(
-                `create the database file ${USER_CONFIG_FILE}`,
-                `sudo touch ${USER_CONFIG_FILE} && sudo chown $(whoami) ${USER_CONFIG_FILE} && sudo chmod 644 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} exists and is writable by the current user.`
-            );
-            throw touchErr;
-        }
-
         const db = await open({
             filename: USER_CONFIG_FILE,
             driver: SQLiteDatabase
         });
 
-        console.log(chalk.green("Here is inside createTable() and before executing CREATE TABLE"));
         await db.exec(`
             CREATE TABLE IF NOT EXISTS domains (
                 domain TEXT PRIMARY KEY,
@@ -83,12 +69,6 @@ export async function createTable(): Promise<void> {
         
     } catch (error: any) {
         console.error(chalk.red(`\nFailed to create table in database: ${error.message}`));
-        await handlePermission(
-            'create the table in the database',
-            `chmod 755 ${USER_CONFIG_FILE}`,
-            `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
-        );
-        throw error;
     }
 }
 
@@ -96,9 +76,7 @@ export async function createTable(): Promise<void> {
  * Function to initialize the database
  */
 export async function initializeDatabase(): Promise<Database> {
-    console.log(chalk.green("Here is before createTable()"));
     await createTable();
-    console.log(chalk.green("Here is after createTable()"));
     return open({
         filename: USER_CONFIG_FILE,
         driver: SQLiteDatabase

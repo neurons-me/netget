@@ -11,8 +11,7 @@ export default async function verifyOpenRestyInstallation(): Promise<boolean> {
         await printOpenRestyVersion();
         return true;
     } catch (error: any) {
-        console.error('OpenResty is not installed. We validate the installation by checking the version.');
-        console.error('Please install OpenResty and try again.');
+        console.error(chalk.red('OpenResty is not installed. We validate the installation by checking the version.'));
         return false;
     }
 }

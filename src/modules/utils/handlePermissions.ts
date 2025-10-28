@@ -55,10 +55,10 @@ const handlePermission = async (
     switch (action) {
         case 'sudo':
             await tryElevatedPrivileges(autoCommand, manualInstructions);
-            break;
+            return;
         case 'manual':
             displayManualInstructions(manualInstructions);
-            break;
+            return;
         case 'changePermissions':
             const { filePath, requiredPermissions } = await inquirer.prompt<FilePermissionPromptResult>([
                 {

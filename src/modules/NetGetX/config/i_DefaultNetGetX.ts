@@ -15,10 +15,10 @@ import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallatio
 import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.ts';
 import { ensureNginxConfigFile, setNginxConfigFile } from '../OpenResty/setNginxConfigFile.ts';
 // import { createTable, initializeDatabase } from "../../../sqlite/utils_sqlite3.ts"
-import {handlePermission} from "../../utils/handlePermissions.ts"
-import { open, Database } from 'sqlite';
-import sqlite3 from 'sqlite3';
-const { Database: SQLiteDatabase } = sqlite3;
+// import {handlePermission} from "../../utils/handlePermissions.ts"
+// import { open, Database } from 'sqlite';
+// import sqlite3 from 'sqlite3';
+// const { Database: SQLiteDatabase } = sqlite3;
 
 
 /**
@@ -28,7 +28,7 @@ const { Database: SQLiteDatabase } = sqlite3;
  */
 async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
     try {
-        initializeDirectories(); // Initialize all necessary directories
+        await initializeDirectories(); // Initialize all necessary directories
         let DEFAULT_DIRECTORIES: DirectoryPaths = getDirectoryPaths(); // Get paths to .get default directories
         let xConfig: XConfig = await loadOrCreateXConfig();
 
@@ -58,15 +58,7 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
         try {
             let openRestyInstalled: boolean = await verifyOpenRestyInstallation();
             if (!openRestyInstalled) {
-                console.log(chalk.yellow("OpenResty is not installed. Redirecting to installation options..."));
                 await openRestyInstallationOptions();
-                openRestyInstalled = await verifyOpenRestyInstallation();
-                if (!openRestyInstalled) {
-                    console.log(chalk.red("OpenResty still not detected after installation attempt. Please manually install OpenResty and retry."));
-                    return false;
-                } else {
-                    console.log(chalk.green("OpenResty installed successfully."));
-                }
             }
         } catch (openRestyError: any) {
             console.log(chalk.red(`Error with OpenResty operations: ${openRestyError.message}`));
@@ -78,13 +70,10 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
             const nginxConfigPath: string = '/usr/local/openresty/nginx/conf/nginx.conf';
             if (!pathExists(nginxConfigPath)) {
                 await ensureNginxConfigFile();
-                if (!pathExists(nginxConfigPath)) {
-                    await setNginxConfigFile();
-                    xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
-                } else {
-                    await ensureNginxConfigFile();
-                }
+            } else {
+                await setNginxConfigFile();
             }
+            xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
         } catch (nginxError: any) {
             console.log(chalk.yellow(`Warning: NGINX configuration operations failed: ${nginxError.message}`));
         }
@@ -138,79 +127,79 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
                 }
             }
         
-            /**
-             * Function to create the table in the database
-             */
-            async function createTable(): Promise<void> {
-                try {
-                    const db = await open({
-                        filename: xConfig.sqliteDatabasePath || "/opt/.get/domains.db",
-                        driver: SQLiteDatabase
-                    });
+        //     /**
+        //      * Function to create the table in the database
+        //      */
+        //     async function createTable(): Promise<void> {
+        //         try {
+        //             const db = await open({
+        //                 filename: xConfig.sqliteDatabasePath || "/opt/.get/domains.db",
+        //                 driver: SQLiteDatabase
+        //             });
             
-                    await db.exec(`
-                        CREATE TABLE IF NOT EXISTS domains (
-                            domain TEXT PRIMARY KEY,
-                            subdomain TEXT,
-                            email TEXT,
-                            sslMode TEXT,
-                            sslCertificate TEXT,
-                            sslCertificateKey TEXT,
-                            target TEXT,
-                            type TEXT,
-                            projectPath TEXT,
-                            rootDomain TEXT,
-                            owner TEXT
-                        )
-                    `);
+        //             await db.exec(`
+        //                 CREATE TABLE IF NOT EXISTS domains (
+        //                     domain TEXT PRIMARY KEY,
+        //                     subdomain TEXT,
+        //                     email TEXT,
+        //                     sslMode TEXT,
+        //                     sslCertificate TEXT,
+        //                     sslCertificateKey TEXT,
+        //                     target TEXT,
+        //                     type TEXT,
+        //                     projectPath TEXT,
+        //                     rootDomain TEXT,
+        //                     owner TEXT
+        //                 )
+        //             `);
             
-                    await db.close();
-                } catch (error: any) {
-                    throw error;
-                }
-            }
+        //             await db.close();
+        //         } catch (error: any) {
+        //             throw error;
+        //         }
+        //     }
 
-            // Validation block to ensure /opt/.get/domains.db exists, if not, create it as a SQLite3 database
-            const sqliteDbPath: string = "/opt/.get/domains.db"; 
-            async function ensureDatabaseFileExists(): Promise<void> {
-                try {
-                    // Check if the directory exists, if not, create it
-                    if (!fs.existsSync(xConfig.getPath)) {
-                        fs.mkdirSync(xConfig.getPath, { recursive: true });
-                    }
-                    // Check if the database file exists, if not, create it by calling createTable()
-                    if (!fs.existsSync("domains.db")) {
-                        await createTable();
-                    }
-                } catch (error: any) {
-                    if (
-                        error.code === 'EACCES' ||
-                        error.code === 'SQLITE_CANTOPEN' ||
-                        error.message?.includes('permission') ||
-                        error.message?.includes('SQLITE_CANTOPEN')
-                    ) {
-                        await handlePermission(
-                            'ensure the database file exists',
-                            `mkdir -p ${xConfig.getPath} && touch ${sqliteDbPath} && chmod 755 ${sqliteDbPath}`,
-                            `Create the directory ${xConfig.getPath} and the file ${sqliteDbPath} with appropriate permissions (e.g., 755).`
-                        );
-                    }
-                    throw error;
-                }
-            }
+        //     // Validation block to ensure /opt/.get/domains.db exists, if not, create it as a SQLite3 database
+        //     const sqliteDbPath: string = "/opt/.get/domains.db"; 
+        //     async function ensureDatabaseFileExists(): Promise<void> {
+        //         try {
+        //             // Check if the directory exists, if not, create it
+        //             if (!fs.existsSync(xConfig.getPath)) {
+        //                 fs.mkdirSync(xConfig.getPath, { recursive: true });
+        //             }
+        //             // Check if the database file exists, if not, create it by calling createTable()
+        //             if (!fs.existsSync("domains.db")) {
+        //                 await createTable();
+        //             }
+        //         } catch (error: any) {
+        //             if (
+        //                 error.code === 'EACCES' ||
+        //                 error.code === 'SQLITE_CANTOPEN' ||
+        //                 error.message?.includes('permission') ||
+        //                 error.message?.includes('SQLITE_CANTOPEN')
+        //             ) {
+        //                 await handlePermission(
+        //                     'ensure the database file exists',
+        //                     `mkdir -p ${xConfig.getPath} && touch ${sqliteDbPath} && chmod 755 ${sqliteDbPath}`,
+        //                     `Create the directory ${xConfig.getPath} and the file ${sqliteDbPath} with appropriate permissions (e.g., 755).`
+        //                 );
+        //             }
+        //             throw error;
+        //         }
+        //     }
 
-            /**
-             * Function to initialize the database
-             */
-            async function initializeDatabase(): Promise<Database> {
-                await ensureDatabaseFileExists();
-                await createTable();
-                return open({
-                    filename: sqliteDbPath,
-                    driver: SQLiteDatabase
-                });
-            }
-        initializeDatabase();
+        //     /**
+        //      * Function to initialize the database
+        //      */
+        //     async function initializeDatabase(): Promise<Database> {
+        //         await ensureDatabaseFileExists();
+        //         await createTable();
+        //         return open({
+        //             filename: sqliteDbPath,
+        //             driver: SQLiteDatabase
+        //         });
+        //     }
+        // initializeDatabase();
         } catch (pathError: any) {
             console.log(chalk.yellow(`Warning: .get path configuration failed: ${pathError.message}`));
         }

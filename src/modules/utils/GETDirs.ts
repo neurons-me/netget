@@ -1,6 +1,6 @@
 //netget/src/modules/utils/GETDirs.ts
 import * as path from 'path';
-import { ensureDirectoryExists, checkPermissions } from './pathUtils.ts';
+import { ensureDirectoryExists } from './pathUtils.ts';
 
 interface DirectoryPaths {
     getPath: string;
@@ -11,15 +11,15 @@ interface DirectoryPaths {
     routePath: string;
 }
 
-const BASE_DIR: string = path.join('/opt/','.get');
+const BASE_DIR: string = '/opt/.get';
 const DIRECTORIES: DirectoryPaths = {
     getPath: BASE_DIR,
-    static: path.join(BASE_DIR, 'static'),
-    devPath: path.join(BASE_DIR, 'dev'),
-    devStatic: path.join(BASE_DIR, 'dev', 'static'),
-    gatewayPath: path.join(BASE_DIR, 'Gateways'),
+    static: `${BASE_DIR}/static`,
+    devPath: `${BASE_DIR}/dev`,
+    devStatic: `${BASE_DIR}/dev/static`,
+    gatewayPath: `${BASE_DIR}/Gateways`,
     // Routes directory needs to be created inside app directory
-    routePath: path.join(BASE_DIR, 'Routes'),
+    routePath: `${BASE_DIR}/Routes`,
 };
 
 /* Safety and Non-Destructive Behavior

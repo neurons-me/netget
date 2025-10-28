@@ -63,28 +63,13 @@ function resolveDataDir() {
 
 const DATA_DIR = resolveDataDir();
 const HTML_ROOT = path.join(DATA_DIR, 'html');
-const DOMAINS_DB_PATH = path.join(DATA_DIR, 'domains.db');
-
-ensureDomainsDbFile();
 
 function ensureHtmlDir() {
     tryEnsureDir(HTML_ROOT);
 }
 
-function ensureDomainsDbFile() {
-    if (!fs.existsSync(DOMAINS_DB_PATH)) {
-        const handle = fs.openSync(DOMAINS_DB_PATH, 'a');
-        fs.closeSync(handle);
-    }
-}
-
 export function getNetgetDataDir() {
     return DATA_DIR;
-}
-
-export function getDomainsDbPath() {
-    ensureDomainsDbFile();
-    return DOMAINS_DB_PATH;
 }
 
 export function getHtmlRootDir() {

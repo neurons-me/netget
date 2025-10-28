@@ -1,9 +1,8 @@
 // updateCertificates.ts
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
-import { getDomainsDbPath } from '../utils/netgetPaths.js';
 
-const DATABASE_PATH = getDomainsDbPath();
+const DATABASE_PATH = '/opt/.get/domains.db';
 
 interface Domain {
     domain: string;

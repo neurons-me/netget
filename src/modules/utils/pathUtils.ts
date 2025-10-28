@@ -1,6 +1,7 @@
 // pathUtils.ts
 import fs from 'fs';
 import chalk from 'chalk';
+import { handlePermission } from './handlePermissions.ts';
 
 /**
  * Checks and corrects permissions of a directory.
@@ -17,7 +18,7 @@ const checkPermissions = (dirPath: string, desiredMode: number): void => {
 /**
  * Function to ensure the directory exists and has the correct permissions.
  * @param {string} directory - The directory path to check or create.
- * @param {number} [desiredMode=0o755] - The desired permission mode to set if the directory is created or permissions are incorrect.
+ * @param {number} [desiredMode=0o757] - The desired permission mode to set if the directory is created or permissions are incorrect.
 */
 async function ensureDirectoryExists(directory: string, desiredMode: number = 0o757): Promise<void> {
     try {
@@ -26,15 +27,18 @@ async function ensureDirectoryExists(directory: string, desiredMode: number = 0o
             fs.mkdirSync(directory, { recursive: true });
             console.log(chalk.green(`Directory created: ${directory}`));
         } else {
-            //console.log(chalk.blue(`Directory already exists: ${directory}`));
+            // console.log(chalk.blue(`Directory already exists: ${directory}`));
         }
         // Check and set permissions whether the directory was just created or already existed
         checkPermissions(directory, desiredMode);
     } catch (error: any) {
         if (error.code === 'EACCES') {
             console.error(chalk.red(`Permission denied to create or modify directory at ${directory}.`));
-            console.error(chalk.yellow(`To resolve this, you can run the following command with administrator privileges:`));
-            console.info(chalk.cyan(`sudo mkdir -p ${directory} && sudo chmod ${desiredMode.toString(8)} ${directory}`));
+            await handlePermission(
+                `creating or modifying directory at ${directory}`,
+                `sudo mkdir -p ${directory} && sudo chmod ${desiredMode.toString(8)} ${directory}`,
+                `sudo mkdir -p ${directory} && sudo chmod ${desiredMode.toString(8)} ${directory}`
+            );
             throw new Error(`PermissionError: ${error.message}`);
         } else {
             console.error(chalk.red(`An error occurred while trying to ensure directory exists at ${directory}: ${error.message}`));

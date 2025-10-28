@@ -2,6 +2,7 @@ import inquirer from 'inquirer';
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
+import { handlePermission } from '../../utils/handlePermissions.ts';
 
 /**
  * Configuration file in order to set the nginx.conf file for OpenResty.
@@ -551,15 +552,52 @@ const ensureNginxConfigFile = async (): Promise<void> => {
  * @memberof module:NetGetX.OpenResty
  * @returns Promise that resolves when configuration is set.
  */
-const setNginxConfigFile = async (): Promise<void> => {
-    console.log(chalk.yellow('NGINX config file setting temporarily simplified during TypeScript migration'));
-    console.log(chalk.blue(`Would write config to: ${nginxConfigPath}`));
-    
+const setNginxConfigFile = async (): Promise<void> => {    
     try {
-        // Implementation temporarily simplified during migration
-        fs.writeFileSync(nginxConfigPath, nginxConfigContent, 'utf8');
-        console.log(chalk.green('NGINX configuration would be written successfully'));
+        const nginxActualContent: string = fs.readFileSync(nginxConfigPath, 'utf8');
+        if (nginxActualContent !== nginxConfigContent) {
+            console.log(chalk.yellow('nginx.conf file content is different from expected.\n'+
+                'In case of issues with OpenResty, consider resetting the configuration file to default.'));
+            const { setDefaultConfig } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'setDefaultConfig',
+                    message: `Do you want to reset the nginx.conf file to default content?`,
+                    default: false,
+                },
+            ]);
+            if (setDefaultConfig) {
+                // Use a here-document to preserve formatting and structure
+                const heredocCmd = `sudo tee ${nginxConfigPath} > /dev/null <<'EOF'\n${nginxConfigContent}\nEOF`;
+                await handlePermission(
+                    'Setting NGINX config file requires elevated privileges.',
+                    heredocCmd,
+                    'Please run the following command manually to set the NGINX config file:\n' + heredocCmd
+                );
+                console.log(chalk.green('NGINX configuration reset to default successfully'));
+            } else {
+                console.log(chalk.green('NGINX config file left unchanged.'));
+            }
+        } else {
+            console.log(chalk.green('NGINX config file already matches the default.'));
+        }
     } catch (error: any) {
+        if (error.code === 'EACCES') {
+            console.log(chalk.yellow('Permission denied when trying to set NGINX config file. Attempting with elevated privileges...'));
+            try {
+                const heredocCmd = `sudo tee ${nginxConfigPath} > /dev/null <<'EOF'\n${nginxConfigContent}\nEOF`;
+                await handlePermission(
+                    'Setting NGINX config file requires elevated privileges.',
+                    heredocCmd,
+                    'Please run the following command manually to set the NGINX config file:\n' + heredocCmd
+                );
+                console.log(chalk.green('NGINX configuration set successfully with elevated privileges'));
+                return;
+            } catch (permError) {
+                console.error(chalk.red('Failed to set NGINX config file with elevated privileges.'));
+                throw permError;
+            }
+        }
         console.error(chalk.red('Error setting NGINX config file:', error.message));
         throw error;
     }

@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { handlePermission } from '../../utils/handlePermissions.ts';
+import { loadOrCreateXConfig } from '../config/xConfig.ts';
+
+const xConfig = await loadOrCreateXConfig();
 
 /**
  * Configuration file in order to set the nginx.conf file for OpenResty.
@@ -15,7 +18,7 @@ const configPath: string = '/usr/local/openresty/nginx/conf';
 const nginxConfigPath: string = path.join(configPath, 'nginx.conf');
 const sslSelfSignedCertPath: string = '/etc/ssl/certs/cert.pem';
 const sslSelfSignedKeyPath: string = '/etc/ssl/private/privkey.key';
-const sqliteDatabasePath: string = '/opt/.get/domains.db';
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 /**
  * The content of the nginx.conf file.
@@ -161,7 +164,10 @@ http {
         # Development status endpoint
         location /status {
             access_log off;
-            return 200 "NetGetX HTTP Server - Development Mode\nSSL: Disabled\nBackend: http://127.0.0.1:3000\n";
+            return 200 
+            "NetGetX HTTP Server - Development Mode
+            SSL: Disabled
+            Backend: http://127.0.0.1:3000";
             add_header Content-Type text/plain;
         }
 
@@ -555,7 +561,9 @@ const ensureNginxConfigFile = async (): Promise<void> => {
 const setNginxConfigFile = async (): Promise<void> => {    
     try {
         const nginxActualContent: string = fs.readFileSync(nginxConfigPath, 'utf8');
-        if (nginxActualContent !== nginxConfigContent) {
+        // Normalize both contents for comparison: trim, normalize line endings, remove trailing whitespace
+        const normalize = (str: string) => str.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim();
+        if (normalize(nginxActualContent) !== normalize(nginxConfigContent)) {
             console.log(chalk.yellow('nginx.conf file content is different from expected.\n'+
                 'In case of issues with OpenResty, consider resetting the configuration file to default.'));
             const { setDefaultConfig } = await inquirer.prompt([

@@ -3,6 +3,10 @@ import sqlite3 from 'sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
+import { loadOrCreateXConfig } from '../../NetGetX/config/xConfig.ts';
+
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 interface DeployerConfig {
     dbPath?: string;
@@ -47,7 +51,7 @@ export class RemoteDeployer {
     private authorizedKeys: string[];
 
     constructor(config: DeployerConfig) {
-        this.dbPath = config.dbPath || '/opt/.get/domains.db';
+        this.dbPath = config.dbPath || sqliteDatabasePath;
         this.projectsBasePath = config.projectsBasePath || '/var/www';
         this.authorizedKeys = config.authorizedKeys || [];
     }

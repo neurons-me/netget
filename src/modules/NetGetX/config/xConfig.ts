@@ -12,8 +12,8 @@ interface DomainConfig {
 }
 
 interface XConfig {
+    osName?: string;
     mainServerName?: string;
-    domains?: { [domain: string]: DomainConfig };
     publicIP?: string;
     localIP?: string;
     getPath?: string;
@@ -42,8 +42,8 @@ async function loadOrCreateXConfig(): Promise<XConfig> {
         if (!fs.existsSync(USER_CONFIG_FILE)) {
             console.log(chalk.yellow('Default xConfig file does not exist. Creating...'));
             const defaultConfig: XConfig = {
-                mainServerName: "",
-                domains: {},               
+                osName: "",
+                mainServerName: "",             
                 publicIP: "",
                 localIP: "",
                 getPath: "",
@@ -87,38 +87,10 @@ async function saveXConfig(updates: ConfigUpdates): Promise<void> {
             config = JSON.parse(data) as XConfig;
         }
 
-        // Apply updates to the appropriate domain or root level
-        let updatesApplied: { [key: string]: any } = {};
-        if (updates.domain) {
-            if (!config.domains) {
-                config.domains = {};
-            }
-            const domain = updates.domain;
-            if (!config.domains[domain]) {
-                config.domains[domain] = {};
-            }
-            Object.assign(config.domains[domain], updates);
-            updatesApplied[domain] = updates;
-            delete updates.domain;  // Remove domain from updates to prevent root-level updates
-        } else {
-            Object.assign(config, updates);
-            updatesApplied = updates;
-        }
-
         // Write the updated configuration back to the file
         await fs.promises.writeFile(USER_CONFIG_FILE, JSON.stringify(config, null, 4));
         console.log(chalk.green('Configuration updated successfully.'));
         
-        // Log only the updated values
-        for (const [key, value] of Object.entries(updatesApplied)) {
-            if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
-                for (const [subKey, subValue] of Object.entries(value)) {
-                    console.log(`xConfig.domains[${key}].${chalk.bgWhite.black.bold(subKey)}: ${chalk.yellow(subValue)} : ${chalk.bgGreen.bold("Success")}.`);
-                }
-            } else {
-                console.log(`xConfig.${chalk.bgWhite.black.bold(key)}: ${chalk.yellow(value)} : ${chalk.bgGreen.bold("Success")}.`);
-            }
-        }
     } catch (error: any) {
         console.error(chalk.red(`Failed to update user configuration: ${error.message}`));
         throw new Error('Failed to update user configuration.');

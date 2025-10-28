@@ -86,7 +86,7 @@ export default async function NetGetMainMenu(): Promise<void> {
         ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
         ║║║├┤  │ ║ ╦├┤  │ 
         ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
-            v2.6.50`);
+            v2.6.51`);
         console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
         
         const menuQuestion: MenuChoice = {

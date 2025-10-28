@@ -11,8 +11,10 @@ import {
 import printCertbotLogs from '../Certbot/certbot.ts';
 import { storeConfigInDB, updateSSLCertificatePaths } from '../../../../../sqlite/utils_sqlite3.ts';
 import sqlite3 from 'sqlite3';
+import { loadOrCreateXConfig } from '../../../config/xConfig.ts';
 
-const DOMAINS_DB_PATH = '/opt/.get/domains.db';
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 // Type definitions
 interface DomainConfig {
@@ -90,7 +92,7 @@ const domainSSLConfiguration = async (domain: string): Promise<void> => {
 
         // Leer configuración del dominio desde la base de datos
 
-        const db = new sqlite3.Database(DOMAINS_DB_PATH, sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const domainConfig: DomainConfig | null = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err: Error | null, row: DomainConfig) => {
                 db.close();
@@ -188,7 +190,7 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
                 break;
             case 'editSSLMethod':
                 // Eliminar el método SSL en la base de datos (opcional)
-                const db = new sqlite3.Database(DOMAINS_DB_PATH);
+                const db = new sqlite3.Database(sqliteDatabasePath);
                 db.run(
                     `UPDATE domains SET sslMode = NULL WHERE domain = ?`,
                     [domain],
@@ -228,7 +230,7 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
             domainConfig.SSLCertificateKeyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
 
             // Guardar los cambios en la base de datos en vez de xConfig
-            const db = new sqlite3.Database(DOMAINS_DB_PATH);
+            const db = new sqlite3.Database(sqliteDatabasePath);
             db.run(
                 `UPDATE domains SET 
                     sslCertificate = ?,

@@ -4,6 +4,10 @@ import chalk from 'chalk';
 import { NetGetSync } from './lib/netgetSync.ts';
 import fs from 'fs/promises';
 import NetGetMainMenu from '../netget_MainMenu.cli.ts';
+import { loadOrCreateXConfig } from '../NetGetX/config/xConfig.ts';
+
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 interface DeployConfig {
     localDbPath: string;
@@ -73,7 +77,7 @@ export default async function netGetXDeployMenu(): Promise<void> {
                     default: './deploy.config.json' 
                 });
                 const config: DeployConfig = {
-                    localDbPath: '/opt/.get/domains.db',
+                    localDbPath: sqliteDatabasePath,
                     remoteServer: 'https://your-remote-server.com',
                     remoteApiKey: 'your-api-key-here',
                     projectsBasePath: '/var/www',

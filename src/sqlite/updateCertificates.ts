@@ -1,8 +1,10 @@
 // updateCertificates.ts
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
 
-const DATABASE_PATH = '/opt/.get/domains.db';
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath = xConfig.sqliteDatabasePath;
 
 interface Domain {
     domain: string;
@@ -11,7 +13,7 @@ interface Domain {
 
 async function updateSSLCertificatePaths(): Promise<void> {
     const db = await open({
-        filename: DATABASE_PATH,
+        filename: sqliteDatabasePath,
         driver: sqlite3.Database
     });
 

@@ -9,6 +9,9 @@ import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
 import domainsMenu from './domains.cli.ts';
 import sqlite3 from 'sqlite3';
 
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+
 // Interface for subdomain row from database
 interface SubdomainRow {
     domain: string;
@@ -102,7 +105,7 @@ const validatePort = (port: string): boolean | string => {
  */
 function retrieveSubdomainsTable(domain: string): Promise<SubdomainTableEntry[]> {
     return new Promise((resolve, reject) => {
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         db.all(
             // Exclude rows where domain === subdomain (shouldn't happen, but just in case)
             'SELECT domain, target, type, subdomain FROM domains WHERE subdomain = ? ORDER BY domain',
@@ -160,7 +163,7 @@ interface DomainTableEntry {
  * @memberof module:NetGetX.Domains
  */
 function domainsTable(): void {
-    const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err: Error | null) => {
+    const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY, (err: Error | null) => {
         if (err) {
             console.log(chalk.red('Error opening database:'), err.message);
             return;
@@ -311,7 +314,7 @@ async function addNewDomain(): Promise<void> {
         const { domain, email, owner } = { ...domainAnswer, ...emailAnswer, ...ownerAnswer };
 
         // Verifica si el dominio ya existe en la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const exists: boolean = await new Promise((resolve) => {
             db.get('SELECT 1 FROM domains WHERE domain = ? AND subdomain IS NULL', [domain], (err: Error | null, row: any) => {
                 db.close();
@@ -437,7 +440,7 @@ const addSubdomain = async (domain: string): Promise<void> => {
         // Retrieve email, SSLCertificateSqlitePath, and SSLCertificateKeySqlitePath from the parent domain in the database
         let parentDomainConfig: ParentDomainConfig | null;
         try {
-            const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+            const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
             parentDomainConfig = await new Promise((resolve, reject) => {
                 db.get(
                     'SELECT email, sslCertificate, sslCertificateKey FROM domains WHERE domain = ?',
@@ -536,7 +539,7 @@ const linkDevelopmentAppProject = async (domain: string): Promise<void> => {
 
     try {
         // Leer la configuración del dominio desde la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const domainConfig: DomainRecord | null = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err: Error | null, row: DomainRecord) => {
                 db.close();
@@ -552,7 +555,7 @@ const linkDevelopmentAppProject = async (domain: string): Promise<void> => {
 
         domainConfig.projectPath = projectPathAnswer.projectPath;
         // Update the domain record in the database
-        const dbUpdate = new sqlite3.Database('/opt/.get/domains.db');
+        const dbUpdate = new sqlite3.Database(sqliteDatabasePath);
         dbUpdate.run(
             'UPDATE domains SET projectPath = ? WHERE domain = ?',
             [domainConfig.projectPath, domain],
@@ -581,7 +584,7 @@ const editOrDeleteSubdomain = async (domain: string): Promise<void> => {
     console.clear();
     try {
         // Listar subdominios asociados a este dominio
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const subdomains: string[] = await new Promise((resolve) => {
             db.all('SELECT domain FROM domains WHERE subdomain = ? ORDER BY domain', [domain], (err: Error | null, rows: any[]) => {
                 db.close();
@@ -642,7 +645,7 @@ const editOrDeleteSubdomain = async (domain: string): Promise<void> => {
                 return;
             }
             
-            const dbDel = new sqlite3.Database('/opt/.get/domains.db');
+            const dbDel = new sqlite3.Database(sqliteDatabasePath);
             dbDel.run('DELETE FROM domains WHERE domain = ? AND subdomain = ?', [subDomainAnswer.subDomain, domain], (err: Error | null) => {
                 if (err) {
                     console.log(chalk.red('Error deleting subdomain:'), err.message);
@@ -722,7 +725,7 @@ const editOrDeleteDomain = async (domain: string): Promise<void> => {
     console.clear();
     try {
         // Leer la configuración del dominio desde la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const domainConfig: DomainRecord | null = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err: Error | null, row: DomainRecord) => {
                 db.close();
@@ -773,7 +776,7 @@ const editOrDeleteDomain = async (domain: string): Promise<void> => {
                 }
                 
                 // Elimina el dominio y sus subdominios asociados
-                const dbDel = new sqlite3.Database('/opt/.get/domains.db');
+                const dbDel = new sqlite3.Database(sqliteDatabasePath);
                 dbDel.run('DELETE FROM domains WHERE domain = ? OR subdomain = ?', [domain, domain], (err: Error | null) => {
                     if (err) {
                         console.log(chalk.red('Error deleting domain:'), err.message);

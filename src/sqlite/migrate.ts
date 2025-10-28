@@ -1,8 +1,11 @@
 import * as sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import * as fs from 'fs';
+import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
 
-const USER_CONFIG_FILE: string = '/opt/.get/domains.db'; // Update this path
+const xConfig = await loadOrCreateXConfig();
+
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 /**
  * Store the SSL certificate and key for a domain in the database.
@@ -12,7 +15,7 @@ const USER_CONFIG_FILE: string = '/opt/.get/domains.db'; // Update this path
  */
 async function storeCertificateInfo(domain: string, certPath: string, keyPath: string): Promise<void> {
     const db = await open({
-        filename: USER_CONFIG_FILE,
+        filename: sqliteDatabasePath,
         driver: sqlite3.Database
     });
 

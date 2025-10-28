@@ -11,4 +11,4 @@ if (!getInit) {
     console.log(".get set.");
 }
 export default NetGet;
-console.log("NetGet Loaded v2.6.50;");
+console.log("NetGet Loaded v2.6.51;");

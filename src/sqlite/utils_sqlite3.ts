@@ -7,12 +7,14 @@ import * as fs from 'fs';
 import { handlePermission } from '../modules/utils/handlePermissions.ts';
 import chalk from 'chalk';
 import { initializeDirectories } from '../modules/utils/GETDirs.ts';
+import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
 
 // Ensure necessary directories exist before database operations
 await initializeDirectories();
 
-const CONFIG_DIR: string = path.join('/opt/', '.get');
-const USER_CONFIG_FILE: string = path.join(CONFIG_DIR, 'domains.db');
+const xConfig = await loadOrCreateXConfig();
+
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 interface DomainRecord {
     domain: string;
@@ -43,7 +45,7 @@ interface DomainConfigResult {
 async function createTable(): Promise<void> {
     try {
         const db = await open({
-            filename: USER_CONFIG_FILE,
+            filename: sqliteDatabasePath,
             driver: SQLiteDatabase
         });
 
@@ -78,7 +80,7 @@ async function createTable(): Promise<void> {
 export async function initializeDatabase(): Promise<Database> {
     await createTable();
     return open({
-        filename: USER_CONFIG_FILE,
+        filename: sqliteDatabasePath,
         driver: SQLiteDatabase
     });
 }
@@ -118,8 +120,8 @@ export async function registerDomain(
         ) {
             await handlePermission(
                 `register the domain ${domain} in the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
             );
         }
         console.error(`Error adding domain ${domain}:`, error);
@@ -143,8 +145,8 @@ export async function getDomains(): Promise<DomainRecord[]> {
         ) {
             await handlePermission(
                 'get the list of domains from the database',
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has read permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has read permissions for the current user.`
             );
         }
         console.error('Error getting domains:', error);
@@ -168,8 +170,8 @@ export async function getDomainByName(domain: string): Promise<DomainRecord | un
         ) {
             await handlePermission(
                 `get the domain ${domain} from the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has read permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has read permissions for the current user.`
             );
         }
         console.error(`Error getting the domain ${domain}:`, error);
@@ -208,8 +210,8 @@ export async function updateDomain(
         ) {
             await handlePermission(
                 `update the domain ${domain} in the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
             );
         }
         console.error(`Error updating the domain ${domain}:`, error);
@@ -233,8 +235,8 @@ export async function updateDomainTarget(domain: string, target: string): Promis
         ) {
             await handlePermission(
                 `update the target of the domain ${domain} in the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
             );
         }
         console.error(`Error updating the target of the domain ${domain}:`, error);
@@ -258,8 +260,8 @@ export async function updateDomainType(domain: string, type: string): Promise<vo
         ) {
             await handlePermission(
                 `update the type of the domain ${domain} in the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
             );
         }
         console.error(`Error updating the type of the domain ${domain}:`, error);
@@ -283,8 +285,8 @@ export async function deleteDomain(domain: string): Promise<void> {
         ) {
             await handlePermission(
                 `delete the domain ${domain} from the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
             );
         }
         console.error(`Error deleting the domain ${domain}:`, error);
@@ -324,8 +326,8 @@ export async function storeConfigInDB(
         ) {
             await handlePermission(
                 `store the configuration of the domain ${domain} in the database`,
-                `chmod 755 ${USER_CONFIG_FILE}`,
-                `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
             );
         }
         console.error(`Error storing config for domain ${domain}:`, error);
@@ -362,8 +364,8 @@ export async function writeExistingNginxConfigs(): Promise<void> {
         ) {
             await handlePermission(
                 'read or write nginx configurations in the database',
-                `chmod 755 ${USER_CONFIG_FILE} && chmod 755 /etc/nginx/XBlocks-available/`,
-                `Make sure the files in /etc/nginx/XBlocks-available/ and ${USER_CONFIG_FILE} have read/write permissions for the current user.`
+                `chmod 755 ${sqliteDatabasePath} && chmod 755 /etc/nginx/XBlocks-available/`,
+                `Make sure the files in /etc/nginx/XBlocks-available/ and ${sqliteDatabasePath} have read/write permissions for the current user.`
             );
         }
         console.error('Error writing existing nginx configs:', error);
@@ -376,7 +378,7 @@ export async function writeExistingNginxConfigs(): Promise<void> {
  */
 function getConfig(domain: string): Promise<DomainConfigResult | undefined> {
     return new Promise((resolve, reject) => {
-        const db = new SQLiteDatabase(USER_CONFIG_FILE);
+        const db = new SQLiteDatabase(sqliteDatabasePath);
         db.get('SELECT domain, type, port, sslCertificate, sslCertificateKey AS target FROM domains WHERE domain = ? OR domain = ?', [domain, '*.' + domain.split('.').slice(1).join('.')], (err: Error | null, row: DomainConfigResult) => {
             if (err) {
                 reject(err);
@@ -392,7 +394,7 @@ function getConfig(domain: string): Promise<DomainConfigResult | undefined> {
  */
 export async function updateSSLCertificatePaths(domain: string, certPath: string, keyPath: string): Promise<void> {
     return new Promise(async (resolve, reject) => {
-        const db = new SQLiteDatabase('/opt/.get/domains.db');
+        const db = new SQLiteDatabase(sqliteDatabasePath);
         db.run(
             `UPDATE domains SET 
                 sslCertificate = ?,
@@ -410,8 +412,8 @@ export async function updateSSLCertificatePaths(domain: string, certPath: string
                     ) {
                         await handlePermission(
                             `update the SSL certificate paths for the domain ${domain}`,
-                            `chmod 755 ${USER_CONFIG_FILE}`,
-                            `Make sure the file ${USER_CONFIG_FILE} has write permissions for the current user.`
+                            `chmod 755 ${sqliteDatabasePath}`,
+                            `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
                         );
                     }
                     console.log('Error updating SSL certificate paths in database:', err.message);

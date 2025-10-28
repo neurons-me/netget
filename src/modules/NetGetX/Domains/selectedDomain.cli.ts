@@ -4,6 +4,10 @@ import { logDomainInfo, addSubdomain, editOrDeleteDomain, editOrDeleteSubdomain,
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.ts';
 import sqlite3 from 'sqlite3';
 import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
+import { loadOrCreateXConfig } from '../config/xConfig.ts';
+
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 // Interface for menu answers
 interface SelectedDomainMenuAnswers {
@@ -19,7 +23,7 @@ interface SelectedDomainMenuAnswers {
 async function selectedDomainMenu(domain: string): Promise<void> {
     try {
         // Leer la configuración del dominio desde la base de datos
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY);
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const domainConfig: DomainRecord | null = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM domains WHERE domain = ?', [domain], (err: Error | null, row: DomainRecord) => {
                 db.close();

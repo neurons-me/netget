@@ -4,6 +4,10 @@ import chalk from 'chalk';
 import selectedDomainMenu from './selectedDomain.cli.ts';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.ts';
 import sqlite3 from 'sqlite3';
+import { loadOrCreateXConfig } from '../config/xConfig.ts';
+
+const xConfig = await loadOrCreateXConfig();
+const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 // Interface for domain row from database
 interface DomainRow {
@@ -33,7 +37,7 @@ interface DomainMenuAnswers {
  */
 const getDomainsFromDB = (): Promise<FormattedDomain[]> => {
     return new Promise((resolve, reject) => {
-        const db = new sqlite3.Database('/opt/.get/domains.db', sqlite3.OPEN_READONLY, (err) => {
+        const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY, (err) => {
             if (err) return reject(err);
         });
 

@@ -1,9 +1,9 @@
 // updateCertificates.ts
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
-import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
+import { loadXConfig } from '../modules/NetGetX/config/xConfig.ts';
 
-const xConfig = await loadOrCreateXConfig();
+const xConfig = await loadXConfig();
 const sqliteDatabasePath = xConfig.sqliteDatabasePath;
 
 interface Domain {

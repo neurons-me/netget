@@ -4,10 +4,13 @@ import chalk from 'chalk';
 import selectedDomainMenu from './selectedDomain.cli.ts';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.ts';
 import sqlite3 from 'sqlite3';
-import { loadOrCreateXConfig } from '../config/xConfig.ts';
+import { loadXConfig } from '../config/xConfig.ts';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
+import path from 'path';
 
-const xConfig = await loadOrCreateXConfig();
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const xConfig = getNetgetDataDir();
+const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
+console.log(chalk.gray(`Using SQLite DB at: ${sqliteDatabasePath}`));
 
 // Interface for domain row from database
 interface DomainRow {
@@ -92,7 +95,8 @@ const getDomainsFromDB = (): Promise<FormattedDomain[]> => {
  */
 const domainsMenu = async (): Promise<void> => {
     try {
-        console.clear();
+        // console.clear();
+        console.log(sqliteDatabasePath);
         console.log(chalk.blue('Domains Routed via NetGet'));
         const dbDomains: FormattedDomain[] = await getDomainsFromDB();
 

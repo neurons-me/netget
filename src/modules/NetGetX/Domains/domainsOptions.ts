@@ -1,16 +1,18 @@
 //netget/src/modules/NetGetX/Domains/domainsOptions.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { loadOrCreateXConfig, saveXConfig } from '../config/xConfig.ts';
+import { loadXConfig, saveXConfig } from '../config/xConfig.ts';
 import type { XConfig } from '../config/xConfig.ts';
 import { scanAndLogCertificates } from './SSL/SSLCertificates.ts'; // Now available in TypeScript
 import { registerDomain, updateDomainTarget, updateDomainType } from '../../../sqlite/utils_sqlite3.ts';
 import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
 import domainsMenu from './domains.cli.ts';
 import sqlite3 from 'sqlite3';
+import path from 'path';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
-const xConfig = await loadOrCreateXConfig();
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const xConfig = getNetgetDataDir();
+const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
 
 // Interface for subdomain row from database
 interface SubdomainRow {

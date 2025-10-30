@@ -37,24 +37,29 @@ function canWriteToDir(dir) {
 }
 
 function resolveDataDir() {
-    const candidates = [];
-
-    if (process.env.NETGET_DATA_DIR) {
-        candidates.push(path.resolve(process.env.NETGET_DATA_DIR));
-    }
-
-    candidates.push(path.join('/opt', '.get'));
-
+    const osName = os.platform();
     const homeDir = os.homedir();
-    if (homeDir) {
-        candidates.push(path.join(homeDir, '.netget'));
-    }
 
-    candidates.push(path.join(PACKAGE_DIR, '.netget'));
+    if (osName === 'linux') {
+        const optPath = '/opt/.get';
+        if (canWriteToDir(optPath)) {
+            return optPath;
+        }
 
-    for (const dir of candidates) {
-        if (canWriteToDir(dir)) {
-            return dir;
+        const homePath = path.join(homeDir, '.get');
+        if (canWriteToDir(homePath)) {
+            return homePath;
+        }
+    } else if (osName === 'darwin') {
+        const homePath = path.join(homeDir, '.get');
+        if (canWriteToDir(homePath)) {
+            return homePath;
+        }
+    } else if (osName === 'win32') {
+        const appDataPath = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');
+        const netgetPath = path.join(appDataPath, 'NetGet');
+        if (canWriteToDir(netgetPath)) {
+            return netgetPath;
         }
     }
 

@@ -1,8 +1,6 @@
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { execSync } from 'child_process';
-import NetGetX_CLI from '../NetGetX.cli.ts';
-import { i_DefaultNetGetX } from '../config/i_DefaultNetGetX.ts';
 import { handlePermission } from '../../utils/handlePermissions.ts';
 import verifyOpenRestyInstallation from './verifyOpenRestyInstallation.ts';
 import NetGetMainMenu from '../../netget_MainMenu.cli.ts';

@@ -4,10 +4,11 @@ import chalk from 'chalk';
 import { NetGetSync } from './lib/netgetSync.ts';
 import fs from 'fs/promises';
 import NetGetMainMenu from '../netget_MainMenu.cli.ts';
-import { loadOrCreateXConfig } from '../NetGetX/config/xConfig.ts';
+import { loadXConfig } from '../NetGetX/config/xConfig.ts';
+import { getNetgetDataDir } from '../../utils/netgetPaths.js';
 
-const xConfig = await loadOrCreateXConfig();
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+// const xConfig = await loadXConfig();
+const sqliteDatabasePath: string = getNetgetDataDir() + '/domains.db';
 
 interface DeployConfig {
     localDbPath: string;

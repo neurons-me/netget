@@ -32,7 +32,7 @@ async function promptForDomainAndEmail(xConfig: XConfig): Promise<XConfig> {
     }
     if (questions.length > 0) {
         const answers = await inquirer.prompt(questions);
-        // Note: saveXConfig and loadOrCreateXConfig should be imported if they exist
+        // Note: saveXConfig and loadXConfig should be imported if they exist
         // For now, just merging answers into xConfig
         xConfig = { ...xConfig, ...answers };
     }

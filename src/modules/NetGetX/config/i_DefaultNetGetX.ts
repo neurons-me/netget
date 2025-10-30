@@ -28,40 +28,29 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
         let DEFAULT_DIRECTORIES: DirectoryPaths = getDirectoryPaths(); // Get paths to .get default directories
         let xConfig: XConfig = await loadOrCreateXConfig();
 
-
         // Save the operating system name in xConfig
         const osName = os.platform();
         if (!xConfig.osName || xConfig.osName !== osName) {
-            await saveXConfig({ osName });
+            console.log(chalk.blue(`Setting OS name to: ${osName}`));
+            await saveXConfig({ osName: osName });
             xConfig = await loadOrCreateXConfig();
         }
 
         // Set sqliteDatabasePath and getPath based on OS if not set or incorrect
-        let shouldUpdate = false;
-        let updates: Partial<XConfig> = {};
         const homeDir = os.homedir();
         if (osName === 'linux') {
-            if (xConfig.sqliteDatabasePath !== '/opt/.get/domains.db') {
-                updates.sqliteDatabasePath = '/opt/.get/domains.db';
-                shouldUpdate = true;
-            }
-            if (xConfig.getPath !== '/opt/.get') {
-                updates.getPath = '/opt/.get';
-                shouldUpdate = true;
-            }
+            const sqliteDatabasePath = "/opt/.get/domains.db";
+            const getPath = "/opt/.get";
+
+            await saveXConfig({sqliteDatabasePath: sqliteDatabasePath});
+            xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+
         } else if (osName === 'darwin') {
-            if (xConfig.sqliteDatabasePath !== `${homeDir}/.get/domains.db`) {
-                updates.sqliteDatabasePath = `${homeDir}/.get/domains.db`;
-                shouldUpdate = true;
-            }
-            if (xConfig.getPath !== `${homeDir}/.get`) {
-                updates.getPath = `${homeDir}/.get`;
-                shouldUpdate = true;
-            }
-        }
-        if (shouldUpdate) {
-            await saveXConfig(updates);
-            xConfig = await loadOrCreateXConfig();
+            const sqliteDatabasePath = `${homeDir}/.get/domains.db`;
+            const getPath = `${homeDir}/.get`;
+
+            await saveXConfig({sqliteDatabasePath: sqliteDatabasePath});
+            xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
         }
 
         const entry: string = '127.0.0.1 local.netget';

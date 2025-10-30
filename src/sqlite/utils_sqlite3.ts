@@ -7,14 +7,15 @@ import * as fs from 'fs';
 import { handlePermission } from '../modules/utils/handlePermissions.ts';
 import chalk from 'chalk';
 import { initializeDirectories } from '../modules/utils/GETDirs.ts';
-import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
+import { loadXConfig } from '../modules/NetGetX/config/xConfig.ts';
+import { getNetgetDataDir } from '../utils/netgetPaths.js';
 
 // Ensure necessary directories exist before database operations
 await initializeDirectories();
 
-const xConfig = await loadOrCreateXConfig();
+const xConfig = getNetgetDataDir();
 
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
 
 interface DomainRecord {
     domain: string;

@@ -3,9 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { handlePermission } from '../../utils/handlePermissions.ts';
-import { loadOrCreateXConfig } from '../config/xConfig.ts';
-
-const xConfig = await loadOrCreateXConfig();
+import { loadXConfig } from '../config/xConfig.ts';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
 /**
  * Configuration file in order to set the nginx.conf file for OpenResty.
@@ -13,12 +12,12 @@ const xConfig = await loadOrCreateXConfig();
  * @module NetGetX
  * @submodule OpenResty
  */
-
+const xConfig = getNetgetDataDir();
 const configPath: string = '/usr/local/openresty/nginx/conf';
 const nginxConfigPath: string = path.join(configPath, 'nginx.conf');
 const sslSelfSignedCertPath: string = '/etc/ssl/certs/cert.pem';
 const sslSelfSignedKeyPath: string = '/etc/ssl/private/privkey.key';
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
 
 /**
  * The content of the nginx.conf file.

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import chalk from 'chalk';
 import { handlePermission } from '../../utils/handlePermissions.ts';
-import { loadOrCreateXConfig, saveXConfig, XConfig } from '../config/xConfig.js';
+import { loadXConfig, saveXConfig, XConfig } from '../config/xConfig.js';
 
 /**
  * Parses the server_name directive from the main server configuration file.
@@ -31,7 +31,7 @@ const parseMainServerName = (configFilePath: string): string => {
 const changeServerName = async (configFilePath: string, newServerName: string): Promise<boolean> => {
     try {
         // Load xConfig to update it
-        const xConfig: XConfig = await loadOrCreateXConfig();
+        const xConfig: XConfig = await loadXConfig();
         xConfig.mainServerName = newServerName;
         await saveXConfig(xConfig);  // Save the entire updated xConfig object
 

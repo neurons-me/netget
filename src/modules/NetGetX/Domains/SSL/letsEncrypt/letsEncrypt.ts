@@ -3,7 +3,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { promisify } from 'util';
 import { exec } from 'child_process';
-import { loadOrCreateXConfig, saveXConfig, XConfig } from '../../../config/xConfig.js';
+import { loadXConfig, saveXConfig, XConfig } from '../../../config/xConfig.js';
 import checkAndInstallCertbot from '../Certbot/checkAndInstallCertbot.js';
 
 const execAsync = promisify(exec); 
@@ -121,7 +121,7 @@ const letsEncryptMethod = async (xConfiguration?: XConfiguration): Promise<void>
         console.log(chalk.green(`Setting up LetsEncrypt SSL for domain ${domain} with email ${email}...`));
         
         // Load configuration and save initial SSL setup
-        const xConfig = await loadOrCreateXConfig();
+        const xConfig = await loadXConfig();
         
         // Initialize domains object if it doesn't exist
         if (!xConfig.domains) {
@@ -161,7 +161,7 @@ const letsEncryptMethod = async (xConfiguration?: XConfiguration): Promise<void>
             SSLCertificateKeyPath: `${SSLPath}/privkey.pem`
         };
 
-        const updatedConfig = await loadOrCreateXConfig();
+        const updatedConfig = await loadXConfig();
         if (updatedConfig.domains) {
             updatedConfig.domains[domain] = SSLUpdate as any;
             await saveXConfig({ domains: updatedConfig.domains });

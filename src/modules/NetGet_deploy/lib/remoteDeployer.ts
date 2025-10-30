@@ -3,9 +3,9 @@ import sqlite3 from 'sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
-import { loadOrCreateXConfig } from '../../NetGetX/config/xConfig.ts';
+import { loadXConfig } from '../../NetGetX/config/xConfig.ts';
 
-const xConfig = await loadOrCreateXConfig();
+const xConfig = await loadXConfig();
 const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 
 interface DeployerConfig {

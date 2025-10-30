@@ -9,8 +9,8 @@ import inquirer from 'inquirer';
 const execAsync = promisify(exec);
 
 const certDir: string = '/etc/ssl';
-const privateKeyPath: string = path.join(certDir, 'private', 'nginx-selfsigned.key');
 const certPath: string = path.join(certDir, 'certs', 'nginx-selfsigned.crt');
+const privateKeyPath: string = path.join(certDir, 'private', 'nginx-selfsigned.key');
 
 /**
  * Ensures the directory exists; if not, creates it.

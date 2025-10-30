@@ -11,10 +11,12 @@ import {
 import printCertbotLogs from '../Certbot/certbot.ts';
 import { storeConfigInDB, updateSSLCertificatePaths } from '../../../../../sqlite/utils_sqlite3.ts';
 import sqlite3 from 'sqlite3';
-import { loadOrCreateXConfig } from '../../../config/xConfig.ts';
+import { loadXConfig } from '../../../config/xConfig.ts';
+import { getNetgetDataDir } from '../../../../../utils/netgetPaths.js';
+import path from 'path';
 
-const xConfig = await loadOrCreateXConfig();
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const xConfig = getNetgetDataDir();
+const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
 
 // Type definitions
 interface DomainConfig {

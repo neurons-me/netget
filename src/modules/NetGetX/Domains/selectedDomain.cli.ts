@@ -1,13 +1,15 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import path from 'path';
 import { logDomainInfo, addSubdomain, editOrDeleteDomain, editOrDeleteSubdomain, linkDevelopmentAppProject } from './domainsOptions.ts';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.ts';
 import sqlite3 from 'sqlite3';
 import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
-import { loadOrCreateXConfig } from '../config/xConfig.ts';
+import { loadXConfig } from '../config/xConfig.ts';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
-const xConfig = await loadOrCreateXConfig();
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const xConfig = getNetgetDataDir();
+const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
 
 // Interface for menu answers
 interface SelectedDomainMenuAnswers {

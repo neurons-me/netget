@@ -1,6 +1,6 @@
 // netget/src/modules/NetGetX/Domains/viewNginxConfig.ts
 import chalk from 'chalk';
-import { loadOrCreateXConfig, XConfig } from '../config/xConfig.ts';
+import { loadXConfig, XConfig } from '../config/xConfig.ts';
 import { getDomainByName, DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
 
 /**
@@ -10,7 +10,7 @@ import { getDomainByName, DomainRecord } from '../../../sqlite/utils_sqlite3.ts'
  */
 const viewNginxConfig = async (domain: string): Promise<void> => {
     try {
-        const xConfig: XConfig = await loadOrCreateXConfig();
+        const xConfig: XConfig = await loadXConfig();
         const domainConfig = xConfig.domains?.[domain];
 
         if (!domainConfig) {

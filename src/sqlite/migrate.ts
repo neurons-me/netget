@@ -1,9 +1,9 @@
 import * as sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import * as fs from 'fs';
-import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
+import { loadXConfig } from '../modules/NetGetX/config/xConfig.ts';
 
-const xConfig = await loadOrCreateXConfig();
+const xConfig = await loadXConfig();
 
 const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
 

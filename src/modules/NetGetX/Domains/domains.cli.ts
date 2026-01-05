@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import selectedDomainMenu from './selectedDomain.cli.ts';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.ts';
 import sqlite3 from 'sqlite3';
-import { loadXConfig } from '../config/xConfig.ts';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import path from 'path';
 

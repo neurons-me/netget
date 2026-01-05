@@ -1,6 +1,8 @@
 //netget/src/modules/utils/GETDirs.ts
 import * as path from 'path';
 import { ensureDirectoryExists } from './pathUtils.ts';
+import { get } from 'http';
+import { getNetgetDataDir } from '../../utils/netgetPaths.js';
 
 interface DirectoryPaths {
     getPath: string;
@@ -11,7 +13,7 @@ interface DirectoryPaths {
     routePath: string;
 }
 
-const BASE_DIR: string = '/opt/.get';
+const BASE_DIR: string = getNetgetDataDir();
 const DIRECTORIES: DirectoryPaths = {
     getPath: BASE_DIR,
     static: `${BASE_DIR}/static`,

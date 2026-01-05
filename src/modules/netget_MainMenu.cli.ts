@@ -1,6 +1,7 @@
 // netget_MainMenu.cli.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import { spawn } from 'child_process';
 import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.ts';
 import NetGetX_CLI from './NetGetX/NetGetX.cli.ts';
 import { Srvrs_CLI } from './Srvrs/srvrs.cli.ts';
@@ -82,6 +83,7 @@ interface MenuAnswers {
 export default async function NetGetMainMenu(): Promise<void> {
     try {
         console.clear();
+        const x: XStateData | any = await i_DefaultNetGetX();
         console.log(`
         ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
         ║║║├┤  │ ║ ╦├┤  │ 
@@ -89,29 +91,39 @@ export default async function NetGetMainMenu(): Promise<void> {
             v2.6.51`);
         console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
         
+        // Build the menu choices dynamically depending on global/local mode
+        const baseChoices: Array<string | any> = [
+            'NetGetX',
+            new inquirer.Separator(),
+        ];
+        
+        const mainServerSet: boolean = !!(x.mainServerName && typeof x.mainServerName === 'string' && x.mainServerName.trim() !== '');
+
+        if (mainServerSet) {
+            baseChoices.push('NetGet Deploy');
+        }
+
+        // Add some common items
+        baseChoices.push(
+            'Port Management',
+            new inquirer.Separator(),
+            'Srvrs - (Port Services)',
+            'Statics - (Static files)'
+        );
+
+        baseChoices.push(new inquirer.Separator(), 'Exit', new inquirer.Separator());
+
         const menuQuestion: MenuChoice = {
             type: 'list',
             name: 'action',
             message: 'Main Menu',
-            choices: [
-                'NetGetX',
-                'NetGet Deploy',
-                new inquirer.Separator(),
-                'Port Management',
-                new inquirer.Separator(),
-                'Srvrs - (Port Services)',
-                'Statics - (Static files)',
-                new inquirer.Separator(),
-                'Exit',
-                new inquirer.Separator()
-            ],
+            choices: baseChoices,
         };
 
         const answers: MenuAnswers = await inquirer.prompt([menuQuestion]);
 
         switch (answers.action) {
             case 'NetGetX':
-                const x: XStateData | any = await i_DefaultNetGetX();
                 if (x) {
                     /*
                     Netget X (The Router/Conductor)

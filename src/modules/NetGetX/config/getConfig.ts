@@ -1,8 +1,9 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { XConfig } from './xConfig.ts';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
-const CONFIG_DIR: string = path.join('/opt/', '.get');
+const CONFIG_DIR: string = getNetgetDataDir();
 const USER_CONFIG_FILE: string = path.join(CONFIG_DIR, 'xConfig.json');
 
 /**

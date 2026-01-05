@@ -3,12 +3,17 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { NetGetSync } from './lib/netgetSync.ts';
 import fs from 'fs/promises';
+import path from 'path';
 import NetGetMainMenu from '../netget_MainMenu.cli.ts';
-import { loadXConfig } from '../NetGetX/config/xConfig.ts';
 import { getNetgetDataDir } from '../../utils/netgetPaths.js';
+import { loadOrCreateXConfig } from '../NetGetX/config/xConfig.ts';
 
-// const xConfig = await loadXConfig();
-const sqliteDatabasePath: string = getNetgetDataDir() + '/domains.db';
+const netgetDir = getNetgetDataDir();
+const sqliteDatabasePath: string = netgetDir + '/domains.db';
+const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+const deployConfigDefaultPath = path.join(homeDir, '.this', 'me', 'deploy.config.json');
+const mainServerName: string = (await loadOrCreateXConfig()).mainServerName || '';
+const remoteApiKey: string = (await loadOrCreateXConfig()).remoteApiKey || 'your-api-key-here';
 
 interface DeployConfig {
     localDbPath: string;
@@ -21,7 +26,8 @@ interface DeployConfig {
 // Helper to load config
 async function loadConfig(configPath: string): Promise<DeployConfig | null> {
     try {
-        const configFile = await fs.readFile(configPath || './deploy.config.json', 'utf8');
+        const resolvedPath = configPath || deployConfigDefaultPath;
+        const configFile = await fs.readFile(resolvedPath, 'utf8');
         return JSON.parse(configFile);
     } catch (error: any) {
         console.error(chalk.red(`Failed to load config: ${error.message}`));
@@ -73,29 +79,30 @@ export default async function netGetXDeployMenu(): Promise<void> {
             case '1. Initialize deployment config': {
                 const { output } = await inquirer.prompt({ 
                     type: 'input', 
-                    name: 'output', 
-                    message: 'Output config file:', 
-                    default: './deploy.config.json' 
+                    name: 'output',
+                    message: 'Output config file:',
+                    default: deployConfigDefaultPath
                 });
                 const config: DeployConfig = {
                     localDbPath: sqliteDatabasePath,
-                    remoteServer: 'https://your-remote-server.com',
-                    remoteApiKey: 'your-api-key-here',
+                    remoteServer: mainServerName,
+                    remoteApiKey: remoteApiKey,
                     projectsBasePath: '/var/www',
                     timestamp: Date.now()
                 };
-                if (await fs.readFile(output).then(() => true).catch(() => false)) {
-                    console.log(chalk.red(`File already exists: ${output}`));
-                    break;
-                }
                 try {
+                    await fs.mkdir(path.dirname(output), { recursive: true });
+                    if (await fs.readFile(output).then(() => true).catch(() => false)) {
+                        console.log(chalk.red(`File already exists: ${output}`));
+                        break;
+                    }
                     await fs.writeFile(output, JSON.stringify(config, null, 2));
                     console.log(chalk.green(`Configuration file created: ${output}`));
                     console.log(chalk.yellow('\nPlease edit the configuration file with your settings:'));
                     console.log(`   - remoteServer: Your remote NetGet server URL`);
                     console.log(`   - remoteApiKey: Your API key for authentication`);
                     console.log(`   - localDbPath: Path to your local NetGet database`);
-                    console.log(`   - projectsBasePath: Base path for your projects`);
+                    console.log(`   - projectsBasePath: Remote base path for your projects`);
                 } catch (error: any) {
                     console.log(chalk.red(`Failed to create config: ${error.message}`));
                 }
@@ -106,7 +113,7 @@ export default async function netGetXDeployMenu(): Promise<void> {
                     type: 'input', 
                     name: 'config', 
                     message: 'Config file path:', 
-                    default: './deploy.config.json' 
+                    default: deployConfigDefaultPath
                 });
                 const sync = await createSyncInstance(config);
                 if (!sync) break;
@@ -122,7 +129,7 @@ export default async function netGetXDeployMenu(): Promise<void> {
                     type: 'input', 
                     name: 'config', 
                     message: 'Config file path:', 
-                    default: './deploy.config.json' 
+                    default: deployConfigDefaultPath 
                 });
                 console.log(chalk.blue(`Reading configuration from: ${config}`));
                 const sync = await createSyncInstance(config);
@@ -144,7 +151,7 @@ export default async function netGetXDeployMenu(): Promise<void> {
                     type: 'input', 
                     name: 'config', 
                     message: 'Config file path:', 
-                    default: './deploy.config.json' 
+                    default: deployConfigDefaultPath 
                 });
                 const loadedConfig = await loadConfig(config);
                 if (!loadedConfig) break;
@@ -185,7 +192,7 @@ export default async function netGetXDeployMenu(): Promise<void> {
                         type: 'input', 
                         name: 'config', 
                         message: 'Config file path:', 
-                        default: './deploy.config.json' 
+                        default: deployConfigDefaultPath 
                     },
                     { 
                         type: 'confirm', 

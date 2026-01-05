@@ -1,285 +1,119 @@
-# NetGet Deploy v2.0
+# NetGet Deploy
 
-A comprehensive deployment and synchronization tool for NetGet infrastructure. This tool enables seamless synchronization of NetGet configurations, domains, and applications between local development environments and remote production servers.
+Deployment and synchronization utilities that pair the `netget` CLI with the remote deployer API. The code in [netget.cli.ts](../netget.cli.ts) uses the classes in this folder to read local SQLite domain data, package projects, and push them to a remote server that runs the deployer endpoints.
 
-## Features
+## What the CLI actually does
 
-- **Domain Synchronization**: Sync domains and SSL certificates between NetGet instances
-- **Project Deployment**: Upload and deploy complete NetGet projects to remote servers
-- **Configuration Management**: Sync SQLite database configurations and nginx settings
-- **Health Monitoring**: Monitor deployment status and server health
-- **CLI Interface**: Easy-to-use command-line interface for all operations
-- **REST API**: Complete API server for remote deployment operations
+- **Interactive menu**: Running `netget` with no arguments opens the NetGet main menu (see [netget.cli.ts](../netget.cli.ts)).
+- **Non-interactive deploy**: `netget deploy <username> <secret>` authenticates against a local credentials file, then uses `NetGetSync` to push domain configs and optional project bundles.
+- **Config-driven sync**: When `--include-projects` is set (without `--targets`), the CLI reads all domains from the local SQLite database and syncs configs; it also deploys every non-`server` target it finds.
+- **Target-driven deploy**: With `--targets`, the CLI packages the given paths and deploys them to the remote server. Domains are inferred from the path prefix (e.g., `example.com/var/www/site`) unless `--domain` is provided.
 
-## Installation
+## Inputs and configuration
 
-```bash
-npm install
-```
-
-## Configuration
-
-Create a `deploy.config.json` file in your project root:
+### Deploy configuration (optional)
+The CLI can read a JSON file (default `~/.this/me/deploy.config.json`) when `--config` is provided:
 
 ```json
 {
-  "remoteServers": [
-    {
-      "name": "production",
-      "url": "https://your-remote-server.com",
-      "apiKey": "your-api-key",
-      "description": "Production NetGet server"
-    }
-  ],
-  "localNetGetPath": "/path/to/your/local/netget",
-  "syncOptions": {
-    "includeDomains": true,
-    "includeProjects": true,
-    "backupBeforeSync": true
-  }
+  "remoteServer": "https://your-remote-server.com",
+  "remoteApiKey": "your-api-key",
+  "localDbPath": "/path/to/domains.db",
+  "projectsBasePath": "/var/www"
 }
 ```
 
-Set environment variables:
+Flags override file values: `--server` replaces `remoteServer` and is required when no config is provided.
 
-```bash
-export NETGET_API_KEY="your-secure-api-key"
-export NETGET_PORT=3001
-export NETGET_DB_PATH="/path/to/netget.db"
+### Credentials file
+`netget deploy` expects credentials (default path: `~/.this/me/pplalo/credentials.json`). Supported shapes:
+
+```json
+{ "username": "user", "password": "secret" }
+```
+```json
+{ "users": [ { "username": "user", "password": "secret" } ] }
+```
+```json
+{ "user": "secret", "other": "pass" }
 ```
 
-## CLI Usage
-
-### Initialize Configuration
-
-```bash
-# Initialize deployment configuration
-./cli.js init
-
-# Validate current configuration
-./cli.js validate
-```
-
-### Domain Operations
-
-```bash
-# Sync domains to remote server
-./cli.js sync domains --server production
-
-# Compare local and remote domains
-./cli.js compare domains --server production
-
-# Get sync status for a specific domain
-./cli.js status example.com --server production
-```
-
-### Project Deployment
-
-```bash
-# Deploy a specific project
-./cli.js sync project --name my-app --server production
-
-# Deploy all projects
-./cli.js sync all --server production
-
-# Dry run (preview changes without applying)
-./cli.js sync domains --server production --dry-run
-```
-
-### Monitoring
-
-```bash
-# Check server health
-./cli.js status --server production
-
-# Get detailed sync status
-./cli.js status --verbose
-```
-
-## API Server
-
-Start the remote API server:
-
-```bash
-npm start
-# or for development
-npm run dev
-```
-
-### API Endpoints
-
-#### Health Check
-```
-GET /api/health
-```
-
-#### Domain Synchronization
-```
-GET /api/sync/domains
-POST /api/sync/domains
-```
-
-#### Project Deployment
-```
-POST /api/sync/deploy
-```
-
-#### Status Monitoring
-```
-GET /api/sync/status/:domain
-```
-
-All endpoints require Bearer token authentication:
-```
-Authorization: Bearer YOUR_API_KEY
-```
-
-## Project Structure
+## CLI flags (non-interactive deploy)
 
 ```
-NetGet_deploy/
-├── cli.js                 # Command-line interface
-├── server.js              # Express API server
-├── lib/
-│   ├── netgetSync.js      # Local sync operations
-│   └── remoteDeployer.js  # Remote deployment logic
-├── package.json
-├── deploy.config.json     # Configuration file
-└── README.md
+netget deploy <username> <secret> [options]
+
+--server <url>          Override remote server URL (required if no config file)
+--config <path>         Path to deploy config JSON
+--creds <path>          Path to credentials JSON
+--targets <json|csv>    JSON array or comma-separated list of project roots
+--domain <domain>       Explicit domain when it cannot be inferred from target
+--include-projects      Run config-driven sync and deploy all non-server targets
 ```
 
-## Development Workflow
+Behavior summary:
+- With `--targets`: each path is zipped, uploaded, and its domain config is synced.
+- Without `--targets` but with `--include-projects`: syncs all domains from the local DB; deploys any domain whose `type` is not `server`.
+- Otherwise: the CLI exits with a helpful message.
 
-### Local Development Setup
+Enable debug logging with `NETGET_DEBUG=1` (prints argv and early state).
 
-1. **Configure Local NetGet**: Ensure your local NetGet instance is properly configured
-2. **Create Deploy Config**: Set up `deploy.config.json` with your remote servers
-3. **Test Connection**: Use `./cli.js validate` to verify configuration
-4. **Sync Domains**: Start with `./cli.js sync domains --dry-run` to preview changes
+## Local sync logic (NetGetSync)
 
-### Remote Server Setup
+- Reads domains from the SQLite `domains` table (`domain, subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner`).
+- Checks remote health at `GET /deploy/health` (Bearer token required).
+- Syncs domain configs via `POST /deploy/sync/domains` with `{ domains, timestamp }`.
+- Packages projects into ZIP archives (excludes `node_modules`, `.git`, `.env`, logs, `dist`, `build`, `.DS_Store`).
+- Uploads bundles to `POST /deploy/sync/deploy` using multipart form data.
 
-1. **Install Dependencies**: Run `npm install` on remote server
-2. **Configure Environment**: Set `NETGET_API_KEY` and other environment variables
-3. **Start API Server**: Run `npm start` to start the deployment API
-4. **Verify Health**: Check `/api/health` endpoint
+## Remote deployer behavior (RemoteDeployer)
 
-### Deployment Process
-
-1. **Local Changes**: Make changes to your local NetGet configuration
-2. **Compare**: Use `./cli.js compare` to see differences
-3. **Sync**: Deploy changes with `./cli.js sync`
-4. **Monitor**: Check status with `./cli.js status`
-
-## Security Considerations
-
-- **API Keys**: Use strong, unique API keys for each server
-- **HTTPS**: Always use HTTPS for remote connections
-- **File Permissions**: Ensure proper file permissions on uploaded projects
-- **Backup**: Always backup before major deployments
-
-## Error Handling
-
-The tool provides comprehensive error handling:
-
-- **Network Errors**: Automatic retry with exponential backoff
-- **Authentication Failures**: Clear error messages and retry prompts
-- **File System Errors**: Detailed error reporting with suggested fixes
-- **Database Errors**: SQLite connection and query error handling
-
-## Logging
-
-All operations are logged with different levels:
-
-- **Info**: General operation status
-- **Warn**: Non-critical issues
-- **Error**: Critical failures requiring attention
-- **Debug**: Detailed debugging information (use `--verbose`)
+- Stores domain records in SQLite (defaults to `getNetgetDataDir()/domains.db`).
+- Writes deployments to `<projectsBasePath>/<domain>/dist` (defaults to `/var/www`).
+- On upload, replaces existing `dist`, unzips the bundle, attempts `npm install --production`, and runs `npm run build` when a build script exists.
+- Exposes helpers to read configs (`GET /deploy/sync/domains`), update configs (`POST /deploy/sync/domains`), deploy bundles (`POST /deploy/sync/deploy`), and report health (`GET /deploy/health`).
 
 ## Examples
 
-### Complete Domain Sync
+**Deploy explicit targets**
 
 ```bash
-# 1. Check current status
-./cli.js status --server production
-
-# 2. Compare local vs remote
-./cli.js compare domains --server production
-
-# 3. Sync domains
-./cli.js sync domains --server production
-
-# 4. Verify deployment
-./cli.js status example.com --server production
+NETGET_DEBUG=1 netget deploy user secret \
+  --server https://remote.example.com \
+  --targets "[\"/opt/projects/example.com\"]"
 ```
 
-### Project Deployment
+**Config-driven sync including projects**
 
 ```bash
-# Deploy specific project
-./cli.js sync project --name my-web-app --server production
-
-# Deploy with custom options
-./cli.js sync all --server production --backup --force
+netget deploy user secret \
+  --config ~/deploy.config.json \
+  --include-projects
 ```
 
-### Monitoring and Health Checks
+**Deploy when domain cannot be inferred from path**
 
 ```bash
-# Quick health check
-./cli.js status --server production
-
-# Detailed status with all domains
-./cli.js status --verbose --server production
-
-# Check specific domain status
-./cli.js status my-domain.com --server production
+netget deploy user secret \
+  --server https://remote.example.com \
+  --targets /opt/sites/app \
+  --domain app.example.com
 ```
+
+## Operational notes
+
+- Ensure the remote API key matches the one configured on the deployer; all deploy calls use Bearer auth.
+- When inferring domains, the CLI treats the text before the first `/` in a target as the domain if it contains a dot.
+- Temporary ZIPs are written to `./temp` during packaging and deleted after upload.
+- Remote deployments may install and build; ensure the target has the necessary build tooling available.
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Authentication Failed**
-   - Verify API key in environment variables
-   - Check server configuration
-
-2. **Database Connection Error**
-   - Verify NetGet database path
-   - Check file permissions
-
-3. **Network Timeout**
-   - Check internet connectivity
-   - Verify server URL and port
-
-4. **File Upload Failed**
-   - Check available disk space
-   - Verify file permissions
-
-### Debug Mode
-
-Use the `--verbose` flag for detailed debugging:
-
-```bash
-./cli.js sync domains --server production --verbose
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+- **Invalid credentials**: Check the credentials file path and shape; the CLI rejects unknown usernames/passwords.
+- **Missing server**: Provide `--server` or set `remoteServer` in the config file.
+- **No targets**: Supply `--targets` or `--include-projects`; otherwise the CLI exits without action.
+- **Health check errors**: Verify `GET /deploy/health` on the remote and confirm the API key.
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Support
-
-For issues and support:
-- Check the troubleshooting section
-- Review error logs with `--verbose`
-- Submit issues to the project repository
+MIT License - see LICENSE for details.

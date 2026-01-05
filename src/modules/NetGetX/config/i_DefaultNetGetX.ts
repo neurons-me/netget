@@ -15,6 +15,7 @@ import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localH
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.ts';
 import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.ts';
 import { ensureNginxConfigFile, setNginxConfigFile } from '../OpenResty/setNginxConfigFile.ts';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
 
 /**
@@ -39,15 +40,15 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
         // Set sqliteDatabasePath and getPath based on OS if not set or incorrect
         const homeDir = os.homedir();
         if (osName === 'linux') {
-            const sqliteDatabasePath = "/opt/.get/domains.db";
-            const getPath = "/opt/.get";
+            const getPath: string = getNetgetDataDir();
+            const sqliteDatabasePath: string = `${getPath}/domains.db`;
 
             await saveXConfig({sqliteDatabasePath: sqliteDatabasePath});
             xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
 
         } else if (osName === 'darwin') {
-            const sqliteDatabasePath = `${homeDir}/.get/domains.db`;
-            const getPath = `${homeDir}/.get`;
+            const getPath: string = getNetgetDataDir();
+            const sqliteDatabasePath: string = `${getPath}/domains.db`;
 
             await saveXConfig({sqliteDatabasePath: sqliteDatabasePath});
             xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected

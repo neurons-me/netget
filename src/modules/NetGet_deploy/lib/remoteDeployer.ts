@@ -3,10 +3,10 @@ import sqlite3 from 'sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
-import { loadXConfig } from '../../NetGetX/config/xConfig.ts';
+import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
-const xConfig = await loadXConfig();
-const sqliteDatabasePath: string = xConfig.sqliteDatabasePath;
+const sqliteDatabasePath: string = getNetgetDataDir() + '/domains.db';
+
 
 interface DeployerConfig {
     dbPath?: string;

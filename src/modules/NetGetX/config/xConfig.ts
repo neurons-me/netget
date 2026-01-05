@@ -3,7 +3,7 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
-const CONFIG_DIR: string = '/opt/.get';
+const CONFIG_DIR: string = getNetgetDataDir();
 const USER_CONFIG_FILE: string = path.join(CONFIG_DIR, 'xConfig.json');
 
 interface DomainConfig {
@@ -13,6 +13,10 @@ interface DomainConfig {
 interface XConfig {
     osName?: string;
     mainServerName?: string;
+    remoteApiKey?: string;
+    mainServerIP?: string;
+    mainServerCertPath?: string;
+    mainServerKeyPath?: string;
     publicIP?: string;
     localIP?: string;
     getPath?: string;
@@ -56,7 +60,8 @@ async function loadOrCreateXConfig(): Promise<XConfig> {
             console.log(chalk.yellow('Default xConfig file does not exist. Creating...'));
             const defaultConfig: XConfig = {
                 osName: "",
-                mainServerName: "",             
+                mainServerName: "",
+                remoteApiKey: "",           
                 publicIP: "",
                 localIP: "",
                 getPath: "",
@@ -72,7 +77,6 @@ async function loadOrCreateXConfig(): Promise<XConfig> {
             return defaultConfig;
         } else {
             const data = await fs.promises.readFile(USER_CONFIG_FILE, 'utf8');
-            console.log(chalk.blue(data))
             return JSON.parse(data) as XConfig;
         }
     } catch (error: any) {

@@ -15,8 +15,8 @@ import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 const xConfig = getNetgetDataDir();
 const configPath: string = '/usr/local/openresty/nginx/conf';
 const nginxConfigPath: string = path.join(configPath, 'nginx.conf');
-const sslSelfSignedCertPath: string = '/etc/ssl/certs/cert.pem';
-const sslSelfSignedKeyPath: string = '/etc/ssl/private/privkey.key';
+const sslSelfSignedCertPath: string = '/etc/ssl/certs/nginx-selfsigned.crt';
+const sslSelfSignedKeyPath: string = '/etc/ssl/private/nginx-selfsigned.key';
 const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
 
 /**
@@ -34,6 +34,7 @@ events {
 http {
     resolver    8.8.8.8 8.8.4.4 valid=300s;
     include     mime.types;
+    include     /usr/local/openresty/nginx/conf/conf.d/*.conf;
 
     sendfile on;
     tcp_nopush on;
@@ -48,131 +49,16 @@ http {
     # Removed Strict-Transport-Security to allow HTTP access without certificates
 
     lua_shared_dict ssl_cache 10m;
-    lua_package_path "/usr/local/share/lua/5.1/?.lua;/usr/local/openresty/lualib/?.lua;;";
+    lua_package_path "/usr/local/share/lua/5.1/?.lua;/usr/local/openresty/lualib/?.lua;/usr/local/openresty/nginx/lua/?.lua;;";
     
     error_log /usr/local/openresty/nginx/logs/error.log;
     access_log /usr/local/openresty/nginx/logs/access.log;
-    
-    # Upstream configuration for proxy.js backend
-    upstream local_netget {
-        server 127.0.0.1:3000;
-    }
     
     server {
         listen 80;
         listen [::]:80;
         server_name _;
-
-        # Allow HTTP access without SSL certificates
-        # This configuration is optimized for development and local access
-        
-        # Serve NetGetX HTML interface
-        location / {
-            root /home/bongi/Documentos/neurons/netget/src/ejsApp/public;
-            index netgetX.html;
-            try_files $uri $uri/ /netgetX.html;
-            
-            # Headers for development (no HTTPS required)
-            add_header Cache-Control "no-cache, no-store, must-revalidate";
-            add_header Pragma "no-cache";
-            add_header Expires "0";
-            add_header X-Content-Type-Options "nosniff";
-            add_header X-Frame-Options "SAMEORIGIN";
-            
-            # Content Security Policy for development - Allow all necessary resources
-            add_header Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://api.ipify.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: http: https:; connect-src 'self' http://127.0.0.1:3000 http://localhost:3000 https://api.ipify.org; frame-src 'none'; object-src 'none'; media-src 'self'; child-src 'none';";
-        }
-
-        # Proxy API requests to proxy.js backend
-        location /api/ {
-            proxy_pass http://local_netget;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_cache_bypass $http_upgrade;
-            
-            # CORS headers for API requests (development friendly)
-            add_header Access-Control-Allow-Origin "*";
-            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
-            add_header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With";
-            add_header Access-Control-Allow-Credentials "true";
-            
-            # CSP for API responses
-            add_header Content-Security-Policy "default-src 'none'; connect-src 'self';";
-            
-            # Handle preflight requests
-            if ($request_method = 'OPTIONS') {
-                add_header Access-Control-Allow-Origin "*";
-                add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
-                add_header Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With";
-                add_header Access-Control-Allow-Credentials "true";
-                add_header Access-Control-Max-Age "86400";
-                return 204;
-            }
-        }
-
-        # Proxy other backend routes (healthcheck, ip-info, check-auth, login, etc.)
-        location ~ ^/(healthcheck|ip-info|check-auth|login|logout|logs|domains|networks|deploy) {
-            proxy_pass http://local_netget;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_cache_bypass $http_upgrade;
-            
-            # Add CORS for backend routes
-            add_header Access-Control-Allow-Origin "*";
-            add_header Access-Control-Allow-Credentials "true";
-        }
-
-        # Serve static assets (CSS, JS, images) - Development optimized
-        location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-            root /home/bongi/Documentos/neurons/netget/src/ejsApp/public;
-            # Short cache for development
-            expires 1h;
-            add_header Cache-Control "public, max-age=3600";
-            add_header Access-Control-Allow-Origin "*";
-            # Allow CSP for static assets
-            add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: http: https:;";
-            access_log off;
-        }
-
-        # Specific favicon handling
-        location = /favicon.ico {
-            root /home/bongi/Documentos/neurons/netget/src/ejsApp/public;
-            add_header Cache-Control "public, max-age=86400";
-            add_header Access-Control-Allow-Origin "*";
-            access_log off;
-            # Return 204 if favicon doesn't exist to prevent 404 errors
-            try_files $uri =204;
-        }
-
-        # Allow Let's Encrypt challenges (optional for future SSL setup)
-        location /.well-known/acme-challenge/ {
-            root /var/www/html;
-            allow all;
-        }
-
-        # Development status endpoint
-        location /status {
-            access_log off;
-            return 200 
-            "NetGetX HTTP Server - Development Mode
-            SSL: Disabled
-            Backend: http://127.0.0.1:3000";
-            add_header Content-Type text/plain;
-        }
-
-        # NetGetX implementation logic for HTTP (no SSL required)
-        error_page 404 /netgetX.html;
-        error_page 500 502 503 504 /netgetX.html;
+        return 301 https://$host$request_uri;
     }
 
     server {
@@ -563,7 +449,7 @@ const setNginxConfigFile = async (): Promise<void> => {
         // Normalize both contents for comparison: trim, normalize line endings, remove trailing whitespace
         const normalize = (str: string) => str.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim();
         if (normalize(nginxActualContent) !== normalize(nginxConfigContent)) {
-            console.log(chalk.yellow('nginx.conf file content is different from expected.\n'+
+            console.log(chalk.yellow('nginx.conf file content is different from expected.\n' +
                 'In case of issues with OpenResty, consider resetting the configuration file to default.'));
             const { setDefaultConfig } = await inquirer.prompt([
                 {

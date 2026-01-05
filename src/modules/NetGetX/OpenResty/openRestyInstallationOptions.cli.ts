@@ -2,18 +2,14 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { execSync } from 'child_process';
 import { handlePermission } from '../../utils/handlePermissions.ts';
+import includeNetgetAppConf from './includeNetgetAppConf.ts';
 import verifyOpenRestyInstallation from './verifyOpenRestyInstallation.ts';
 import NetGetMainMenu from '../../netget_MainMenu.cli.ts';
 // Interface for installation choices
-interface InstallChoice {
-    name: string;
-    value: '1' | '2';
-}
+interface InstallChoice { name: string; value: '1' | '2' | '3' | '4' }
 
 // Interface for installation answers
-interface InstallAnswers {
-    choice: '1' | '2';
-}
+interface InstallAnswers { choice: '1' | '2' | '3' | '4' }
 
 // Interface for path answers
 interface PathAnswers {
@@ -26,8 +22,9 @@ interface PathAnswers {
  */
 export default async function openRestyInstallationOptions(): Promise<void> {
     const choices: InstallChoice[] = [
-        { name: 'Install from source', value: '1' },
-        { name: 'Exit', value: '2' }
+        { name: 'Install OpenResty from source', value: '1' },
+        { name: 'Include netget_app.conf (conf.d) and reload', value: '3' },
+        { name: 'Exit', value: '4' }
     ];
 
     const answers: InstallAnswers = await inquirer.prompt([
@@ -102,6 +99,28 @@ export default async function openRestyInstallationOptions(): Promise<void> {
                 let openRestyInstalled: boolean = await verifyOpenRestyInstallation();
                 if (openRestyInstalled) {
                     console.log('OpenResty installation completed via Linux_openresty.sh');
+
+                    // After OpenResty installation success: install LuaRocks and lsqlite3 on Linux
+                    if (process.platform !== 'win32') {
+                        try {
+                            console.log(chalk.blue('Updating apt package index...'));
+                            execSync('sudo apt update', { stdio: 'inherit' });
+
+                            console.log(chalk.blue('Installing LuaRocks...'));
+                            execSync('sudo apt install luarocks', { stdio: 'inherit' });
+
+                            console.log(chalk.blue('Installing lsqlite3 via LuaRocks...'));
+                            execSync('sudo luarocks install lsqlite3', { stdio: 'inherit' });
+
+                            console.log(chalk.green('LuaRocks and lsqlite3 installed successfully.'));
+                        } catch (error) {
+                            console.error(chalk.red(
+                                'Failed to install LuaRocks or lsqlite3. Please run manually:\n' +
+                                'sudo apt update\nsudo apt install luarocks\nsudo luarocks install lsqlite3'
+                            ));
+                        }
+                    }
+
                     await askToAddToPath();
                 }
             } catch (error: any) {
@@ -110,7 +129,10 @@ export default async function openRestyInstallationOptions(): Promise<void> {
                 );
             }
             break;
-        case '2':
+        case '3':
+            await includeNetgetAppConf();
+            break;
+        case '4':
             return await NetGetMainMenu();
         default:
             console.log('Invalid choice. Exiting...');

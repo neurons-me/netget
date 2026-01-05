@@ -9,7 +9,10 @@ const __dirname = dirname(__filename);
 
 const netgetPath = join(__dirname, '..', 'src', 'netget.cli.ts');
 
-const child = spawn('node', ['--import', 'tsx', '--no-warnings', netgetPath], {
+// Forward CLI args so subcommands and options are preserved when using `npx netget ...`
+const forwardArgs = process.argv.slice(2);
+const childArgs = ['--import', 'tsx', '--no-warnings', netgetPath, ...forwardArgs];
+const child = spawn('node', childArgs, {
     stdio: 'inherit',
     cwd: join(__dirname, '..')
 });

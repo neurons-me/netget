@@ -16,6 +16,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "local.netget/backend/**/*"],
-  "exclude": ["node_modules", "dist", "local.netget/frontend"]
+  "include": ["src/**/*", "src/modules/local.netget/backend/**/*", "dist"],
+  "exclude": ["node_modules", "dist", "src/modules/local.netget/frontend_remote"]
 }

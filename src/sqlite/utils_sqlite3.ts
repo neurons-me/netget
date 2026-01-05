@@ -7,7 +7,6 @@ import * as fs from 'fs';
 import { handlePermission } from '../modules/utils/handlePermissions.ts';
 import chalk from 'chalk';
 import { initializeDirectories } from '../modules/utils/GETDirs.ts';
-import { loadXConfig } from '../modules/NetGetX/config/xConfig.ts';
 import { getNetgetDataDir } from '../utils/netgetPaths.js';
 
 // Ensure necessary directories exist before database operations

@@ -24,8 +24,8 @@ yarn.lock
 .DS_Store
 
 # Build output
-dist/
-dist-ssr/
+frontend*
+backend*
 
 # Local environment files
 *.local

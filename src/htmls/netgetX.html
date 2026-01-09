@@ -93,6 +93,19 @@
             color: #888;
         }
 
+        /* ======== DOMAIN TARGET ======== */
+        .target-display {
+            background: #0b1416;
+            color: #17bdcc;
+            font-size: 0.95em;
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid #1a2528;
+            text-align: center;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+        }
+
         /* ======== PORT CONTROLS ======== */
         .display-container {
             display: flex;
@@ -227,6 +240,11 @@
                 <p class="PortLabel">Listening Port:</p>
                 <div class="display-ip" id="listeningPort">Not available</div>
             </div>
+
+            <div class="ip-section">
+                <p class="PortLabel">Target:</p>
+                <div class="target-display" id="domainTarget">Loading...</div>
+            </div>
         </div>
 
         <!-- ======== RIGHT COLUMN ======== -->
@@ -325,6 +343,27 @@
         }
     }
 
+    async function updateDomainTarget() {
+        try {
+            const response = await fetch('/domain-target');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.target) {
+                    document.getElementById('domainTarget').textContent = data.target;
+                } else {
+                    document.getElementById('domainTarget').textContent = 'Not configured';
+                    document.getElementById('domainTarget').style.color = '#888';
+                }
+            } else {
+                throw new Error('Failed to retrieve domain target');
+            }
+        } catch (error) {
+            console.error('Error obtaining domain target:', error);
+            document.getElementById('domainTarget').textContent = 'Not available';
+            document.getElementById('domainTarget').style.color = '#888';
+        }
+    }
+
     function updateMainServerButton() {
         const publicIP = document.getElementById('publicIP').textContent.trim();
         const btn = document.getElementById('mainServerBtn');
@@ -340,6 +379,7 @@
     function updateDisplays() {
         updateIPInformation();
         updateListeningPort();
+        updateDomainTarget();
     }
 
     async function updateIPInformation() {

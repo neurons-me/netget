@@ -269,6 +269,29 @@ export async function updateDomainType(domain: string, type: string): Promise<vo
     }
 }
 
+export async function getDomainTarget(domain: string): Promise<string | undefined> {
+    try {
+        const db = await dbPromise;
+        const row = await db.get('SELECT target FROM domains WHERE domain = ?', [domain]);
+        return row ? row.target : undefined;
+    } catch (error: any) {
+        if (
+            error.code === 'EACCES' ||
+            error.code === 'SQLITE_CANTOPEN' ||
+            error.message?.includes('permission') ||
+            error.message?.includes('SQLITE_CANTOPEN')
+        ) {
+            await handlePermission(
+                `get the target of the domain ${domain} from the database`,
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has read permissions for the current user.`
+            );
+        }
+        console.error(`Error getting the target of the domain ${domain}:`, error);
+        throw error;
+    }
+}
+
 /**
  * Function to delete a domain
  */

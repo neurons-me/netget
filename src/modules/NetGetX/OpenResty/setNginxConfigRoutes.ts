@@ -20,7 +20,6 @@ export function getNetgetAppConfContent(): string {
 lua_shared_dict jwt_cache 10m;
 
 log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
-set $NETGET_DATA_DIR ${xConfig};
 
 server {
     listen 80;
@@ -28,6 +27,7 @@ server {
     server_name local.netget;
     client_max_body_size 500M;
 
+    set $NETGET_DATA_DIR ${xConfig};
     access_log /usr/local/openresty/nginx/logs/netget_access.log netget_access;
     error_log  /usr/local/openresty/nginx/logs/netget_error.log warn;
 

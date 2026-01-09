@@ -58,7 +58,6 @@ http {
         listen 80;
         listen [::]:80;
         server_name _;
-        return 301 https://$host$request_uri;
     }
 
     server {
@@ -242,6 +241,84 @@ http {
 
         }
 
+        location /domain-target {
+            # Endpoint to get domain target information
+            default_type application/json;
+            content_by_lua_block {
+                local sqlite = require "lsqlite3"
+                local cjson = require "cjson"
+                
+                -- Get domain from query parameter or Host header
+                local domain = ngx.var.arg_domain or ngx.var.host
+                if domain then
+                    domain = domain:match("([^:]+)") -- Remove port if present
+                end
+                
+                if not domain then
+                    ngx.status = ngx.HTTP_BAD_REQUEST
+                    ngx.say(cjson.encode({
+                        success = false,
+                        error = "Domain not specified"
+                    }))
+                    return
+                end
+                
+                local db, err = sqlite.open("${sqliteDatabasePath}")
+                if not db then
+                    ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+                    ngx.say(cjson.encode({
+                        success = false,
+                        error = "Failed to open SQLite database"
+                    }))
+                    return
+                end
+                
+                local stmt, err = db:prepare("SELECT target FROM domains WHERE domain = ?")
+                if not stmt then
+                    ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+                    ngx.say(cjson.encode({
+                        success = false,
+                        error = "Failed to prepare SQL statement"
+                    }))
+                    db:close()
+                    return
+                end
+                
+                local res, err = stmt:bind_values(domain)
+                if not res then
+                    ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+                    ngx.say(cjson.encode({
+                        success = false,
+                        error = "Failed to bind values to SQL statement"
+                    }))
+                    stmt:finalize()
+                    db:close()
+                    return
+                end
+                
+                res = stmt:step()
+                if res == sqlite.ROW then
+                    local target = stmt:get_value(0)
+                    stmt:finalize()
+                    db:close()
+                    
+                    ngx.say(cjson.encode({
+                        success = true,
+                        target = target
+                    }))
+                else
+                    stmt:finalize()
+                    db:close()
+                    
+                    ngx.say(cjson.encode({
+                        success = false,
+                        target = ngx.null,
+                        message = "Domain target not found"
+                    }))
+                end
+            }
+        }
+
         location / {
             # Lua block to handle dynamic content
             content_by_lua_block {
@@ -378,12 +455,12 @@ http {
         # Error page redirection
         error_page 500 /500.html;
         location = /500.html {
-            root /opt/.get/html;
+            root ${xConfig}/html;
         }
 
         error_page 502 /502.html;
         location = /502.html {
-            root /opt/.get/html;
+            root ${xConfig}/html;
         }
     }
 }`;

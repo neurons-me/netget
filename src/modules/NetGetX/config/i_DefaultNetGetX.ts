@@ -8,7 +8,7 @@ import { initializeState } from '../xState.ts';
 import type { XStateData } from '../xState.ts';
 import { getLocalIP, getPublicIP } from '../../utils/ipUtils.ts';
 import { pathExists } from '../../utils/pathUtils.ts';
-import { initializeDirectories, getDirectoryPaths } from '../../utils/GETDirs.ts';
+import { initializeDirectories, getDirectoryPaths, getFilesExistence } from '../../utils/GETDirs.ts';
 import type { DirectoryPaths } from '../../utils/GETDirs.ts';
 import { checkSelfSignedCertificates, generateSelfSignedCert } from '../Domains/SSL/selfSignedCertificates.ts';
 import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localHosts.ts';
@@ -27,6 +27,7 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
     try {
         await initializeDirectories(); // Initialize all necessary directories
         let DEFAULT_DIRECTORIES: DirectoryPaths = getDirectoryPaths(); // Get paths to .get default directories
+        let FILE_PATHS = getFilesExistence(); // Get paths to important files
         let xConfig: XConfig = await loadOrCreateXConfig();
 
         // Save the operating system name in xConfig
@@ -148,6 +149,26 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
                     xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
                 } else {
                     console.log(`Default devStatic does not exist: ${getDefaultDevStatic}, not updating configuration.`);
+                }
+            }
+
+            if (!xConfig.htmlPath) {
+                const getDefaultHtmlPath: string = DEFAULT_DIRECTORIES.html;
+                if (pathExists(getDefaultHtmlPath)) {
+                    await saveXConfig({ htmlPath: getDefaultHtmlPath });
+                    xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+                } else {
+                    console.log(`Default htmlPath does not exist: ${getDefaultHtmlPath}, not updating configuration.`);
+                }
+            }
+
+            if (!xConfig.netgetXhtmlGatewayPath) {
+                const getDefaultHtmlGatewayPath: string = FILE_PATHS.netgetXhtmlGatewayPath;
+                if (pathExists(getDefaultHtmlGatewayPath)) {
+                    await saveXConfig({ netgetXhtmlGatewayPath: getDefaultHtmlGatewayPath });
+                    xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+                } else {
+                    console.log(`Default netgetXhtmlGatewayPath does not exist: ${getDefaultHtmlGatewayPath}, not updating configuration.`);
                 }
             }
         } catch (pathError: any) {

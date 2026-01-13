@@ -1,10 +1,23 @@
 -- lua/middleware/jwt_cookie.lua
 -- Middleware: verify JWT stored in cookie 'token'
 -- Requires: lua-resty-jwt, lua-resty-cookie
+-- Note: JWT verification is skipped for HTTP (local development), only enforced for HTTPS
 local jwt = require("resty.jwt")
 local cookie = require("resty.cookie")
 local cjson = require("cjson")
 
+-- Check if connection is HTTPS
+local scheme = ngx.var.scheme or "http"
+local is_https = (scheme == "https")
+
+-- Skip JWT verification for HTTP (local development on local.netget)
+if not is_https then
+  ngx.log(ngx.INFO, "Skipping JWT verification for HTTP connection (local development)")
+  ngx.ctx.user_claims = { username = "local_dev", local = true }
+  return
+end
+
+-- For HTTPS, enforce JWT verification
 local JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET or JWT_SECRET == '' then
   ngx.log(ngx.ERR, 'JWT_SECRET env variable missing')

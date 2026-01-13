@@ -5,7 +5,13 @@ local ck = require "resty.cookie"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "dev_secret"
 local function getNetgetDataDir()
-  return os.getenv("NETGET_DATA_DIR")
+  -- Prefer env, fallback to nginx var, finally default to ~/.get
+  local env_dir = os.getenv("NETGET_DATA_DIR")
+  if env_dir and env_dir ~= "" then return env_dir end
+  if ngx and ngx.var and ngx.var.NETGET_DATA_DIR and ngx.var.NETGET_DATA_DIR ~= "" then
+    return ngx.var.NETGET_DATA_DIR
+  end
+  return os.getenv("HOME") .. "/.get"
 end
 
 local netgetDir = getNetgetDataDir()
@@ -16,6 +22,14 @@ local function set_json()
 end
 
 local function auth_required()
+  -- Skip auth for HTTP (local development)
+  local scheme = ngx.var.scheme or "http"
+  if scheme ~= "https" then
+    ngx.log(ngx.INFO, "Skipping auth for HTTP connection in domains.lua")
+    return true
+  end
+  
+  -- For HTTPS, require JWT token
   local cookie = ck:new()
   local token = cookie:get("token")
   if not token then return false end
@@ -52,14 +66,36 @@ local function list_domains()
   local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains";
   local out = exec_sql(sql)
   if not out or out == "" then out = "[]" end
-  ngx.say(out)
+  -- Parse and wrap in named object
+  local domains = cjson.decode(out) or {}
+  ngx.say(cjson.encode({ domains = domains }))
 end
 
 local function list_subdomains(parent)
   local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains WHERE subdomain = ? AND domain != ?";
   local out = exec_sql(sql, { parent, parent })
   if not out or out == "" then out = "[]" end
-  ngx.say(out)
+  -- Parse and wrap in named object
+  local subdomains = cjson.decode(out) or {}
+  ngx.say(cjson.encode({ subdomains = subdomains }))
+end
+
+local function get_domain_target(domain)
+  if not domain or domain == "" then
+    ngx.status = 400
+    ngx.say(cjson.encode({ error = "Missing domain" }))
+    return
+  end
+  local sql = "SELECT target FROM domains WHERE domain = ? LIMIT 1";
+  local out = exec_sql(sql, { domain })
+  if not out or out == "" or out == "[]" then
+    ngx.status = 404
+    ngx.say(cjson.encode({ error = "Domain not found" }))
+    return
+  end
+  local decoded = cjson.decode(out)
+  local target = decoded and decoded[1] and decoded[1].target or nil
+  ngx.say(cjson.encode({ domain = domain, target = target }))
 end
 
 local function add_domain()
@@ -125,11 +161,18 @@ if not auth_required() then
 end
 if action == "list_domains" then
   return list_domains()
+
 elseif action == "list_subdomains" then
-  local parent = ngx.var.parent_domain or ""
+  local parent = ngx.var.requested_domain or ""
   return list_subdomains(parent)
+
+elseif action == "get_domain_target" then
+  local domain = ngx.var.requested_domain or ""
+  return get_domain_target(domain)
+
 elseif action == "add_domain" then
   return add_domain()
+
 elseif action == "update_domain" then
   return update_domain()
 else

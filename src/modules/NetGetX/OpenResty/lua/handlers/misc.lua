@@ -3,7 +3,18 @@ local jwt = require "resty.jwt"
 local ck = require "resty.cookie"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "dev_secret"
-local USE_HTTPS = (os.getenv("USE_HTTPS") or "false"):lower() == "true"
+local function getNetgetDataDir()
+  -- Prefer env, fallback to nginx var, finally default to ~/.get
+  local env_dir = os.getenv("NETGET_DATA_DIR")
+  if env_dir and env_dir ~= "" then return env_dir end
+  if ngx and ngx.var and ngx.var.NETGET_DATA_DIR and ngx.var.NETGET_DATA_DIR ~= "" then
+    return ngx.var.NETGET_DATA_DIR
+  end
+  return os.getenv("HOME") .. "/.get"
+end
+
+local netgetDir = getNetgetDataDir()
+local sqliteDatabasePath = netgetDir .. "/domains.db"
 
 local function set_json()
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
@@ -26,7 +37,7 @@ local function healthcheck()
     status = "ok",
     timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
     service = "NetGet Instance",
-    version = "1.0.0"
+    version = "2.56"
   }))
 end
 

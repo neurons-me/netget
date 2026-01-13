@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Netget Error Landing Page</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        font-family: "Roboto", sans-serif;
+      }
+
+      @keyframes gradient {
+        0% {
+          background-position: 0% 50%;
+        }
+        50% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+
+      .container {
+        min-height: 100vh;
+        background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+        color: #333;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+        padding: 48px 16px;
+      }
+
+      .title {
+        font-size: 32px;
+        font-weight: 700;
+        text-align: center;
+        color: #fff;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .paper {
+        width: 100%;
+        max-width: 860px;
+        padding: 32px;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16);
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .status-section {
+        text-align: center;
+      }
+
+      .status-label {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: #333;
+      }
+
+      .status-code {
+        font-size: 48px;
+        font-weight: 800;
+        color: #1976d2;
+        margin-bottom: 8px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        align-items: stretch;
+        justify-items: stretch;
+      }
+
+      @media (min-width: 600px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      .card {
+        padding: 24px;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+        border: 1px solid #e0e0e0;
+        background: #fafafa;
+      }
+
+      .card-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #333;
+      }
+
+      .card-status {
+        font-size: 14px;
+        opacity: 0.8;
+        font-weight: 600;
+        color: #666;
+      }
+
+      .card-text {
+        font-size: 14px;
+        opacity: 0.8;
+        color: #666;
+        line-height: 1.5;
+      }
+
+      .button {
+        margin-top: 8px;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .button-primary {
+        background-color: #1976d2;
+        color: #fff;
+      }
+
+      .button-primary:hover {
+        background-color: #1565c0;
+      }
+
+      .button-outlined {
+        background-color: transparent;
+        color: #1976d2;
+        border: 1px solid #1976d2;
+      }
+
+      .button-outlined:hover {
+        background-color: rgba(25, 118, 210, 0.04);
+      }
+
+      .status-success {
+        color: #2e7d32;
+      }
+
+      .status-failed {
+        color: #c62828;
+      }
+
+      @media (max-width: 600px) {
+        .paper {
+          padding: 24px;
+        }
+
+        .title {
+          font-size: 24px;
+        }
+
+        .status-code {
+          font-size: 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="title">Netget Error landing page</div>
+
+      <div class="paper">
+        <div class="status-section">
+          <div class="status-label">Status Code</div>
+          <div class="status-code" id="statusCode">500</div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="card-title">Redirection Status</div>
+            <div class="card-status status-failed">✗ Failed</div>
+            <div class="card-text">Your request could not be completed.</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Netget Credentials</div>
+            <div class="card-text">
+              Here you can login to your Netget account to manage your settings.
+            </div>
+            <button class="button button-outlined">Login</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ======== SCRIPTS ======== -->
+    <script>
+      // Get actual HTTP status from Performance API (if available)
+      (function() {
+        try {
+          const perfEntries = performance.getEntriesByType("navigation");
+          if (perfEntries && perfEntries[0] && perfEntries[0].responseStatus) {
+            document.getElementById('statusCode').textContent = perfEntries[0].responseStatus;
+          }
+        } catch (e) {
+          // Fallback: status already set to 500
+          console.log('Could not get response status from Performance API');
+        }
+      })();
+
+      async function getDomainTarget(domain) {
+        try {
+          const response = await fetch(`/domains/${domain}/target`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.target) {
+              return data.target;
+            } else {
+              return null;
+            }
+          } else {
+            throw new Error("Failed to retrieve domain target");
+          }
+        } catch (error) {
+          console.error("Error obtaining domain target:", error);
+          return null;
+        }
+      }
+    </script>
+  </body>
+</html>

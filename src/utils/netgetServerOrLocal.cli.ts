@@ -2,8 +2,8 @@ import { promises as fsPromises, constants } from 'fs';
 import { join } from 'path';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import NetGetMainMenu from './src/modules/netget_MainMenu.cli.ts';
-import { getNetgetDataDir } from './src/utils/netgetPaths.js';
+import NetGetMainMenu from '../modules/netget_MainMenu.cli.ts';
+import { getNetgetDataDir } from './netgetPaths.js';
 
 interface Server {
     id: number;

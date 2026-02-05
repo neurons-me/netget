@@ -5,7 +5,7 @@ import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
 import { NetGetSync } from './modules/NetGet-Deploy/lib/netgetSync.ts';
-import { mainMenu } from '../netgetServerOrLocal.cli.ts';
+import { mainMenu } from './utils/netgetServerOrLocal.cli.ts';
 
 const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const defaultDeployConfigPath = path.join(homeDir, '.this', 'me', 'deploy.config.json');

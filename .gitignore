@@ -23,10 +23,6 @@ yarn.lock
 # OS generated files
 .DS_Store
 
-# Build output
-frontend*
-backend*
-
 # Local environment files
 *.local
 .env

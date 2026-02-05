@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
-import { NetGetSync } from './modules/NetGet_deploy/lib/netgetSync.ts';
+import { NetGetSync } from './modules/NetGet-Deploy/lib/netgetSync.ts';
 import { mainMenu } from '../netgetServerOrLocal.cli.ts';
 
 const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();

@@ -39,9 +39,7 @@ import {
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import NetGetAppBar from '../components/AppBar/NetGetAppBar.jsx';
 import Footer from '../components/Footer/Footer.jsx';
-
 const domains_route = "http://local.netget";
-
 const DomainDetail = () => {
     const navigate = useNavigate();
     const { domainName } = useParams();

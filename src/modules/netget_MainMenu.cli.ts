@@ -6,7 +6,7 @@ import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.ts';
 import NetGetX_CLI from './NetGetX/NetGetX.cli.ts';
 import { Srvrs_CLI } from './Srvrs/srvrs.cli.ts';
 import { PortManagement_CLI } from './PortManagement/portManagement.cli.ts';
-import netGetXDeployMenu from './NetGet_deploy/NetGetX_DeployMenu.cli.ts';
+import netGetXDeployMenu from './NetGet-Deploy/NetGetX_DeployMenu.cli.ts';
 import type { XStateData } from './NetGetX/xState.ts';
 
 // Inquirer Choice Interface

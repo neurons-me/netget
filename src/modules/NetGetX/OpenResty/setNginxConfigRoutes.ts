@@ -154,6 +154,7 @@ server {
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
+        
     location ~ ^/domains/([^/]+)/subdomains$ {
         if ($request_method = OPTIONS) { return 204; }
         set $parent_domain $1;

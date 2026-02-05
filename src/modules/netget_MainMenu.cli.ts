@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import { spawn } from 'child_process';
 import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.ts';
 import NetGetX_CLI from './NetGetX/NetGetX.cli.ts';
-import { Srvrs_CLI } from './Srvrs/srvrs.cli.ts';
 import { PortManagement_CLI } from './PortManagement/portManagement.cli.ts';
 import netGetXDeployMenu from './NetGet-Deploy/NetGetX_DeployMenu.cli.ts';
 import type { XStateData } from './NetGetX/xState.ts';
@@ -21,9 +20,7 @@ interface MenuChoice {
 type MenuAction = 
     | 'NetGetX' 
     | 'NetGet Deploy' 
-    | 'Port Management' 
-    | 'Srvrs - (Port Services)' 
-    | 'Statics - (Static files)' 
+    | 'Port Management'
     | 'Exit';
 
 // Menu Answers Interface
@@ -90,7 +87,7 @@ export default async function NetGetMainMenu(): Promise<void> {
         ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
             v2.6.51`);
         console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
-        
+        console.log('Dashboard: ' + chalk.green('http://local.netget'));
         // Build the menu choices dynamically depending on global/local mode
         const baseChoices: Array<string | any> = [
             'NetGetX',
@@ -106,9 +103,7 @@ export default async function NetGetMainMenu(): Promise<void> {
         // Add some common items
         baseChoices.push(
             'Port Management',
-            new inquirer.Separator(),
-            'Srvrs - (Port Services)',
-            'Statics - (Static files)'
+            new inquirer.Separator()
         );
 
         baseChoices.push(new inquirer.Separator(), 'Exit', new inquirer.Separator());
@@ -143,19 +138,6 @@ export default async function NetGetMainMenu(): Promise<void> {
 
             case 'Port Management':
                 await PortManagement_CLI();
-                break;
-
-            case 'Srvrs - (Port Services)':
-                /*
-                Role: Manages and adds backend services listening on specific ports.
-                */
-                await Srvrs_CLI();
-                break;
-
-            case 'Statics - (Static files)':
-                console.log(chalk.yellow('Still in development...'));
-                // Call Gets functionality here
-                await NetGetMainMenu();
                 break;
 
             case 'Exit':

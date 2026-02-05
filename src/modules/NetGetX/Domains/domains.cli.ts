@@ -9,7 +9,7 @@ import path from 'path';
 
 const xConfig = getNetgetDataDir();
 const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
-console.log(chalk.gray(`Using SQLite DB at: ${sqliteDatabasePath}`));
+// console.log(chalk.gray(`Using SQLite DB at: ${sqliteDatabasePath}`));
 
 // Interface for domain row from database
 interface DomainRow {

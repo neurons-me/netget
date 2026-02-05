@@ -7,7 +7,6 @@ import type { XStateData } from './xState.ts';
 import NetGetMainMenu from '../netget_MainMenu.cli.ts';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.ts';
 import domainsMenu from './Domains/domains.cli.ts';
-import LocalNetgetCLI from '../local.netget/LocalNetget.cli.ts';
 import openRestyInstallationOptions from './OpenResty/openRestyInstallationOptions.cli.ts';
 
 interface MenuAnswers {
@@ -46,12 +45,9 @@ export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
         
         const menuChoices: any[] = [
             '1. Domains and Certificates (Manage domains and SSL certificates)',
-            mainServerSet
-                ? '2. Local.Netget (Start Local Dev Server)'
-                : { name: chalk.gray('2. Local.Netget (Set Main Server First)'), disabled: 'Main server not set' },
-            '3. Settings',
-            '4. OpenResty (Install/Include netget_app.conf)',
-            '5. Back to Main Menu',
+            '2. Settings',
+            '3. OpenResty (Install/Include netget_app.conf)',
+            '4. Back to Main Menu',
             '0. Exit'
         ];
         
@@ -68,24 +64,15 @@ export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
                 await domainsMenu();
                 break;
 
-            case '2. Local.Netget (Start Local Dev Server)':
-                if (!mainServerSet) {
-                    console.log(chalk.red('You must set the main server before starting Local.Netget. Go to Settings > Edit Main Server Name.'));
-                    break;
-                }
-                console.clear();
-                await LocalNetgetCLI();
-                break;
-
-            case '3. Settings':
+            case '2. Settings':
                 console.clear();
                 await netGetXSettingsMenu(x);
                 break;
-            case '4. OpenResty (Install/Include netget_app.conf)':
+            case '3. OpenResty (Install/Include netget_app.conf)':
                 console.clear();
                 await openRestyInstallationOptions();
                 break;
-            case '5. Back to Main Menu':
+            case '4. Back to Main Menu':
                 console.log(chalk.blue('Returning to the main menu...'));
                 await NetGetMainMenu();
                 break;

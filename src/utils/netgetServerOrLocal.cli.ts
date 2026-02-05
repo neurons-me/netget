@@ -4,6 +4,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import NetGetMainMenu from '../modules/netget_MainMenu.cli.ts';
 import { getNetgetDataDir } from './netgetPaths.js';
+import open from 'open';
 
 interface Server {
     id: number;
@@ -14,7 +15,7 @@ interface Server {
 }
 const DATA_DIR = getNetgetDataDir();
 const SERVERS_FILE = join(DATA_DIR, 'servers.json');
-console.log(chalk.gray('Data directory:', DATA_DIR));
+// console.log(chalk.gray('Data directory:', DATA_DIR));
 
 async function ensureDataFile(): Promise<void> {
     try {
@@ -79,16 +80,18 @@ async function listServersFlow(): Promise<void> {
     console.log('');
 }
 
-type NetworkChoice = 'add' | 'list' | 'back';
+type RemoteChoice = 'add' | 'list' | 'back' | 'netget-site';
 
-async function networkMenu(): Promise<void> {
+async function remoteMenu(): Promise<void> {
     while (true) {
-        const { networkChoice } = await inquirer.prompt<{ networkChoice: NetworkChoice }>([
+        const { remoteChoice } = await inquirer.prompt<{ remoteChoice: RemoteChoice }>([
             {
-                name: 'networkChoice',
+                name: 'remoteChoice',
                 type: 'list',
-                message: 'Network - choose an option:',
+                message: 'Remote - choose an option:',
                 choices: [
+                    { name: 'Netget Site', value: 'netget-site' },
+                    new inquirer.Separator(),
                     { name: 'Add Server', value: 'add' },
                     { name: 'List Servers', value: 'list' },
                     { name: 'Back', value: 'back' }
@@ -96,10 +99,12 @@ async function networkMenu(): Promise<void> {
             }
         ]);
 
-        if (networkChoice === 'add') {
+        if (remoteChoice === 'add') {
             await addServerFlow();
-        } else if (networkChoice === 'list') {
+        } else if (remoteChoice === 'list') {
             await listServersFlow();
+        } else if (remoteChoice === 'netget-site') {
+            //TODO: NetgetSite in DB integration
         } else {
             return;
         }
@@ -112,21 +117,21 @@ export async function mainMenu(): Promise<void> {
     await ensureDataFile();
 
     while (true) {
-        const { entry } = await inquirer.prompt<{ entry: 'network' | 'local' | 'exit' }>([
+        const { entry } = await inquirer.prompt<{ entry: 'remote' | 'local' | 'exit' }>([
             {
                 name: 'entry',
                 type: 'list',
                 message: 'Select an option:',
                 choices: [
-                    { name: 'Network', value: 'network' },
-                    { name: 'Local', value: 'local' },
+                    { name: '🛰  .Get Remote', value: 'remote' },
+                    { name: '📍 .Get Local', value: 'local' },
                     { name: 'Exit', value: 'exit' }
                 ]
             }
         ]);
 
-        if (entry === 'network') {
-            await networkMenu();
+        if (entry === 'remote') {
+            await remoteMenu();
         } else if (entry === 'local') {
             await NetGetMainMenu();
         } else {

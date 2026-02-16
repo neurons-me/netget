@@ -55,9 +55,18 @@ http {
     access_log /usr/local/openresty/nginx/logs/access.log;
     
     server {
-        listen 80;
-        listen [::]:80;
+        listen 80 default_server;
+        listen [::]:80 default_server;
         server_name _;
+
+        root ${xConfig}/html;
+
+        # Redirect all error codes to NetgetErrorCodeHandler.html
+        error_page 400 401 402 403 404 405 406 407 408 409 410 411 412 413 414 415 416 417 418 421 422 423 424 425 426 428 429 431 451 500 501 502 503 504 505 506 507 508 510 511 /NetgetErrorCodeHandler.html;
+        location = /NetgetErrorCodeHandler.html {
+            root ${xConfig}/html;
+            internal;
+        }
     }
 
     server {
@@ -86,7 +95,7 @@ http {
 
 
             if not host then
-                ngx.log(ngx.ERR, "Host is nil")
+                -- ngx.log(ngx.ERR, "Host is nil")
                 return ngx.exit(ngx.HTTP_BAD_REQUEST)
             end
         }
@@ -97,30 +106,30 @@ http {
 
             local ok, err = ssl.clear_certs()
                 if not ok then
-                    ngx.log(ngx.ERR, "failed to clear existing (fallback) certificates")
+                    -- ngx.log(ngx.ERR, "failed to clear existing (fallback) certificates")
                     return ngx.exit(ngx.ERROR)
                 end
 
             -- Get the requested SNI (Server Name Indication)
             local host, err = ssl.server_name()
             if not host then
-                ngx.log(ngx.ERR, "Failed to retrieve SNI: ", err)
+                -- ngx.log(ngx.ERR, "Failed to retrieve SNI: ", err)
                 return ngx.exit(ngx.HTTP_BAD_REQUEST)
             end
 
-            ngx.log(ngx.ERR, "Requested host: ", host)
+            -- ngx.log(ngx.ERR, "Requested host: ", host)
 
             -- Open the SQLite database
             local db, err = sqlite.open("${sqliteDatabasePath}")
             if not db then
-                ngx.log(ngx.ERR, "Failed to open SQLite database: ", err)
+                -- ngx.log(ngx.ERR, "Failed to open SQLite database: ", err)
                 return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
             end
 
             -- Prepare SQL query to find SSL certificate file paths
             local stmt, err = db:prepare("SELECT sslCertificate, sslCertificateKey FROM domains WHERE domain = ?")
             if not stmt then
-                ngx.log(ngx.ERR, "Failed to prepare SQL statement: ", err)
+                -- ngx.log(ngx.ERR, "Failed to prepare SQL statement: ", err)
                 db:close()
                 return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
             end
@@ -128,7 +137,7 @@ http {
             -- Bind the requested host to the query
             local res, err = stmt:bind_values(host)
             if not res then
-                ngx.log(ngx.ERR, "Failed to bind values to SQL statement: ", err)
+                -- ngx.log(ngx.ERR, "Failed to bind values to SQL statement: ", err)
                 stmt:finalize()
                 db:close()
                 return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
@@ -142,13 +151,13 @@ http {
                 cert_path = stmt:get_value(0)
                 key_path = stmt:get_value(1)
             else
-                ngx.log(ngx.ERR, "No exact match for host: ", host, ", trying wildcard domain")
+                -- ngx.log(ngx.ERR, "No exact match for host: ", host, ", trying wildcard domain")
                 stmt:finalize()
 
                 -- Prepare a new query for wildcard domain
                 stmt, err = db:prepare("SELECT sslCertificate, sslCertificateKey FROM domains WHERE domain = ?")
                 if not stmt then
-                    ngx.log(ngx.ERR, "Failed to prepare SQL statement for wildcard domain: ", err)
+                    -- ngx.log(ngx.ERR, "Failed to prepare SQL statement for wildcard domain: ", err)
                     db:close()
                     return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
                 end
@@ -157,7 +166,7 @@ http {
                 local wildcard_domain = "*." .. host:match("[^.]+%.(.+)")
                 res, err = stmt:bind_values(wildcard_domain)
                 if not res then
-                    ngx.log(ngx.ERR, "Failed to bind values to SQL statement for wildcard domain: ", err)
+                    -- ngx.log(ngx.ERR, "Failed to bind values to SQL statement for wildcard domain: ", err)
                     stmt:finalize()
                     db:close()
                     return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
@@ -169,7 +178,7 @@ http {
                     cert_path = stmt:get_value(0)
                     key_path = stmt:get_value(1)
                 else
-                    ngx.log(ngx.ERR, "Wildcard domain not configured: ", wildcard_domain)
+                    -- ngx.log(ngx.ERR, "Wildcard domain not configured: ", wildcard_domain)
                 stmt:finalize()
                 db:close()
                 return ngx.exit(ngx.HTTP_NOT_FOUND)
@@ -180,7 +189,7 @@ http {
             db:close()
 
             if not cert_path or not key_path then
-                ngx.log(ngx.ERR, "SSL configuration missing for domain: ", host)
+                -- ngx.log(ngx.ERR, "SSL configuration missing for domain: ", host)
                 return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
             end
 
@@ -188,7 +197,7 @@ http {
             local my_load_certificate_chain = function(cert_path)
                 local file, err = io.open(cert_path, "r")
                 if not file then
-                    ngx.log(ngx.ERR, "Failed to open certificate file: ", err)
+                    -- ngx.log(ngx.ERR, "Failed to open certificate file: ", err)
                     return nil
                 end
 
@@ -201,7 +210,7 @@ http {
             local my_load_private_key = function(key_path)
                 local file, err = io.open(key_path, "r")
                 if not file then
-                    ngx.log(ngx.ERR, "Failed to open private key file: ", err)
+                    -- ngx.log(ngx.ERR, "Failed to open private key file: ", err)
                     return nil
                 end
 
@@ -215,13 +224,13 @@ http {
 
             local der_cert_chain, err = ssl.cert_pem_to_der(pem_cert_chain)
             if not der_cert_chain then
-                ngx.log(ngx.ERR, "Failed to convert certificate chain to DER: ", err)
+                -- ngx.log(ngx.ERR, "Failed to convert certificate chain to DER: ", err)
                 return ngx.exit(ngx.ERROR)
             end
 
             local ok, err = ssl.set_der_cert(der_cert_chain)
             if not ok then
-                ngx.log(ngx.ERR, "Failed to set DER certificate: ", err)
+                -- ngx.log(ngx.ERR, "Failed to set DER certificate: ", err)
                 return ngx.exit(ngx.ERROR)
             end
 
@@ -229,13 +238,13 @@ http {
 
             local der_pkey, err = ssl.priv_key_pem_to_der(pem_pkey)
             if not der_pkey then
-                ngx.log(ngx.ERR, "Failed to convert private key to DER: ", err)
+                -- ngx.log(ngx.ERR, "Failed to convert private key to DER: ", err)
                 return ngx.exit(ngx.ERROR)
             end
 
             local ok, err = ssl.set_der_priv_key(der_pkey)
             if not ok then
-                ngx.log(ngx.ERR, "Failed to set DER private key: ", err)
+                -- ngx.log(ngx.ERR, "Failed to set DER private key: ", err)
                 return ngx.exit(ngx.ERROR)
             end
 
@@ -351,9 +360,9 @@ http {
                 res = stmt:step()
                 if res == sqlite.ROW then
                     type = stmt:get_value(0)
-                    ngx.log(ngx.ERR, "Type: ", type)
+                    -- ngx.log(ngx.ERR, "Type: ", type)
                     target = stmt:get_value(1)
-                    ngx.log(ngx.ERR, "Target: ", target)
+                    -- ngx.log(ngx.ERR, "Target: ", target)
 
                     stmt:finalize()
                     db:close()

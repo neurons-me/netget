@@ -163,7 +163,7 @@ if action == "list_domains" then
   return list_domains()
 
 elseif action == "list_subdomains" then
-  local parent = ngx.var.requested_domain or ""
+  local parent = ngx.var.parent_domain or ""
   return list_subdomains(parent)
 
 elseif action == "get_domain_target" then

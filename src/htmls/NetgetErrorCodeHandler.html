@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Netget Error Landing Page</title>
+    <title>Netget Conf Page</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
       rel="stylesheet"
@@ -53,6 +53,14 @@
         text-align: center;
         color: #fff;
         text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .subtitle {
+        font-size: 16px;
+        font-weight: 400;
+        text-align: center;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
       }
 
       .paper {
@@ -177,6 +185,10 @@
           font-size: 24px;
         }
 
+        .subtitle {
+          font-size: 16px;
+        }
+
         .status-code {
           font-size: 36px;
         }
@@ -185,29 +197,28 @@
   </head>
   <body>
     <div class="container">
-      <div class="title">Netget Error landing page</div>
+      <div class="title">Welcome to Netget!</div>
+      <div class="subtitle">Your domain: <span id="domainName"></span> is almost configured!</div>
 
       <div class="paper">
-        <div class="status-section">
-          <div class="status-label">Status Code</div>
-          <div class="status-code" id="statusCode">500</div>
+      <div class="status-section">
+        <div class="status-label">Status Code</div>
+        <div class="status-code" id="statusCode">500</div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+        <div class="card-title">Redirection Status</div>
+        <div class="card-status status-failed">✗ Failed</div>
+        <div class="card-text">Your request could not be completed.</div>
         </div>
 
-        <div class="grid">
-          <div class="card">
-            <div class="card-title">Redirection Status</div>
-            <div class="card-status status-failed">✗ Failed</div>
-            <div class="card-text">Your request could not be completed.</div>
-          </div>
-
-          <div class="card">
-            <div class="card-title">Netget Credentials</div>
-            <div class="card-text">
-              Here you can login to your Netget account to manage your settings.
-            </div>
-            <button class="button button-outlined">Login</button>
-          </div>
+        <div class="card">
+        <div class="card-title">Netget Credentials</div>
+        <div class="card-text">Login to manage your settings.</div>
+        <button class="button button-primary" onclick="window.location.href='https://www.netget.site'">Login</button>
         </div>
+      </div>
       </div>
     </div>
     <!-- ======== SCRIPTS ======== -->
@@ -227,7 +238,11 @@
 
       async function getDomainTarget(domain) {
         try {
-          const response = await fetch(`/domains/${domain}/target`);
+          // Determine the endpoint based on protocol
+          const isHttps = window.location.protocol === 'https:';
+          const endpoint = isHttps ? '/domain-target' : `/domains/${domain}/target`;
+          
+          const response = await fetch(endpoint);
           if (response.ok) {
             const data = await response.json();
             if (data.target) {
@@ -243,6 +258,28 @@
           return null;
         }
       }
+
+      // Initialize and fetch domain target on page load
+      (async function() {
+        const domain = window.location.hostname;
+        const target = await getDomainTarget(domain);
+        
+        const cardStatus = document.querySelector('.card-status');
+        const cardText = document.querySelector('.card-text');
+        
+        if (target) {
+          cardStatus.textContent = '✓ Found';
+          cardStatus.classList.remove('status-failed');
+          cardStatus.classList.add('status-success');
+          cardText.textContent = `Redirecting to: ${target}`;
+          // Optional: Auto-redirect after 3 seconds
+          // setTimeout(() => { window.location.href = target; }, 3000);
+        } else {
+          cardStatus.textContent = '✗ Failed';
+          cardStatus.classList.add('status-failed');
+          cardText.textContent = 'Domain target could not be found. Your request could not be completed.';
+        }
+      })();
     </script>
   </body>
 </html>

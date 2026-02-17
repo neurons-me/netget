@@ -108,7 +108,7 @@ const NetworkGrid = () => {
             color: "white",
           }}
         >
-          NetGet Networks
+          NetGet Servers
         </Typography>
         <Box>
           <IconButton

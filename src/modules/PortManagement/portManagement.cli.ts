@@ -14,6 +14,24 @@ interface PM2Process {
   [key: string]: any;
 }
 
+async function listPM2Processes(): Promise<PM2Process[]> {
+    return new Promise((resolve, reject) => {
+        pm2.connect(err => {
+            if (err) {
+                return reject(err);
+            }
+
+            pm2.list((listErr, processList) => {
+                pm2.disconnect();
+                if (listErr) {
+                    return reject(listErr);
+                }
+                resolve((processList || []) as PM2Process[]);
+            });
+        });
+    });
+}
+
 /**
  * Port Management CLI  
  * @memberof module:PortManagement
@@ -78,8 +96,7 @@ export async function PortManagement_CLI(): Promise<void> {
                             console.log(chalk.yellow(`Found process with PID ${pid} on port ${portToKill}.`));
 
                             // Check if the process is managed by PM2
-                            const { stdout: pm2List } = await execPromise(`pm2 jlist`);
-                            const pm2Processes: PM2Process[] = JSON.parse(pm2List);
+                            const pm2Processes: PM2Process[] = await listPM2Processes();
                             const pm2Process = pm2Processes.find(proc => proc.pid == Number(pid));
 
                             if (pm2Process) {

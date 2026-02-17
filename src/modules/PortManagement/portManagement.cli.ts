@@ -9,9 +9,9 @@ import NetGetMainMenu from '../netget_MainMenu.cli.ts';
 const execPromise = util.promisify(exec);
 
 interface PM2Process {
-  name: string;
-  pid: number;
-  [key: string]: any;
+    name: string;
+    pid: number;
+    [key: string]: any;
 }
 
 async function listPM2Processes(): Promise<PM2Process[]> {
@@ -41,7 +41,12 @@ export async function PortManagement_CLI(): Promise<void> {
     console.clear();
     console.log(chalk.green('Port Management Menu'));
 
-    const actions = ['What\'s On Port?', 'Kill Process On Port', 'Go Back'];
+    const actions = [
+        'What\'s On Port?',
+        'Kill Process On Port',
+        'List all Processes',
+        'Go Back'
+    ];
     const { action } = await inquirer.prompt({
         type: 'list',
         name: 'action',
@@ -50,7 +55,7 @@ export async function PortManagement_CLI(): Promise<void> {
     });
 
     switch (action) {
-    
+
         case 'What\'s On Port?':
             const { portToCheck } = await inquirer.prompt({
                 type: 'input',
@@ -120,6 +125,26 @@ export async function PortManagement_CLI(): Promise<void> {
                 }
             } catch (error) {
                 console.error(chalk.red('Error fetching port details or killing processes:'), error);
+            }
+            break;
+
+        case 'List all Processes':
+            try {
+                listPM2Processes().then(processes => {
+                    if (processes.length === 0) {
+                        console.log(chalk.yellow('No PM2 processes found.'));
+                    } else {
+                        console.log(chalk.green('PM2 Processes:'));
+                        processes.forEach(proc => {
+                            console.log(`- Name: ${proc.name}, PID: ${proc.pid}`);
+                        });
+                    }
+                }).catch(err => {
+                    console.error(chalk.red('Error listing PM2 processes:'), err);
+                });
+            }
+            catch (error) {
+                console.error(chalk.red('Error listing PM2 processes:'), error);
             }
             break;
 

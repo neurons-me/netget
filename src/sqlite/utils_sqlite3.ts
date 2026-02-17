@@ -1,7 +1,5 @@
 
 import sqlite3 from 'sqlite3';
-import { open, Database } from 'sqlite';
-const { Database: SQLiteDatabase } = sqlite3;
 import * as path from 'path';
 import * as fs from 'fs';
 import { handlePermission } from '../modules/utils/handlePermissions.ts';
@@ -15,6 +13,62 @@ await initializeDirectories();
 const xConfig = getNetgetDataDir();
 
 const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
+
+/**
+ * Promisified database wrapper for sqlite3
+ */
+class Database {
+    private db: sqlite3.Database;
+
+    constructor(filename: string) {
+        this.db = new sqlite3.Database(filename);
+    }
+
+    exec(sql: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.db.exec(sql, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    }
+
+    run(sql: string, params: any[] = []): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.db.run(sql, params, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    }
+
+    get(sql: string, params: any[] = []): Promise<any> {
+        return new Promise((resolve, reject) => {
+            this.db.get(sql, params, (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+    }
+
+    all(sql: string, params: any[] = []): Promise<any[]> {
+        return new Promise((resolve, reject) => {
+            this.db.all(sql, params, (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows || []);
+            });
+        });
+    }
+
+    close(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.db.close((err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    }
+}
 
 interface DomainRecord {
     domain: string;
@@ -44,10 +98,7 @@ interface DomainConfigResult {
  */
 async function createTable(): Promise<void> {
     try {
-        const db = await open({
-            filename: sqliteDatabasePath,
-            driver: SQLiteDatabase
-        });
+        const db = new Database(sqliteDatabasePath);
 
         await db.exec(`
             CREATE TABLE IF NOT EXISTS domains (
@@ -79,10 +130,7 @@ async function createTable(): Promise<void> {
  */
 export async function initializeDatabase(): Promise<Database> {
     await createTable();
-    return open({
-        filename: sqliteDatabasePath,
-        driver: SQLiteDatabase
-    });
+    return new Database(sqliteDatabasePath);
 }
 
 const dbPromise = initializeDatabase();
@@ -400,15 +448,19 @@ export async function writeExistingNginxConfigs(): Promise<void> {
  * Function to get the configuration of a domain
  */
 function getConfig(domain: string): Promise<DomainConfigResult | undefined> {
-    return new Promise((resolve, reject) => {
-        const db = new SQLiteDatabase(sqliteDatabasePath);
-        db.get('SELECT domain, type, port, sslCertificate, sslCertificateKey AS target FROM domains WHERE domain = ? OR domain = ?', [domain, '*.' + domain.split('.').slice(1).join('.')], (err: Error | null, row: DomainConfigResult) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(row);
-            }
-        });
+    return new Promise(async (resolve, reject) => {
+        const db = new Database(sqliteDatabasePath);
+        try {
+            const row = await db.get(
+                'SELECT domain, type, port, sslCertificate, sslCertificateKey AS target FROM domains WHERE domain = ? OR domain = ?',
+                [domain, '*.' + domain.split('.').slice(1).join('.')]
+            );
+            await db.close();
+            resolve(row);
+        } catch (err) {
+            await db.close();
+            reject(err);
+        }
     });
 }
 
@@ -416,37 +468,33 @@ function getConfig(domain: string): Promise<DomainConfigResult | undefined> {
  * Updates the SSL certificate paths in the database for a domain.
  */
 export async function updateSSLCertificatePaths(domain: string, certPath: string, keyPath: string): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-        const db = new SQLiteDatabase(sqliteDatabasePath);
-        db.run(
+    const db = new Database(sqliteDatabasePath);
+    try {
+        await db.run(
             `UPDATE domains SET 
                 sslCertificate = ?,
                 sslCertificateKey = ?
              WHERE domain = ?`,
-            [certPath, keyPath, domain],
-            async (err: Error | null) => {
-                db.close();
-                if (err) {
-                    if (
-                        err.message?.includes('permission') ||
-                        (err as any).code === 'EACCES' ||
-                        (err as any).code === 'SQLITE_CANTOPEN' ||
-                        err.message?.includes('SQLITE_CANTOPEN')
-                    ) {
-                        await handlePermission(
-                            `update the SSL certificate paths for the domain ${domain}`,
-                            `chmod 755 ${sqliteDatabasePath}`,
-                            `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
-                        );
-                    }
-                    console.log('Error updating SSL certificate paths in database:', err.message);
-                    reject(err);
-                } else {
-                    resolve();
-                }
-            }
+            [certPath, keyPath, domain]
         );
-    });
+        await db.close();
+    } catch (err: any) {
+        await db.close();
+        if (
+            err.message?.includes('permission') ||
+            (err as any).code === 'EACCES' ||
+            (err as any).code === 'SQLITE_CANTOPEN' ||
+            err.message?.includes('SQLITE_CANTOPEN')
+        ) {
+            await handlePermission(
+                `update the SSL certificate paths for the domain ${domain}`,
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
+            );
+        }
+        console.log('Error updating SSL certificate paths in database:', err.message);
+        throw err;
+    }
 }
 
 export default { getConfig };

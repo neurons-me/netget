@@ -14,7 +14,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import { useNavigate } from "react-router-dom";
 
-const NetGetAppBar = () => {
+const NetGetAppBar = ({ onMenuClick }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef();
@@ -66,24 +66,36 @@ const NetGetAppBar = () => {
 
       return (
         <AppBar
-          position="fixed"
+          position="sticky"
           sx={{
             backgroundColor: "#333", // Dark gray
             boxShadow: "none",
             borderBottom: "1px solid #444", // Slightly lighter gray
             height: "64px",
             zIndex: 1201,
+            top: 0,
           }}
         >
           <Toolbar sx={{ display: "flex", justifyContent: "space-between", padding: "0 16px" }}>
             {/* Left Side - Menu Icon */}
-            <IconButton edge="start" aria-label="menu" sx={{ color: "#ddd" }}>
+            <IconButton edge="start" aria-label="menu" sx={{ color: "#ddd" }} onClick={onMenuClick}>
               <MenuIcon />
             </IconButton>
 
             {/* Center - App Title */}
-            <Typography variant="h6" sx={{ fontWeight: "bold", color: "#ddd" }}>
-              Local NetGet
+            <Typography 
+              variant="h6" 
+              sx={{ 
+                fontWeight: "bold", 
+                color: "#ddd",
+                cursor: "pointer",
+                "&:hover": {
+                  color: "#fff",
+                }
+              }}
+              onClick={() => navigate("/home")}
+            >
+              NetGet
             </Typography>
 
             {/* Right Side - Profile Avatar and Networks Button */}
@@ -93,7 +105,7 @@ const NetGetAppBar = () => {
                 onClick={() => navigate("/networks")}
                 sx={{ marginRight: "16px" }}
               >
-                Networks
+                Servers
               </Button>
               <IconButton onClick={handleProfileMenuOpen} color="inherit">
                 <Avatar sx={{ bgcolor: "#444" }}>

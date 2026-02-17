@@ -108,7 +108,7 @@ const NetworkGrid = () => {
             color: "white",
           }}
         >
-          NetGet Networks
+          NetGet Servers
         </Typography>
         <Box>
           <IconButton
@@ -118,13 +118,15 @@ const NetworkGrid = () => {
           >
             <AddIcon />
           </IconButton>
-          <IconButton
-            color="secondary"
-            onClick={() => navigate("/delete-network")}
-            sx={{ marginBottom: 3, marginLeft: 1 }}
-          >
-            <DeleteIcon />
-          </IconButton>
+          {Object.keys(networks).length > 0 && (
+            <IconButton
+              color="secondary"
+              onClick={() => navigate("/delete-network")}
+              sx={{ marginBottom: 3, marginLeft: 1 }}
+            >
+              <DeleteIcon />
+            </IconButton>
+          )}
         </Box>
       </Box>
       <Grid container spacing={1.5} justifyContent="center">

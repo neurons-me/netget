@@ -202,7 +202,7 @@ const NetworkHome = () => {
     return (
       <Box sx={{ p: 3 }}>
         <Typography variant="h6">Network not found</Typography>
-        <Button onClick={() => navigate("/networks")}>Back to Networks</Button>
+        <Button onClick={() => navigate("/networks")}>Back to Servers</Button>
       </Box>
     );
   }
@@ -219,7 +219,7 @@ const NetworkHome = () => {
             onClick={() => navigate("/networks")}
             sx={{ mr: 2 }}
           >
-            Back to Networks
+            Back to Servers
           </Button>
           <Card sx={{ flexGrow: 1, p: 2 }}>
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

@@ -5,8 +5,10 @@ import {
   Card,
   CardContent,
   Typography,
+  IconButton,
   Box,
 } from "@mui/material";
+import { IoArrowBack } from "react-icons/io5";
 import { useNavigate } from "react-router-dom";
 
 const AddNetwork = () => {
@@ -48,9 +50,22 @@ const AddNetwork = () => {
     <Box sx={{ display: "flex", justifyContent: "center", mt: 5 }}>
       <Card sx={{ width: 400, p: 3, boxShadow: 3, borderRadius: 2 }}>
         <CardContent>
-          <Typography variant="h5" sx={{ mb: 2, textAlign: "center" }}>
-            Add Network
-          </Typography>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+            <Typography variant="h5" sx={{ textAlign: "center", flex: 1 }}>
+              Add Server
+            </Typography>
+            <IconButton
+              onClick={() => navigate("/networks")}
+              sx={{
+                color: "#555",
+                "&:hover": {
+                  backgroundColor: "#f0f0f0",
+                }
+              }}
+            >
+              <IoArrowBack size={24} />
+            </IconButton>
+          </Box>
           <TextField
             fullWidth
             label="Network Name"

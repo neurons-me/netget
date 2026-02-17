@@ -1,4 +1,3 @@
-import React from 'react';
 import './css/styles.css';
 
 const WelcomeNetget = () => {
@@ -8,9 +7,9 @@ const WelcomeNetget = () => {
             <div className="overlay"></div>
             <div className="modal">
                 <img src="/media/neurons-grey.png" alt="neurons" width="89" />
-                <h2><strong>Local .Get</strong></h2>
+                <h2><strong>NetGet</strong></h2>
                 <div className="buttons">
-                <a href="/login" className="btn">Login</a>
+                <a href="/home" className="btn">Enter</a>
                 </div>
             </div>
         </div>

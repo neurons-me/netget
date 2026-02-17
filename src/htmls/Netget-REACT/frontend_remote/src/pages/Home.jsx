@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Box, Card, CardContent, Typography, Snackbar, IconButton } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import EditIcon from "@mui/icons-material/Edit";
-import NetGetAppBar from "../components/AppBar/NetGetAppBar.jsx";
 import Footer from "../components/Footer/Footer.jsx";
 
 let domains_route = "https://api.netget.site";
@@ -100,8 +99,7 @@ const Home = () => {
 
   return (
     <>
-      <NetGetAppBar />
-      <Box sx={{ px: 2, py: 2, mt: 8, display: "flex", justifyContent: "center" }}>
+      <Box sx={{ px: 2, py: 2, display: "flex", justifyContent: "center" }}>
         <Card sx={{ width: "90%", p: 3, boxShadow: 2, borderRadius: 2 }}>
           <Typography variant="h5" sx={{ textAlign: "center", fontWeight: "bold", mb: 3 }}>
             My Domains

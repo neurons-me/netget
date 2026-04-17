@@ -21,16 +21,14 @@
         "netget",
         "gateway",
         "networking",
-        "express-middleware",
         "dynamic-routing",
         "service-mesh",
         "api-gateway",
         "local-development",
-        "modular-network",
-        "nodejs"
+        "modular-network"
     ],
     "bugs": {
-        "url": "https://github.com/suiGn/netget/issues"
+        "url": "https://github.com/neurons-me/netget/issues"
     },
     "dependencies": {
         "archiver": "^7.0.1",

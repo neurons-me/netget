@@ -1,5 +1,4 @@
 // src/netget.ts
-
 interface NetGetConfig {
     [key: string]: any;
 }

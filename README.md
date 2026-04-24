@@ -36,7 +36,7 @@ Then use the **NetGet** to register where each domain should go:
 **NetGet** takes care of the rest: routing, encryption, and SSL renewal.
 
 ### Perfect for
-- Solo developers exposing personal projects
+- Developers exposing projects
 - Self-hosted applications
 - Building modular architectures on top of **.me** and **Cleaker**.
 - Managing multiple services on a single server
@@ -45,8 +45,8 @@ Then use the **NetGet** to register where each domain should go:
 
 ---
 
-Made with by [neurons.me](https://www.neurons.me)
+Made by [neurons.me](https://www.neurons.me)
 
-**MIT License** • Terms • Privacy
+**MIT License** 
 
 <img src="https://docs.neurons.me/neurons.me.webp" alt="neurons.me logo" width="123" height="123">

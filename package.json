@@ -3,13 +3,19 @@
     "version": "2.6.51",
     "description": "Rette Adepto/ Recibido Directamente.",
     "type": "module",
-    "main": "index.js",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
     "scripts": {
-        "start": "node index.js",
+        "start": "node --import tsx index.js",
         "test": "echo \"Error: no test specified\" && exit 1",
-        "postinstall": "node --loader ts-node/esm --no-warnings src/scripts/postInstall.ts",
         "doc": "jsdoc -c jsdoc.json",
-        "build": "tsc",
+        "build": "tsc -p tsconfig.lib.json",
         "dev": "node --loader ts-node/esm src/netget.cli.ts",
         "dev:main": "ts-node src/netget.ts",
         "type-check": "tsc --noEmit"

@@ -35,10 +35,9 @@ function ensureDirectoryExists(directory: string, desiredMode: number = 0o755): 
         checkPermissions(directory, desiredMode);
     } catch (error: any) {
         if (error.code === 'EACCES') {
-            console.error(chalk.red(`Permission denied to create or modify directory at ${directory}.`));
-            console.error(chalk.yellow(`To resolve this, you can run the following command with administrator privileges:`));
+            console.warn(chalk.yellow(`[netget] No permission to create ${directory}. Skipping (run with sudo to enable).`));
             console.info(chalk.cyan(`sudo mkdir -p ${directory} && sudo chmod ${desiredMode.toString(8)} ${directory}`));
-            throw new Error(`PermissionError: ${error.message}`);
+            return; // non-fatal: postinstall continues
         } else {
             console.error(chalk.red(`An error occurred while trying to ensure directory exists at ${directory}: ${error.message}`));
         }

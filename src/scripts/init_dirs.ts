@@ -1,5 +1,6 @@
 // netget/src/scripts/init_dirs.ts
 import * as path from 'path';
+import * as os from 'os';
 import { ensureDirectoryExists, pathExists } from './pathUtils.ts';
 
 interface DirectoryPaths {
@@ -13,7 +14,7 @@ interface InitStatus {
     [key: string]: boolean;
 }
 
-const BASE_DIR: string = path.join('/opt/','.get');
+const BASE_DIR: string = path.join(os.homedir(), '.get');
 const DIRECTORIES: DirectoryPaths = {
     getPath: BASE_DIR,
     static: path.join(BASE_DIR, 'static'),

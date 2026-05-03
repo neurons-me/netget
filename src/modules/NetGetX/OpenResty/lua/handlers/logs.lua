@@ -41,7 +41,7 @@ local function handle_logs()
   local limit = tonumber(args["limit"]) or 100
   local offset = tonumber(args["offset"]) or 0
 
-  local NGINX_LOGS_PATH = os.getenv("NGINX_LOGS_PATH") or "/usr/local/openresty/nginx/logs"
+  local NGINX_LOGS_PATH = ngx.var.netget_logs_path or os.getenv("NGINX_LOGS_PATH") or "/usr/local/openresty/nginx/logs"
   local SERVER_LOG_PATH = os.getenv("SERVER_LOG_PATH") or "./server.log"
 
   local target

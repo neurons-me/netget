@@ -10,6 +10,7 @@ import domainsMenu from './domains.cli.ts';
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
+import { isReservedLocalDomain } from './reservedDomains.ts';
 
 const xConfig = getNetgetDataDir();
 const sqliteDatabasePath: string = path.join(xConfig, 'domains.db');
@@ -31,9 +32,13 @@ interface SubdomainTableEntry {
 
 // Interface for domains table entry
 interface DomainTableEntry {
-    Domain: string;
-    Target: string;
-    Type: string;
+    domain: string;
+    email?: string;
+    sslMode?: string;
+    sslCertificate?: string;
+    sslCertificateKey?: string;
+    target: string;
+    type: string;
 }
 
 // Interface for service type answers
@@ -153,13 +158,6 @@ async function logDomainInfo(domain: string): Promise<void> {
     }
 }
 
-// Interface for domains table entry
-interface DomainTableEntry {
-    Domain: string;
-    Target: string;
-    Type: string;
-}
-
 /**
  * Displays a table of all domains
  * @memberof module:NetGetX.Domains
@@ -172,20 +170,23 @@ function domainsTable(): void {
         }
     });
 
-    db.all('SELECT domain, target, type FROM domains ORDER BY domain', [], (err: Error | null, rows: DomainTableEntry[]) => {
+    db.all('SELECT domain, email, sslMode, sslCertificate, sslCertificateKey, target, type FROM domains ORDER BY domain', [], (err: Error | null, rows: DomainTableEntry[]) => {
         if (err) {
             console.log(chalk.red('Error reading domains:'), err.message);
             db.close();
             return;
         }
-        if (rows.length === 0) {
-            console.log(chalk.yellow('No domains configured.'));
+        const visibleRows = rows.filter((row) => !isReservedLocalDomain(row.domain));
+        if (visibleRows.length === 0) {
+            console.log(chalk.yellow('No domains registered.'));
         } else {
-            console.log(chalk.blue('\nDomains Information:'));
-            console.table(rows.map(row => ({
-                Domain: row.Domain,
-                Target: row.Target,
-                Type: row.Type
+            console.log(chalk.blue('\nDomain registry:'));
+            console.table(visibleRows.map(row => ({
+                Domain: row.domain,
+                Email: row.email || '',
+                SSL: row.sslMode || '',
+                Certificate: row.sslCertificate && row.sslCertificateKey ? 'configured' : '',
+                Route: row.target && row.type ? `${row.type} -> ${row.target}` : 'inactive'
             })));
         }
         db.close();
@@ -198,76 +199,11 @@ function domainsTable(): void {
  */
 async function addNewDomain(): Promise<void> {
     while (true) {
-        const description_message =
-            'Add a new domain to your NetGetX configuration. You can choose to serve static content or forward traffic to a specific port on your server.\n' +
-            chalk.blue('Available Service Types:\n' +
-            '- Serve Static Content: Host static files (like HTML, CSS, JS, images) from a folder on your server. Great for simple websites or landing pages.\n' +
-            '- Forward Port: Forward all incoming traffic to a specific port on your server. Useful for connecting your domain to a backend service, app, or container running on a different port.\n\n') +
-            chalk.white('Select the type of service for this domain:');
-        
-        const serviceTypeAnswer: any = await inquirer.prompt([
-            {
-                type: 'list',
-                name: 'serviceType',
-                message: description_message,
-                choices: [
-                    { name: 'Serve Static Content', value: 'static' },
-                    { name: 'Forward Port', value: 'server' },
-                    { name: 'Back', value: 'back' }
-                ]
-            }
-        ]);
-
-        if (serviceTypeAnswer.serviceType === 'back') {
-            console.log(chalk.blue('Going back to the previous menu...'));
-            return;
-        }
-
-        const type: string = serviceTypeAnswer.serviceType;
-
-        let port: string = '';
-        if (serviceTypeAnswer.serviceType === 'server') {
-            const forwardPortAnswer: any = await inquirer.prompt([
-                {
-                    type: 'input',
-                    name: 'server',
-                    message: 'Enter the forward port for this domain (type /b to go back):',
-                    validate: (input: string) => {
-                        if (input === '/b') return true;
-                        return validatePort(input);
-                    }
-                }
-            ]);
-
-            if (forwardPortAnswer.server === '/b') {
-                console.log(chalk.blue('Going back to the previous menu...'));
-                return;
-            }
-
-            port = forwardPortAnswer.server;
-        } else if (serviceTypeAnswer.serviceType === 'static') {
-            const staticPathAnswer: any = await inquirer.prompt([
-                {
-                    type: 'input',
-                    name: 'staticPath',
-                    message: 'Enter the path to the static file you want to serve (type /b to go back):',
-                    validate: (input: string) => input ? true : 'Static file path is required.'
-                }
-            ]);
-
-            if (staticPathAnswer.staticPath === '/b') {
-                console.log(chalk.blue('Going back to the previous menu...'));
-                return;
-            }
-
-            port = staticPathAnswer.staticPath;
-        }
-
         const domainAnswer: any = await inquirer.prompt([
             {
                 type: 'input',
                 name: 'domain',
-                message: 'Enter the new domain (e.g., example.com or sub.example.com) (type /b to go back):',
+                message: 'Enter the domain to register (e.g., example.com or sub.example.com) (type /b to go back):',
                 validate: (input: string) => {
                     if (input === '/b') return true;
                     return validateDomain(input);
@@ -329,19 +265,19 @@ async function addNewDomain(): Promise<void> {
             return;
         }
         
-        registerDomain(
+        await registerDomain(
             domain,
             domain,  // No subdomain for the main domain
             email,
             'letsencrypt',  // Default SSL mode
             '',
             '',
-            port,
-            type,
+            '',
+            '',
             '',
             owner);
 
-        console.log(chalk.green(`Domain ${domain} added successfully.`));
+        console.log(chalk.green(`Domain ${domain} registered. It is not routed until you activate it in the Routing table.`));
         return;  // Exit the loop after successful addition
     }
 }
@@ -370,59 +306,6 @@ const addSubdomain = async (domain: string): Promise<void> => {
         if (subdomainAnswer.subdomain === '/b') {
             console.log(chalk.blue('Going back to the previous menu...'));
             return;
-        }
-
-        const serviceTypeAnswer: any = await inquirer.prompt([
-            {
-                type: 'list',
-                name: 'serviceType',
-                message: 'Select the type of service for this domain:',
-                choices: [
-                    { name: 'Serve Static Content', value: 'static' },
-                    { name: 'Forward Port', value: 'server' },
-                    { name: 'Back', value: 'back' }
-                ]
-            }
-        ]);
-
-        if (serviceTypeAnswer.serviceType === 'back') {
-            console.log(chalk.blue('Going back to the previous menu...'));
-            return;
-        }
-
-        let port: string = '';
-        if (serviceTypeAnswer.serviceType === 'server') {
-            const forwardPortAnswer: any = await inquirer.prompt([
-                {
-                    type: 'input',
-                    name: 'server',
-                    message: 'Enter the forward port for this domain (type /b to go back):',
-                    validate: (input: string) => input ? true : 'Forward port is required.'
-                }
-            ]);
-
-            if (forwardPortAnswer.server === '/b') {
-                console.log(chalk.blue('Going back to the previous menu...'));
-                return;
-            }
-
-            port = forwardPortAnswer.server;
-        } else if (serviceTypeAnswer.serviceType === 'static') {
-            const staticPathAnswer: any = await inquirer.prompt([
-                {
-                    type: 'input',
-                    name: 'staticPath',
-                    message: 'Enter the path to the static file you want to serve (type /b to go back):',
-                    validate: (input: string) => input ? true : 'Static file path is required.'
-                }
-            ]);
-
-            if (staticPathAnswer.staticPath === '/b') {
-                console.log(chalk.blue('Going back to the previous menu...'));
-                return;
-            }
-
-            port = staticPathAnswer.staticPath;
         }
 
         const ownerAnswer: any = await inquirer.prompt([
@@ -472,8 +355,8 @@ const addSubdomain = async (domain: string): Promise<void> => {
                 'letsencrypt',
                 parentDomainConfig.sslCertificate,
                 parentDomainConfig.sslCertificateKey,
-                port,
-                serviceTypeAnswer.serviceType,
+                '',
+                '',
                 '',
                 ownerAnswer.owner
             );
@@ -482,7 +365,7 @@ const addSubdomain = async (domain: string): Promise<void> => {
             return;
         }
 
-        console.log(chalk.green(`Subdomain ${subdomainAnswer.subdomain} added to domain ${domain}.`));
+        console.log(chalk.green(`Subdomain ${subdomainAnswer.subdomain} registered under ${domain}. Activate it later in the Routing table if needed.`));
     } catch (err: any) {
         console.log(chalk.red('An error occurred while adding the subdomain:'), err.message);
         return;
@@ -663,7 +546,7 @@ const editOrDeleteSubdomain = async (domain: string): Promise<void> => {
 };
 
 /**
- * Edit domain details like type and target
+ * Edit route details like type and target.
  * @memberof module:NetGetX.Domains
  * @param domain - The domain to edit
  * @returns Promise<void>
@@ -675,9 +558,9 @@ const editDomainDetails = async (domain: string): Promise<void> => {
             name: 'editOption',
             message: 'Select an option to edit:',
             choices: [
-                { name: 'Edit Type', value: 'editType' },
-                { name: 'Edit Target', value: 'editTarget' },
-                { name: 'Back to Domains Menu', value: 'back' }
+                { name: 'Edit route type', value: 'editType' },
+                { name: 'Edit route target', value: 'editTarget' },
+                { name: 'Back', value: 'back' }
             ]
         }
     ]);
@@ -760,7 +643,7 @@ const editOrDeleteDomain = async (domain: string): Promise<void> => {
             case 'editDomain':
                 console.clear();
                 await editDomainDetails(domain);
-                console.log(chalk.green(`Domain ${domain} edited successfully.`));
+                            console.log(chalk.green(`Route settings for ${domain} edited successfully.`));
                 return;
             case 'deleteDomain':
                 const confirmDelete: any = await inquirer.prompt([

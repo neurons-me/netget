@@ -2,6 +2,7 @@
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import selectedDomainMenu from './selectedDomain.cli.ts';
+import { isReservedLocalDomain } from './reservedDomains.ts';
 import { addNewDomain, advanceSettings, domainsTable } from './domainsOptions.ts';
 import sqlite3 from 'sqlite3';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
@@ -94,28 +95,30 @@ const getDomainsFromDB = (): Promise<FormattedDomain[]> => {
  */
 const domainsMenu = async (): Promise<void> => {
     try {
-        // console.clear();
-        console.log(sqliteDatabasePath);
-        console.log(chalk.blue('Domains Routed via NetGet'));
-        const dbDomains: FormattedDomain[] = await getDomainsFromDB();
+        console.clear();
+        console.log(chalk.bold('📍 .Get Local > Main Server > Domains & Certificates'));
+        console.log(chalk.gray('Domain registry: ownership, email, SSL mode, certificates, and subdomains.'));
+        console.log(chalk.gray('A domain can live here without being active in the Routing table.'));
+        console.log(chalk.gray('local.netget is the reserved Local gateway and is managed from Main Server, not here.\n'));
 
-        if (dbDomains.length === 0) {
-            console.log(chalk.yellow('No domains configured.'));
+        const dbDomains: FormattedDomain[] = await getDomainsFromDB();
+        const registeredDomains = dbDomains.filter((domain) => !isReservedLocalDomain(domain.value));
+
+        if (registeredDomains.length === 0) {
+            console.log(chalk.yellow('No domains registered.'));
             console.log(
                 chalk.yellow(
-                    'Once you have domains configured, they will appear below as a selectable list and be ready to serve.\n' +
-                    'You can then choose a domain to view or modify its settings.'
+                    'Add domains here first, then activate only the ones you want from the Routing table.'
                 )
-            );            
+            );
+            console.log('');
         }
 
         const options: Array<any> = [
-            new inquirer.Separator(),
-            ...(await getDomainsFromDB()),
-            new inquirer.Separator(),
-            { name: 'Add New Domain', value: 'addNewDomain' },
-            { name: 'View Full Table Domains', value: 'viewAllDomains' },
-            { name: 'Advance Domain Settings', value: 'advance' },
+            ...(registeredDomains.length > 0 ? [...registeredDomains, new inquirer.Separator()] : []),
+            { name: 'Add domain', value: 'addNewDomain' },
+            { name: 'View domain registry', value: 'viewAllDomains' },
+            { name: 'Advanced certificate settings', value: 'advance' },
             { name: 'Back', value: 'back' },
             { name: 'Exit', value: 'exit' }
         ];
@@ -124,7 +127,7 @@ const domainsMenu = async (): Promise<void> => {
             {
                 type: 'list',
                 name: 'action',
-                message: 'Select a domain or add a new one:',
+                message: 'Select a domain or add one:',
                 pageSize: 10,
                 choices: options
             }
@@ -152,6 +155,7 @@ const domainsMenu = async (): Promise<void> => {
                 break;
             default:
                 const domain: string = answer.action;
+                if (isReservedLocalDomain(domain)) break;
                 await selectedDomainMenu(domain);
         }
 

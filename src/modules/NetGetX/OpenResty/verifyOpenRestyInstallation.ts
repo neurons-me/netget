@@ -1,27 +1,21 @@
-import { execSync } from 'child_process';
 import chalk from 'chalk';
+import { spawnSync } from 'child_process';
+import { findOpenRestyBin, OPENRESTY_CANDIDATES } from './platformDetect.ts';
 
 /**
- * Verifies if OpenResty is installed by checking the version.
+ * Verifies if OpenResty is installed by finding a working binary.
  * @memberof module:NetGetX.OpenResty
  * @returns True if OpenResty is installed, false otherwise.
  */
 export default async function verifyOpenRestyInstallation(): Promise<boolean> {
-    try {
-        await printOpenRestyVersion();
-        return true;
-    } catch (error: any) {
-        console.error(chalk.red('OpenResty is not installed. We validate the installation by checking the version.'));
+    const bin = findOpenRestyBin();
+    if (!bin) {
+        console.error(chalk.red('OpenResty not found.'));
+        console.error(chalk.gray('Searched: ' + OPENRESTY_CANDIDATES.join(', ')));
         return false;
     }
-}
-
-/**
- * Prints the OpenResty version to the console.
- * @returns Promise that resolves when version is printed.
- */
-async function printOpenRestyVersion(): Promise<void> {
-    const openRestyCommand: string = 'openresty -v 2>&1'; // Redirect stderr to stdout
-    const version: string = execSync(openRestyCommand).toString();
-    console.log(`Open Resty version: ${chalk.blue(version)}`);
+    const r = spawnSync(bin, ['-v'], { encoding: 'utf8' });
+    const version = `${r.stdout || ''}${r.stderr || ''}`.trim();
+    console.log(`OpenResty: ${chalk.blue(version)}  ${chalk.gray(bin)}`);
+    return true;
 }

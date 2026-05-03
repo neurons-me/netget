@@ -1,5 +1,10 @@
 import path from 'path';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
+import { detectOpenRestyLayout } from './platformDetect.ts';
+import {
+  getActiveStaticRoot,
+  resolveMainServerFrontendConfig,
+} from './mainServerFrontend.ts';
 
 /**
  * Generate the content for netget_app.conf (app routes) with concrete paths.
@@ -7,10 +12,90 @@ import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
  */
 export function getNetgetAppConfContent(): string {
   const xConfig = getNetgetDataDir();
+  const layout = detectOpenRestyLayout();
+  const frontend = resolveMainServerFrontendConfig();
+  const isDevFrontend = frontend.mode === 'dev';
   // Ensure POSIX paths for nginx
-  const distRoot = path.posix.join(xConfig.replaceAll('\\', '/'), 'dist');
+  const activeStaticRoot = getActiveStaticRoot(frontend).replaceAll('\\', '/');
+  const distRoot = path.posix.normalize(activeStaticRoot);
   const sslSelfSignedCertPath: string = '/etc/ssl/certs/nginx-selfsigned.crt';
   const sslSelfSignedKeyPath: string = '/etc/ssl/private/nginx-selfsigned.key';
+  const devProxyTarget = frontend.devUrl;
+
+  const proxyHeaders = `
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;`;
+
+  const rootLocation = isDevFrontend
+    ? `
+    # Root SPA proxied to React/Vite dev server
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        proxy_pass ${devProxyTarget};
+${proxyHeaders}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+`
+    : `
+    # Root SPA served from selected Main Server UI dist
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        root ${distRoot};
+        index index.html;
+        try_files $uri $uri/ /index.html;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+`;
+
+  const viteAssetLocation = isDevFrontend
+    ? `
+    # Vite dev/HMR and static files from dev server
+    location ~* ^/(assets/|@vite|@react-refresh|src/|node_modules/|.*\\.(css|js|map|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$) {
+        if ($request_method = OPTIONS) { return 204; }
+        proxy_pass ${devProxyTarget};
+${proxyHeaders}
+        access_log off;
+    }
+`
+    : `
+    # Vite hashed assets
+    location /assets/ {
+        if ($request_method = OPTIONS) { return 204; }
+        root ${distRoot};
+        try_files $uri =404;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+        add_header 'Cache-Control' 'public, max-age=31536000, immutable';
+        expires 365d;
+    }
+
+    # Serve static assets (CSS, JS, images)
+    location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        root ${distRoot};
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
+        add_header Access-Control-Allow-Origin "*";
+        add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: http: https:;";
+        access_log off;
+    }
+`;
     
   return `
 # netget_app.conf (generated)
@@ -24,25 +109,20 @@ log_format netget_access '$remote_addr - - [$time_local] "$request" $status $bod
 server {
     listen 80;
     listen [::]:80;
-    server_name local.netget;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name local.netget localhost 127.0.0.1;
     client_max_body_size 500M;
 
-    set $NETGET_DATA_DIR ${xConfig};
-    access_log /usr/local/openresty/nginx/logs/netget_access.log netget_access;
-    error_log  /usr/local/openresty/nginx/logs/netget_error.log warn;
+    ssl_certificate     ${sslSelfSignedCertPath};
+    ssl_certificate_key ${sslSelfSignedKeyPath};
 
-    # Root SPA served from Vite dist
-    location / {
-        if ($request_method = OPTIONS) { return 204; }
-        root ${distRoot};
-        index index.html;
-        try_files $uri $uri/ /index.html;
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
-    }
+    set $NETGET_DATA_DIR ${xConfig};
+    set $netget_logs_path ${layout.logDir};
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+
+${rootLocation}
 
     # Networks API
     location /networks {
@@ -92,19 +172,7 @@ server {
         expires 30d;
     }
 
-    # Vite hashed assets
-    location /assets/ {
-        if ($request_method = OPTIONS) { return 204; }
-        root ${distRoot};
-        try_files $uri =404;
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
-        add_header 'Cache-Control' 'public, max-age=31536000, immutable';
-        expires 365d;
-    }
+${viteAssetLocation}
 
     # Auth
     location /check-auth {
@@ -138,6 +206,40 @@ server {
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # Local app registry
+    location = /apps {
+        if ($request_method = OPTIONS) { return 204; }
+        set $apps_action list;
+        content_by_lua_file lua/handlers/apps.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /apps/report {
+        if ($request_method = OPTIONS) { return 204; }
+        set $apps_action report;
+        content_by_lua_file lua/handlers/apps.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /apps/release {
+        if ($request_method = OPTIONS) { return 204; }
+        set $apps_action release;
+        content_by_lua_file lua/handlers/apps.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
@@ -233,18 +335,6 @@ server {
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # -------------------------------------------------------
-    # Serve static assets (CSS, JS, images)
-    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        root ${xConfig}/dist;
-        # Short cache for development
-        expires 1h;
-        add_header Cache-Control "public, max-age=3600";
-        add_header Access-Control-Allow-Origin "*";
-        # Allow CSP for static assets
-        add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: http: https:;";
-        access_log off;
-    }
 }
 `;
 }

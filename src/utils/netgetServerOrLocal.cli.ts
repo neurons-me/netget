@@ -2,9 +2,6 @@ import { promises as fsPromises, constants } from 'fs';
 import { join } from 'path';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import NetGetMainMenu from '../modules/netget_MainMenu.cli.ts';
-import { getNetgetDataDir } from './netgetPaths.js';
-import open from 'open';
 
 interface Server {
     id: number;
@@ -13,21 +10,25 @@ interface Server {
     port: number;
     description?: string;
 }
-const DATA_DIR = getNetgetDataDir();
-const SERVERS_FILE = join(DATA_DIR, 'servers.json');
-// console.log(chalk.gray('Data directory:', DATA_DIR));
+
+async function getServersFile(): Promise<string> {
+    const { getNetgetDataDir } = await import('./netgetPaths.js');
+    return join(getNetgetDataDir(), 'servers.json');
+}
 
 async function ensureDataFile(): Promise<void> {
+    const serversFile = await getServersFile();
     try {
-        await fsPromises.access(SERVERS_FILE, constants.F_OK);
+        await fsPromises.access(serversFile, constants.F_OK);
     } catch {
-        await fsPromises.writeFile(SERVERS_FILE, '[]', 'utf8');
+        await fsPromises.writeFile(serversFile, '[]', 'utf8');
     }
 }
 
 async function readServers(): Promise<Server[]> {
+    await ensureDataFile();
     try {
-        const raw = await fsPromises.readFile(SERVERS_FILE, 'utf8');
+        const raw = await fsPromises.readFile(await getServersFile(), 'utf8');
         return (JSON.parse(raw || '[]') as Server[]) || [];
     } catch {
         return [];
@@ -35,7 +36,8 @@ async function readServers(): Promise<Server[]> {
 }
 
 async function writeServers(list: Server[]): Promise<void> {
-    await fsPromises.writeFile(SERVERS_FILE, JSON.stringify(list, null, 2), 'utf8');
+    await ensureDataFile();
+    await fsPromises.writeFile(await getServersFile(), JSON.stringify(list, null, 2), 'utf8');
 }
 
 type AddServerAnswers = {
@@ -83,6 +85,8 @@ async function listServersFlow(): Promise<void> {
 type RemoteChoice = 'add' | 'list' | 'back' | 'netget-site';
 
 async function remoteMenu(): Promise<void> {
+    await ensureDataFile();
+
     while (true) {
         const { remoteChoice } = await inquirer.prompt<{ remoteChoice: RemoteChoice }>([
             {
@@ -114,10 +118,9 @@ async function remoteMenu(): Promise<void> {
 // Se utiliza el NetGetMainMenu real desde src/modules/netget_MainMenu.cli.ts
 
 export async function mainMenu(): Promise<void> {
-    await ensureDataFile();
-
     while (true) {
-        const { entry } = await inquirer.prompt<{ entry: 'remote' | 'local' | 'exit' }>([
+        console.clear();
+        const { entry } = await inquirer.prompt<{ entry: 'remote' | 'local' | 'ports' | 'exit' }>([
             {
                 name: 'entry',
                 type: 'list',
@@ -125,6 +128,9 @@ export async function mainMenu(): Promise<void> {
                 choices: [
                     { name: '🛰  .Get Remote', value: 'remote' },
                     { name: '📍 .Get Local', value: 'local' },
+                    new inquirer.Separator(),
+                    { name: '🔌  Port Management', value: 'ports' },
+                    new inquirer.Separator(),
                     { name: 'Exit', value: 'exit' }
                 ]
             }
@@ -133,7 +139,11 @@ export async function mainMenu(): Promise<void> {
         if (entry === 'remote') {
             await remoteMenu();
         } else if (entry === 'local') {
-            await NetGetMainMenu();
+            const { localMenu } = await import('./localEnvironment.cli.ts');
+            await localMenu();
+        } else if (entry === 'ports') {
+            const { PortManagement_CLI } = await import('../modules/PortManagement/portManagement.cli.ts');
+            await PortManagement_CLI();
         } else {
             console.log('Going out...');
             process.exit(0);

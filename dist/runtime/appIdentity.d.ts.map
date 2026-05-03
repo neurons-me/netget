@@ -1,0 +1,1 @@
+{"version":3,"file":"appIdentity.d.ts","sourceRoot":"","sources":["../../src/runtime/appIdentity.ts"],"names":[],"mappings":"AAGA,iBAAS,WAAW,CAAC,KAAK,EAAE,MAAM,GAAG,MAAM,CAS1C;AAYD,wBAAsB,kBAAkB,CAAC,SAAS,CAAC,EAAE,MAAM,GAAG,OAAO,CAAC,MAAM,CAAC,CAgB5E;AAED,OAAO,EAAE,WAAW,IAAI,gBAAgB,EAAE,CAAC"}

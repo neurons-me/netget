@@ -1,1 +1,1 @@
-export { default, default as NetGet } from './netget.js';
+export { default, netget, NetGet } from './netget.js';

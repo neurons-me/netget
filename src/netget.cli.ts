@@ -1,20 +1,46 @@
 #!/usr/bin/env node
 import { program } from 'commander';
+import { readFileSync, realpathSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
-import { NetGetSync } from './modules/NetGet-Deploy/lib/netgetSync.ts';
-import { mainMenu } from './utils/netgetServerOrLocal.cli.ts';
+import { fileURLToPath } from 'url';
 
 const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const defaultDeployConfigPath = path.join(homeDir, '.this', 'me', 'deploy.config.json');
+const cliSourcePath = fileURLToPath(import.meta.url);
+const packageRoot = path.resolve(path.dirname(cliSourcePath), '..');
+const packageJsonPath = path.join(packageRoot, 'package.json');
+const netgetSourcePath = resolveRealPath(packageRoot);
+const netgetVersion = readPackageVersion();
 
 // Debugging hook: set NETGET_DEBUG=1 to print argv and early state
 const DEBUG = !!process.env.NETGET_DEBUG;
 if (DEBUG) {
   // eslint-disable-next-line no-console
   console.log('NETGET_DEBUG: process.argv=', process.argv);
+}
+
+function resolveRealPath(targetPath: string): string {
+  try {
+    return realpathSync(targetPath);
+  } catch {
+    return targetPath;
+  }
+}
+
+function readPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    return typeof pkg.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function isPromptExitError(err: any): boolean {
+  return err?.name === 'ExitPromptError' || String(err?.message || '').includes('force closed the prompt');
 }
 
 async function loadDeployConfig(configPath?: string) {
@@ -60,13 +86,32 @@ function validateCredentials(creds: any, username: string, password: string): bo
 // Ensure the CLI prints the expected executable name in help/usage
 program.name('netget');
 program.usage('[options] [command]');
+program.version(netgetVersion);
 
 program
   .description('NetGet Command Line Interface') 
   .action(async () => {
-    console.log('Initializing NetGet CLI...');
+    console.log(`
+▗▖  ▗▖▗▄▄▄▖▗▄▄▄▖▗▄▄▖▗▄▄▄▖▗▄▄▄▖
+▐▛▚▖▐▌▐▌     █ ▐▌   ▐▌     █  
+▐▌ ▝▜▌▐▛▀▀▘  █ ▐▌▝▜▌▐▛▀▀▘  █  
+▐▌  ▐▌▐▙▄▄▖  █ ▝▚▄▞▘▐▙▄▄▖  █  
+`);
+    console.log(chalk.gray(`netget v${netgetVersion}`));
+    console.log(chalk.gray(`src: ${netgetSourcePath}\n`));
     // await i_DefaultNetGetX();
-    await mainMenu();
+    try {
+      const { mainMenu } = await import('./utils/netgetServerOrLocal.cli.ts');
+      await mainMenu();
+    } catch (err: any) {
+      if (isPromptExitError(err)) {
+        console.log(chalk.gray('\nPrompt closed. Bye.'));
+        process.exit(0);
+      }
+      console.error(chalk.red(`NetGet failed: ${err.message}`));
+      if (DEBUG && err.stack) console.error(chalk.gray(err.stack));
+      process.exit(1);
+    }
   });
 
 // Non-interactive deploy command
@@ -119,6 +164,7 @@ program
         process.exit(1);
       }
 
+      const { NetGetSync } = await import('./modules/NetGet-Deploy/lib/netgetSync.ts');
       const sync = new NetGetSync(effectiveConfig);
 
       // If targets option provided, treat as explicit origin paths to package and deploy
@@ -221,4 +267,30 @@ program
     }
   });
 
-program.parse(process.argv);
+program
+  .command('generate-domain-map')
+  .description('Project current domain config into ~/.get/runtime/domain-map.json for OpenResty')
+  .action(async () => {
+    try {
+      const { ensureLocalNetgetSeed, generateDomainMap } = await import('./runtime/domainMap.ts');
+      await ensureLocalNetgetSeed();
+      const mapPath = await generateDomainMap();
+      const map = JSON.parse(readFileSync(mapPath, 'utf8'));
+      const domainList = Object.keys(map.domains);
+      console.log(chalk.green(`Written: ${mapPath}`));
+      console.log(`Domains (${domainList.length}): ${domainList.join(', ') || '(none)'}`);
+    } catch (err: any) {
+      console.error(chalk.red(`Failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+program.parseAsync(process.argv).catch((err: any) => {
+  if (isPromptExitError(err)) {
+    console.log(chalk.gray('\nPrompt closed. Bye.'));
+    process.exit(0);
+  }
+  console.error(chalk.red(`NetGet failed: ${err.message}`));
+  if (DEBUG && err.stack) console.error(chalk.gray(err.stack));
+  process.exit(1);
+});

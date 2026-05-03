@@ -93,6 +93,15 @@ interface DomainConfigResult {
     target: string;
 }
 
+async function regenerateMap(): Promise<void> {
+    try {
+        const { generateDomainMap } = await import('../runtime/domainMap.ts');
+        await generateDomainMap();
+    } catch {
+        // non-fatal — domain map regeneration failure must not block the write
+    }
+}
+
 /**
  * Function to create the table in the database
  */
@@ -159,6 +168,7 @@ export async function registerDomain(
         await db.run(
             'INSERT INTO domains (domain, subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [domain, subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner]);
+        await regenerateMap();
     } catch (error: any) {
         if (
             error.code === 'EACCES' ||
@@ -248,6 +258,7 @@ export async function updateDomain(
             'UPDATE domains SET subdomain = ?, email = ?, sslMode = ?, sslCertificate = ?, sslCertificateKey = ?, target = ?, type = ?, projectPath = ?, owner = ? WHERE domain = ?',
             [subdomain, email, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner, domain]
         );
+        await regenerateMap();
     }
     catch (error: any) {
         if (
@@ -274,6 +285,7 @@ export async function updateDomainTarget(domain: string, target: string): Promis
     try {
         const db = await dbPromise;
         await db.run('UPDATE domains SET target = ? WHERE domain = ?', [target, domain]);
+        await regenerateMap();
     } catch (error: any) {
         if (
             error.code === 'EACCES' ||
@@ -299,6 +311,7 @@ export async function updateDomainType(domain: string, type: string): Promise<vo
     try {
         const db = await dbPromise;
         await db.run('UPDATE domains SET type = ? WHERE domain = ?', [type, domain]);
+        await regenerateMap();
     } catch (error: any) {
         if (
             error.code === 'EACCES' ||
@@ -313,6 +326,33 @@ export async function updateDomainType(domain: string, type: string): Promise<vo
             );
         }
         console.error(`Error updating the type of the domain ${domain}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Updates the active route fields for a domain.
+ * Empty/null target or type means the domain remains registered but is not routed.
+ */
+export async function updateDomainRoute(domain: string, type: string | null, target: string | null): Promise<void> {
+    try {
+        const db = await dbPromise;
+        await db.run('UPDATE domains SET type = ?, target = ? WHERE domain = ?', [type, target, domain]);
+        await regenerateMap();
+    } catch (error: any) {
+        if (
+            error.code === 'EACCES' ||
+            error.code === 'SQLITE_CANTOPEN' ||
+            error.message?.includes('permission') ||
+            error.message?.includes('SQLITE_CANTOPEN')
+        ) {
+            await handlePermission(
+                `update the route for domain ${domain} in the database`,
+                `chmod 755 ${sqliteDatabasePath}`,
+                `Make sure the file ${sqliteDatabasePath} has write permissions for the current user.`
+            );
+        }
+        console.error(`Error updating the route for domain ${domain}:`, error);
         throw error;
     }
 }
@@ -347,6 +387,7 @@ export async function deleteDomain(domain: string): Promise<void> {
     try {
         const db = await dbPromise;
         await db.run('DELETE FROM domains WHERE domain = ?', [domain]);
+        await regenerateMap();
     } catch (error: any) {
         if (
             error.code === 'EACCES' ||
@@ -388,6 +429,7 @@ export async function storeConfigInDB(
         } else {
             await db.run('INSERT INTO domains (domain, subdomain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, owner) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [domain, subdomain, sslMode, sslCertificate, sslCertificateKey, target, type, projectPath, domainOwner]);
         }
+        await regenerateMap();
     } catch (error: any) {
         if (
             error.code === 'EACCES' ||
@@ -471,13 +513,14 @@ export async function updateSSLCertificatePaths(domain: string, certPath: string
     const db = new Database(sqliteDatabasePath);
     try {
         await db.run(
-            `UPDATE domains SET 
+            `UPDATE domains SET
                 sslCertificate = ?,
                 sslCertificateKey = ?
              WHERE domain = ?`,
             [certPath, keyPath, domain]
         );
         await db.close();
+        await regenerateMap();
     } catch (err: any) {
         await db.close();
         if (

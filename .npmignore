@@ -1,0 +1,8 @@
+node_modules
+src/**/*.tsbuildinfo
+
+# Main Server UI source app is used for development only.
+# Publish the built UI under assets/main-server-ui/dist instead.
+main-server-ui
+main-server-ui/**
+!assets/main-server-ui/dist/**

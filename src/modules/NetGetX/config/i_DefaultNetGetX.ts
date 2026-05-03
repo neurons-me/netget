@@ -15,6 +15,7 @@ import { checkLocalHostEntryExists, addLocalHostEntry } from '../../utils/localH
 import verifyOpenRestyInstallation from '../OpenResty/verifyOpenRestyInstallation.ts';
 import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOptions.cli.ts';
 import { ensureNginxConfigFile, setNginxConfigFile } from '../OpenResty/setNginxConfigFile.ts';
+import { detectOpenRestyLayout } from '../OpenResty/platformDetect.ts';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
 
@@ -90,8 +91,11 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
 
         // NGINX configuration file validation
         try {
-            const nginxConfigPath: string = '/usr/local/openresty/nginx/conf/nginx.conf';
-            if (!pathExists(nginxConfigPath)) {
+            const layout = detectOpenRestyLayout();
+            if (!layout.isSupported) {
+                console.log(chalk.yellow('Automatic OpenResty configuration is not supported on this platform.'));
+                if (layout.installNote) console.log(chalk.gray(layout.installNote));
+            } else if (!pathExists(layout.configFilePath)) {
                 await ensureNginxConfigFile();
             } else {
                 await setNginxConfigFile();

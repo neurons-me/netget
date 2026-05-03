@@ -1,3 +1,4 @@
-export { default, default as NetGet } from './netget.js';
-export type { NetGetConfig } from './netget.js';
+export { default, netget, NetGet } from './netget.js';
+export type { NetGetAppOptions, NetGetAppRegistration, NetGetConfig, NetGetSession } from './netget.js';
+export type { PortLease, PortLeaseMode, PortLeaseStatus } from './runtime/portLeases.js';
 //# sourceMappingURL=index.d.ts.map

@@ -4,94 +4,71 @@ import type { XStateData } from './xState.ts';
 import mainServerMenu from './mainServer/mainServer.cli.ts';
 import displayStateAndConfig from './config/x_StateAndConfig.ts';
 
-interface SettingsMenuAnswers {
-    action: string;
+type SettingsAction = 'main-server-name' | 'diagnostics' | 'about' | 'back';
+
+function printSettingsHeader(x: XStateData, message?: string): void {
+    console.log(chalk.bold('📍 .Get Local > Main Server > Settings'));
+    const name = String(x.mainServerName || '').trim();
+    console.log(`Public domain/local label: ${name ? chalk.green(name) : chalk.yellow('not set')}`);
+    console.log(chalk.gray('Local/NAT: optional label. Public server: real domain that points to this machine.'));
+    if (message) console.log(`\n${message}`);
+    console.log('');
 }
 
-interface MainServerAnswers {
-    newMainServer: string;
-}
-
-interface MenuOption {
-    name: string;
-    value: string;
+async function pause(message = 'Press Enter to return to Settings.'): Promise<void> {
+    await inquirer.prompt([{ type: 'input', name: 'continue', message }]);
 }
 
 /**
- * This function displays the NetGetX settings menu
+ * Displays the Main Server settings menu.
  * @memberof module:NetGetX
- * @param x - The NetGetX instance
- * @returns A promise that resolves when the menu is displayed 
  */
 const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
-    const mainServerSet: boolean = !!(x.mainServerName && typeof x.mainServerName === 'string' && x.mainServerName.trim() !== '');
-    const options: MenuOption[] = [
-        { name: 'Main Server Configuration', value: 'Main Server' },
-        { name: 'xConfig/xState', value: 'xConfig/xState' },
-        { name: 'About NetGetX', value: 'aboutNetGetX' },
-        { name: 'Back to Main Menu', value: 'mainMenu' }
-    ];
+    let lastMessage = '';
 
-    // Show instructions if main server is not set
-    if (!mainServerSet) {
-        console.log(chalk.red('Main server is not set!') + ' ' + chalk.yellow(' Please use "Edit Main Server Name" to set it before accessing Local.Netget.'));
-        console.log(chalk.gray('Local.Netget option will remain locked until you set the main server.'));
-    } else {
-        console.log(chalk.green('Main server is set: ') + chalk.cyan(x.mainServerName));
-    }
+    while (true) {
+        console.clear();
+        printSettingsHeader(x, lastMessage);
+        lastMessage = '';
 
-    const answer = await inquirer.prompt<SettingsMenuAnswers>([
-        {
-            type: 'list',
-            name: 'action',
-            message: chalk.bold('Select an action:'),
-            choices: options
-        }
-    ]);
+        const { action } = await inquirer.prompt<{ action: SettingsAction }>([
+            {
+                type: 'list',
+                name: 'action',
+                message: 'Settings - choose an action:',
+                choices: [
+                    { name: 'Public domain / local label', value: 'main-server-name' },
+                    { name: 'Developer diagnostics: xConfig vs xState', value: 'diagnostics' },
+                    { name: 'About Main Server', value: 'about' },
+                    new inquirer.Separator(),
+                    { name: 'Back to Main Server', value: 'back' },
+                ],
+            },
+        ]);
 
-    switch (answer.action) {
-        case 'Main Server':
+        if (action === 'back') return;
+
+        if (action === 'main-server-name') {
             await mainServerMenu(x);
-            break;
+            continue;
+        }
 
-        case 'EditMainServer':
-            const { newMainServer } = await inquirer.prompt<MainServerAnswers>([
-                {
-                    type: 'input',
-                    name: 'newMainServer',
-                    message: 'Enter new main server name:',
-                    validate: (input: string) => input ? true : 'Server name cannot be empty.'
-                }
-            ]);
-            // Save to xConfig
-            try {
-                const { saveXConfig, loadOrCreateXConfig } = await import('./config/xConfig.ts');
-                await saveXConfig({ mainServerName: newMainServer });
-                const updatedConfig = await loadOrCreateXConfig();
-                Object.assign(x, updatedConfig); // update x in place
-                console.log(chalk.green(`Main server updated to: ${newMainServer}`));
-            } catch (err: any) {
-                console.log(chalk.red('Failed to update main server name:', err));
-            }
-            break;
+        if (action === 'diagnostics') {
+            console.clear();
+            console.log(chalk.bold('📍 .Get Local > Main Server > Settings > Diagnostics'));
+            console.log(chalk.gray('xConfig is the persisted file on disk. xState is the in-memory copy used by this CLI session.\n'));
+            await displayStateAndConfig(x);
+            await pause();
+            continue;
+        }
 
-        case 'xConfig/xState':
-            await displayStateAndConfig(x); // Call the function to display the state and config
-            break;
-
-        case 'aboutNetGetX':
-            console.log(chalk.green('About NetGetX'));
-            console.log(chalk.blue('NetGetX is a powerful tool for managing servers, network configurations, domains and SSL setups.'));
-            console.log(chalk.blue('Developed by: neurons.me'));
-            console.log(chalk.blue('For more information, visit the official documentation.'));
-            break;
-        case 'mainMenu':
-            console.log(chalk.green('Returning to the main menu...'));
-            // Call the main menu function here if it exists
-            break;
-        default:
-            console.log(chalk.red('Invalid selection. Please try again.'));
-            await netGetXSettingsMenu(x);
+        if (action === 'about') {
+            console.clear();
+            console.log(chalk.bold('📍 .Get Local > Main Server > Settings > About'));
+            console.log(chalk.cyan('\nMain Server is the local NetGet control plane: OpenResty gateway, domains, certificates, and UI target.'));
+            console.log(chalk.gray('Use OpenResty for runtime/service state. Use Main Server UI target for dev/bundled frontend routing.\n'));
+            await pause();
+        }
     }
 };
 

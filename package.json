@@ -1,7 +1,7 @@
 {
     "name": "netget",
     "version": "2.6.51",
-    "description": "Rette Adepto/ Recibido Directamente.",
+    "description": "Rette Adepto.",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -12,7 +12,7 @@
         }
     },
     "scripts": {
-        "start": "node --import tsx index.js",
+        "start": "node --import tsx src/netget.cli.ts",
         "test": "echo \"Error: no test specified\" && exit 1",
         "doc": "jsdoc -c jsdoc.json",
         "build": "tsc -p tsconfig.lib.json",

@@ -3,9 +3,9 @@ import chalk from 'chalk';
 import path from 'path';
 import { logDomainInfo, addSubdomain, editOrDeleteDomain, editOrDeleteSubdomain, linkDevelopmentAppProject } from './domainsOptions.ts';
 import domainSSLConfiguration from './SSL/selfSigned/ssl.cli.ts';
+import { isReservedLocalDomain } from './reservedDomains.ts';
 import sqlite3 from 'sqlite3';
 import type { DomainRecord } from '../../../sqlite/utils_sqlite3.ts';
-import { loadXConfig } from '../config/xConfig.ts';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
 const xConfig = getNetgetDataDir();
@@ -24,6 +24,11 @@ interface SelectedDomainMenuAnswers {
  */
 async function selectedDomainMenu(domain: string): Promise<void> {
     try {
+        if (isReservedLocalDomain(domain)) {
+            console.log(chalk.yellow(`${domain} is the reserved Local gateway, not a routing-table domain.`));
+            return;
+        }
+
         // Leer la configuración del dominio desde la base de datos
         const db = new sqlite3.Database(sqliteDatabasePath, sqlite3.OPEN_READONLY);
         const domainConfig: DomainRecord | null = await new Promise((resolve, reject) => {
@@ -45,7 +50,7 @@ async function selectedDomainMenu(domain: string): Promise<void> {
         
         const choices = [
             { name: 'Add Subdomain', value: 'addSubdomain' },
-            { name: 'Edit/Delete Domain', value: 'editOrDelete' },
+            { name: 'Edit Route / Delete Domain', value: 'editOrDelete' },
             { name: 'Edit/Delete Subdomain', value: 'editOrDeleteSubdomain' },
             { name: 'SSL Configuration', value: 'sslConfig' },
             { name: 'Link Development App Project', value: 'linkDevApp' },

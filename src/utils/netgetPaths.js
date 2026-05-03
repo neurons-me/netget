@@ -3,7 +3,8 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SOURCE_OR_DIST_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PACKAGE_DIR = path.resolve(SOURCE_OR_DIST_DIR, '..');
 
 function tryEnsureDir(dir) {
     try {
@@ -66,18 +67,25 @@ function resolveDataDir() {
     throw new Error('Unable to determine a writable NetGet data directory.');
 }
 
-const DATA_DIR = resolveDataDir();
-const HTML_ROOT = path.join(DATA_DIR, 'html');
+let DATA_DIR = null;
 
-function ensureHtmlDir() {
-    tryEnsureDir(HTML_ROOT);
-}
-
-export function getNetgetDataDir() {
+function resolveDataDirOnce() {
+    if (!DATA_DIR) {
+        DATA_DIR = resolveDataDir();
+    }
     return DATA_DIR;
 }
 
+export function getNetgetDataDir() {
+    return resolveDataDirOnce();
+}
+
+export function getNetgetPackageRootDir() {
+    return PACKAGE_DIR;
+}
+
 export function getHtmlRootDir() {
-    ensureHtmlDir();
-    return HTML_ROOT;
+    const htmlRoot = path.join(getNetgetDataDir(), 'html');
+    tryEnsureDir(htmlRoot);
+    return htmlRoot;
 }

@@ -1,11 +1,7 @@
 // netget_MainMenu.cli.ts
 import inquirer from 'inquirer';
 import chalk from 'chalk';
-import { spawn } from 'child_process';
 import { i_DefaultNetGetX } from './NetGetX/config/i_DefaultNetGetX.ts';
-import NetGetX_CLI from './NetGetX/NetGetX.cli.ts';
-import { PortManagement_CLI } from './PortManagement/portManagement.cli.ts';
-import netGetXDeployMenu from './NetGet-Deploy/NetGetX_DeployMenu.cli.ts';
 import type { XStateData } from './NetGetX/xState.ts';
 
 // Inquirer Choice Interface
@@ -17,15 +13,20 @@ interface MenuChoice {
 }
 
 // Menu Action Type
-type MenuAction = 
-    | 'NetGetX' 
-    | 'NetGet Deploy' 
+type MenuAction =
+    | 'Main Server'
+    | 'NetGet Deploy'
     | 'Port Management'
-    | 'Exit';
+    | 'Back'
+    | 'Exit CLI';
 
 // Menu Answers Interface
 interface MenuAnswers {
     action: MenuAction;
+}
+
+function isPromptExitError(err: any): boolean {
+    return err?.name === 'ExitPromptError' || String(err?.message || '').includes('force closed the prompt');
 }
 
 /**
@@ -77,10 +78,10 @@ interface MenuAnswers {
  * Main menu function for NetGet CLI
  * @returns Promise<void>
  */
-export default async function NetGetMainMenu(): Promise<void> {
+export default async function NetGetMainMenu(preloadedX?: XStateData | any): Promise<void> {
     try {
         console.clear();
-        const x: XStateData | any = await i_DefaultNetGetX();
+        const x: XStateData | any = preloadedX || await i_DefaultNetGetX();
         console.log(`
         ╔╗╔┌─┐┌┬┐╔═╗┌─┐┌┬┐
         ║║║├┤  │ ║ ╦├┤  │ 
@@ -90,7 +91,7 @@ export default async function NetGetMainMenu(): Promise<void> {
         console.log('Dashboard: ' + chalk.green('http://local.netget'));
         // Build the menu choices dynamically depending on global/local mode
         const baseChoices: Array<string | any> = [
-            'NetGetX',
+            'Main Server',
             new inquirer.Separator(),
         ];
         
@@ -106,7 +107,7 @@ export default async function NetGetMainMenu(): Promise<void> {
             new inquirer.Separator()
         );
 
-        baseChoices.push(new inquirer.Separator(), 'Exit', new inquirer.Separator());
+        baseChoices.push(new inquirer.Separator(), 'Back', 'Exit CLI', new inquirer.Separator());
 
         const menuQuestion: MenuChoice = {
             type: 'list',
@@ -118,13 +119,14 @@ export default async function NetGetMainMenu(): Promise<void> {
         const answers: MenuAnswers = await inquirer.prompt([menuQuestion]);
 
         switch (answers.action) {
-            case 'NetGetX':
+            case 'Main Server':
                 if (x) {
                     /*
                     Netget X (The Router/Conductor)
                     Role: Acts as the central orchestrator,
                     running an Nginx server and managing domain routing.
                     */
+                    const { default: NetGetX_CLI } = await import('./NetGetX/NetGetX.cli.ts');
                     await NetGetX_CLI(x);
                     break;
                 } else {
@@ -133,14 +135,19 @@ export default async function NetGetMainMenu(): Promise<void> {
                 break;
                 
             case 'NetGet Deploy':
+                const { default: netGetXDeployMenu } = await import('./NetGet-Deploy/NetGetX_DeployMenu.cli.ts');
                 await netGetXDeployMenu();
                 break;
 
             case 'Port Management':
+                const { PortManagement_CLI } = await import('./PortManagement/portManagement.cli.ts');
                 await PortManagement_CLI();
                 break;
 
-            case 'Exit':
+            case 'Back':
+                return;
+
+            case 'Exit CLI':
                 console.log(chalk.green('Exiting NetGet CLI.'));
                 process.exit(0);
                 break;
@@ -151,6 +158,10 @@ export default async function NetGetMainMenu(): Promise<void> {
                 break;
         }
     } catch (err: any) {
+        if (isPromptExitError(err)) {
+            console.log(chalk.gray('\nPrompt closed. Bye.'));
+            process.exit(0);
+        }
         console.log(chalk.red('An error occurred:'), err.message);
         console.log(chalk.yellow('Stack trace:'), err.stack);
         // Optionally, prompt user to return to menu or exit

@@ -28,6 +28,9 @@ interface XConfig {
     sslSelfSignedKeyPath?: string;
     sqliteDatabasePath?: string;
     xMainOutPutPort?: number;
+    mainServerFrontendMode?: 'dev' | 'package-dist' | 'local-dist';
+    mainServerFrontendDevUrl?: string;
+    mainServerFrontendStaticRoot?: string;
     [key: string]: any; // Allow additional properties
 }
 
@@ -74,6 +77,9 @@ async function loadOrCreateXConfig(): Promise<XConfig> {
                 sslSelfSignedCertPath: "",
                 sslSelfSignedKeyPath: "",
                 sqliteDatabasePath: "",
+                mainServerFrontendMode: "package-dist",
+                mainServerFrontendDevUrl: "http://127.0.0.1:5173",
+                mainServerFrontendStaticRoot: "",
             };
             fs.writeFileSync(USER_CONFIG_FILE, JSON.stringify(defaultConfig, null, 4));
             return defaultConfig;
@@ -117,6 +123,9 @@ async function saveXConfig(updates: ConfigUpdates): Promise<void> {
             sslSelfSignedKeyPath: "",
             sqliteDatabasePath: "",
             xMainOutPutPort: undefined,
+            mainServerFrontendMode: "package-dist",
+            mainServerFrontendDevUrl: "http://127.0.0.1:5173",
+            mainServerFrontendStaticRoot: "",
         };
 
         // Start from defaults, then merge existing file over them

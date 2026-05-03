@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import { exec } from 'child_process';
 import util from 'util';
 import pm2 from 'pm2';
-import NetGetMainMenu from '../netget_MainMenu.cli.ts';
 
 const execPromise = util.promisify(exec);
 
@@ -149,9 +148,6 @@ export async function PortManagement_CLI(): Promise<void> {
             break;
 
         case 'Go Back':
-            console.clear();  // Clear the console when going back to the main menu
-            console.log(chalk.blue('Returning to the main menu...'));
-            await NetGetMainMenu();
             return;
 
         default:

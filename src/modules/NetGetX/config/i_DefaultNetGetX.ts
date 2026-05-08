@@ -17,6 +17,7 @@ import openRestyInstallationOptions from '../OpenResty/openRestyInstallationOpti
 import { ensureNginxConfigFile, setNginxConfigFile } from '../OpenResty/setNginxConfigFile.ts';
 import { detectOpenRestyLayout } from '../OpenResty/platformDetect.ts';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
+import { getPackageMainServerUiDistDir } from '../OpenResty/mainServerFrontend.ts';
 
 
 /**
@@ -164,6 +165,22 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
                 } else {
                     console.log(`Default htmlPath does not exist: ${getDefaultHtmlPath}, not updating configuration.`);
                 }
+            }
+
+            // Seed ~/.get/html with the bundled main-server UI if no index.html exists yet
+            try {
+                const htmlDir = DEFAULT_DIRECTORIES.html;
+                const indexPath = `${htmlDir}/index.html`;
+                if (!pathExists(indexPath)) {
+                    const distDir = getPackageMainServerUiDistDir();
+                    if (pathExists(distDir)) {
+                        fs.mkdirSync(htmlDir, { recursive: true });
+                        fs.cpSync(distDir, htmlDir, { recursive: true, force: true });
+                        console.log(chalk.blue(`NetGet UI deployed to ${htmlDir}`));
+                    }
+                }
+            } catch (htmlError: any) {
+                console.log(chalk.yellow(`Warning: Could not seed html directory: ${htmlError.message}`));
             }
 
             if (!xConfig.netgetXhtmlGatewayPath) {

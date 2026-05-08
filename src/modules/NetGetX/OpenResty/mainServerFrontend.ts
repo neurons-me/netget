@@ -17,7 +17,7 @@ export interface MainServerFrontendConfig {
 const DEFAULT_DEV_URL = 'http://127.0.0.1:5173';
 
 export function getPackageMainServerUiDistDir(): string {
-    return path.join(getNetgetPackageRootDir(), 'assets', 'main-server-ui', 'dist');
+    return path.join(getNetgetPackageRootDir(), 'main-server');
 }
 
 export function getLocalMainServerUiDistDir(): string {

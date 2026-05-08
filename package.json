@@ -14,11 +14,16 @@
     "scripts": {
         "start": "node --import tsx src/netget.cli.ts",
         "test": "echo \"Error: no test specified\" && exit 1",
-        "doc": "jsdoc -c jsdoc.json",
         "build": "tsc -p tsconfig.lib.json",
         "dev": "node --loader ts-node/esm src/netget.cli.ts",
         "dev:main": "ts-node src/netget.ts",
-        "type-check": "tsc --noEmit"
+        "type-check": "tsc --noEmit",
+        "docs:api": "typedoc",
+        "docs:api:watch": "typedoc --watch",
+        "docs:dev": "vitepress dev docs",
+        "docs:build": "vitepress build docs",
+        "docs:preview": "vitepress preview docs",
+        "docs:publish": "npm run docs:api && npm run docs:build && mkdir -p typedocs && touch typedocs/.nojekyll"
     },
     "bin": {
         "netget": "./bin/netget"
@@ -73,6 +78,9 @@
         "@types/sqlite3": "^3.1.11",
         "nodemon": "^3.1.10",
         "ts-node": "^10.9.2",
-        "typescript": "^5.9.3"
+        "typedoc": "^0.28.16",
+        "typedoc-plugin-markdown": "^4.9.0",
+        "typescript": "^5.9.3",
+        "vitepress": "^1.6.4"
     }
 }

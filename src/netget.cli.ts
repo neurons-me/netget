@@ -268,6 +268,26 @@ program
   });
 
 program
+  .command('reload')
+  .alias('restart')
+  .description('Reload (or start) the OpenResty/NetGet gateway — equivalent to nginx -s reload without needing nginx in PATH')
+  .action(async () => {
+    try {
+      const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+      const ok = await startOpenRestyOnce(true);
+      if (ok) {
+        console.log(chalk.green('NetGet gateway reloaded.'));
+      } else {
+        console.error(chalk.red('Reload failed. Check OpenResty logs.'));
+        process.exit(1);
+      }
+    } catch (err: any) {
+      console.error(chalk.red(`Reload failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+program
   .command('generate-domain-map')
   .description('Project current domain config into ~/.get/runtime/domain-map.json for OpenResty')
   .action(async () => {

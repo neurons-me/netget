@@ -1,98 +1,111 @@
 <img src="https://suign.github.io/assets/imgs/netget1.png" alt="netget" width="377px" style="display: block; margin: 0 auto;"/>
 
-## Expose your services securely ⚡ Route with clarity.
-## Place your Monads. Resolve their endpoints.
+# netget `2.6.51`
 
-#### Control your flow && Install:
+**Physical gateway for the sovereign web.**
 
----
-
-```bash
-npm i -g netget
-```
-
-**Then run on your terminal:**
+`netget` is the entry point of a node. It runs on OpenResty (Nginx + LuaJIT), reads a live domain map, and routes every request to the right place — a static folder, a monad port, or any HTTP service.
 
 ```bash
+npm install -g netget
 netget
 ```
 
-### What it does
-**netget** is a modern, lightweight **reverse proxy and placement layer** built on OpenResty. It turns any host into a clean, secure entry point for applications and Monads.
+---
 
-- Automatically handles **HTTP → HTTPS** redirection
-- Issues and **renews SSL certificates** *(including wildcards)* via **Let’s Encrypt**
-- **Routes domains and subdomains** to either **Static** builds **or** internal **PORT** services.
-- **Gives you full control** through a simple terminal interface
-- Includes built-in port diagnostics and process management
-- Resolves where a Monad physically runs: localhost, laptop, iPhone, Raspberry Pi, VM, relay, or public domain
-- Keeps endpoint/port concerns out of the namespace
+## What netget does
 
-In the Neuroverse stack:
-
-```txt
-.me       -> meaning / seed / semantic tree
-cleaker   -> mounts .me into a namespace
-monad.ai  -> invisible execution routes inside that namespace
-netget    -> physical placement + endpoint resolver
+```
+this.me    → sovereign kernel. derives identity from (who, secret) seed.
+cleaker    → resolver. projects .me into a namespace surface.
+monad.ai   → daemon. runs the kernel over HTTP. registers on the mesh.
+netget     → gateway. routes physical requests. resolves where execution lives.
 ```
 
-A namespace is not a port:
+A namespace is not a port. NetGet keeps them separate:
 
-```txt
-jabellae.cleaker.me/profile                 semantic path / meaning
-jabellae.cleaker.me/photos/iphone           semantic path / meaning
-jabellae.cleaker.me/.mesh/monads            internal Monad registry
-jabellae.cleaker.me[monadlisa]/profile      technical execution override
-monadlisa@127.0.0.1:8161                    Monad instance + endpoint
 ```
-
-NetGet can resolve:
-
-```txt
-netget://iphone/monadlisa      -> http://10.0.0.12:8161
-netget://raspberry/worker-a    -> http://192.168.1.44:42137
-netget://vm-prod/api           -> https://vm.example.com/_monads/api
+me://suign.cleaker.me/profile/name    ← semantic (permanent, portable)
+http://127.0.0.1:8161/profile/name    ← transport (physical, ephemeral)
 ```
-
-### How it works 🔧
-**Point your domain’s** DNS (A or CNAME record) **to your** server’s **public IP.**
-Then use the **NetGet** **main server** to register where each domain should go:
-
-- A React frontend → static folder
-- An API backend → specific port
-- Anything else → proxy
-
-**NetGet** takes care of the rest: routing, encryption, and SSL renewal.
-
-For Monads, NetGet is the body-finder:
-
-```txt
-user intent: read jabellae.cleaker.me/photos/iphone
-NRP: choose the best Monad route internally
-NetGet: resolve that Monad route to a current endpoint
-```
-
-If an operator needs to debug a specific route, the NRP can still force it:
-
-```txt
-me://jabellae.cleaker.me[monadlisa]/photos/iphone
-```
-
-That selector changes execution only. It does not change the namespace or path meaning.
-
-### Perfect for
-- Developers exposing projects
-- Self-hosted applications
-- Building modular architectures on top of **.me** and **Cleaker**.
-- Managing multiple services on a single server
-- Running many Monads in one namespace without confusing ports with identity
-
-**Simple. Secure. Yours.**
 
 ---
 
-made by [neurons.me](https://www.neurons.me)
-**MIT License** 
+## CLI
 
-<img src="https://suign.github.io/assets/imgs/neurons_me_logo.png" alt="neurons.me logo" width="89">
+```bash
+netget                     # open the main server panel
+netget reload              # reload OpenResty — no need for nginx in PATH
+netget restart             # alias for reload
+netget generate-domain-map # sync current config → ~/.get/runtime/domain-map.json
+netget deploy <user> <pass> --server <url> --targets "['/path/to/project']"
+```
+
+---
+
+## Domain map — live routing table
+
+`~/.get/runtime/domain-map.json` is checked every second by a Lua timer. Routing changes take effect immediately — no nginx restart needed:
+
+```json
+{
+  "domains": {
+    "suis-macbook-air.local": { "type": "static", "root": "/Users/suign/.get/html" },
+    "frank.cleaker.me":       { "type": "proxy",  "target": "127.0.0.1:8161" },
+    "app.neurons.me":         { "type": "server", "target": "127.0.0.1:3000" }
+  }
+}
+```
+
+| Type | Behavior |
+|---|---|
+| `static` | Serves files from `root`. `index.html` fallback. |
+| `proxy` | Forwards to `target` with standard proxy headers. |
+| `server` | Same as proxy. Alias for app servers. |
+
+---
+
+## Node landing page
+
+When netget starts for the first time, it deploys `main-server/index.html` to `~/.get/html/`. Visiting `http://hostname.local/` shows the node identity page:
+
+```
+node
+suis-macbook-air.local
+● online
+```
+
+The page boots the `all.this` environment if available on the node.
+
+---
+
+## Monad placement
+
+```
+netget://iphone/monadlisa     → http://10.0.0.12:8161
+netget://raspberry/worker-a  → http://192.168.1.44:42137
+netget://vm-prod/api         → https://vm.example.com/_monads/api
+```
+
+NetGet resolves *where* a monad physically runs without encoding that location into the semantic address.
+
+---
+
+## Install
+
+```bash
+npm install -g netget
+```
+
+Requires OpenResty. On macOS:
+
+```bash
+brew install openresty/brew/openresty
+netget   # handles the rest interactively
+```
+
+---
+
+## License
+
+MIT — [neurons.me](https://www.neurons.me)

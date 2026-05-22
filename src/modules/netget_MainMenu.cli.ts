@@ -87,7 +87,7 @@ export default async function NetGetMainMenu(preloadedX?: XStateData | any): Pro
         ║║║├┤  │ ║ ╦├┤  │ 
         ╝╚╝└─┘ ┴ ╚═╝└─┘ ┴ 
             v2.6.51`);
-        console.log(chalk.yellow('Note: This system will only work correctly if it is mounted on a public IP address.'));
+        console.log(chalk.yellow('Get it from the net.'));
         console.log('Dashboard: ' + chalk.green('http://local.netget'));
         // Build the menu choices dynamically depending on global/local mode
         const baseChoices: Array<string | any> = [
@@ -96,7 +96,6 @@ export default async function NetGetMainMenu(preloadedX?: XStateData | any): Pro
         ];
         
         const mainServerSet: boolean = !!(x.mainServerName && typeof x.mainServerName === 'string' && x.mainServerName.trim() !== '');
-
         if (mainServerSet) {
             baseChoices.push('NetGet Deploy');
         }
@@ -108,7 +107,6 @@ export default async function NetGetMainMenu(preloadedX?: XStateData | any): Pro
         );
 
         baseChoices.push(new inquirer.Separator(), 'Back', 'Exit CLI', new inquirer.Separator());
-
         const menuQuestion: MenuChoice = {
             type: 'list',
             name: 'action',
@@ -117,7 +115,6 @@ export default async function NetGetMainMenu(preloadedX?: XStateData | any): Pro
         };
 
         const answers: MenuAnswers = await inquirer.prompt([menuQuestion]);
-
         switch (answers.action) {
             case 'Main Server':
                 if (x) {
@@ -133,25 +130,20 @@ export default async function NetGetMainMenu(preloadedX?: XStateData | any): Pro
                     console.log(chalk.red('Setup verification failed. Please resolve any issues before proceeding.'));
                 }
                 break;
-                
             case 'NetGet Deploy':
                 const { default: netGetXDeployMenu } = await import('./NetGet-Deploy/NetGetX_DeployMenu.cli.ts');
                 await netGetXDeployMenu();
                 break;
-
             case 'Port Management':
                 const { PortManagement_CLI } = await import('./PortManagement/portManagement.cli.ts');
                 await PortManagement_CLI();
                 break;
-
             case 'Back':
                 return;
-
             case 'Exit CLI':
                 console.log(chalk.green('Exiting NetGet CLI.'));
                 process.exit(0);
                 break;
-                
             default:
                 console.log(chalk.red('Invalid selection'));
                 await NetGetMainMenu();

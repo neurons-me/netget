@@ -1,58 +1,42 @@
 <img src="https://suign.github.io/assets/imgs/netget1.png" alt="netget" width="377px" style="display: block; margin: 0 auto;"/>
 
 # netget `2.6.51`
+> **A Gateway To the Web.**
 
-**Physical gateway for the sovereign web.**
+`netget` is the entry point of a node. It **routes every request to the right place** — a static folder, a port, or any HTTP service. 
 
-`netget` is the entry point of a node. It runs on OpenResty (Nginx + LuaJIT), reads a live domain map, and routes every request to the right place — a static folder, a monad port, or any HTTP service.
+#### Run on your terminal: (You need npm)
 
 ```bash
-npm install -g netget
+npm i -g netget
+```
+
+#### **Start netget on your terminal by running:**
+
+```bash
 netget
 ```
 
----
-
-## What netget does
-
-```
-this.me    → sovereign kernel. derives identity from (who, secret) seed.
-cleaker    → resolver. projects .me into a namespace surface.
-monad.ai   → daemon. runs the kernel over HTTP. registers on the mesh.
-netget     → gateway. routes physical requests. resolves where execution lives.
-```
-
-A namespace is not a port. NetGet keeps them separate:
-
-```
-me://suign.cleaker.me/profile/name    ← semantic (permanent, portable)
-http://127.0.0.1:8161/profile/name    ← transport (physical, ephemeral)
-```
-
----
-
-## CLI
+#### Command Line:
 
 ```bash
-netget                     # open the main server panel
-netget reload              # reload OpenResty — no need for nginx in PATH
-netget restart             # alias for reload
-netget generate-domain-map # sync current config → ~/.get/runtime/domain-map.json
-netget deploy <user> <pass> --server <url> --targets "['/path/to/project']"
+netget # opens CLI
+netget reload  # reloads server 
+netget restart # alias for reload
 ```
 
 ---
 
-## Domain map — live routing table
+# Configuring network routes and exposing services:
+Domain map — live routing table is checked every second by a **Lua** timer. 
 
-`~/.get/runtime/domain-map.json` is checked every second by a Lua timer. Routing changes take effect immediately — no nginx restart needed:
+Routing changes take effect immediately — *no restart needed:*
 
 ```json
 {
   "domains": {
     "suis-macbook-air.local": { "type": "static", "root": "/Users/suign/.get/html" },
-    "frank.cleaker.me":       { "type": "proxy",  "target": "127.0.0.1:8161" },
-    "app.neurons.me":         { "type": "server", "target": "127.0.0.1:3000" }
+    "other-service.local": { "type": "proxy",  "target": "127.0.0.1:8161" }
   }
 }
 ```
@@ -66,46 +50,19 @@ netget deploy <user> <pass> --server <url> --targets "['/path/to/project']"
 ---
 
 ## Node landing page
+When netget starts for the first time, visiting `http://hostname.local/` shows the node identity page:
 
-When netget starts for the first time, it deploys `main-server/index.html` to `~/.get/html/`. Visiting `http://hostname.local/` shows the node identity page:
-
-```
+```bash
 node
-suis-macbook-air.local
+hostname.local
 ● online
 ```
 
-The page boots the `all.this` environment if available on the node.
-
----
-
-## Monad placement
-
-```
-netget://iphone/monadlisa     → http://10.0.0.12:8161
-netget://raspberry/worker-a  → http://192.168.1.44:42137
-netget://vm-prod/api         → https://vm.example.com/_monads/api
-```
-
-NetGet resolves *where* a monad physically runs without encoding that location into the semantic address.
-
----
-
-## Install
-
-```bash
-npm install -g netget
-```
-
-Requires OpenResty. On macOS:
-
-```bash
-brew install openresty/brew/openresty
-netget   # handles the rest interactively
-```
+The page boots the `all.this` environment if available on the node. Which means this host is now listenning on HTTP and HTTPS requests. Port 80 and 443. Which is the **world wide web.**
 
 ---
 
 ## License
 
-MIT — [neurons.me](https://www.neurons.me)
+**MIT** — [neurons.me](https://www.neurons.me)
+

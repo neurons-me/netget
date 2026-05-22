@@ -47,7 +47,6 @@ const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
         ]);
 
         if (action === 'back') return;
-
         if (action === 'main-server-name') {
             await mainServerMenu(x);
             continue;

@@ -57,8 +57,7 @@ function buildRegistration(options, name, lease) {
     };
 }
 async function postJson(endpoint, payload) {
-    const fetchImpl = globalThis.fetch || (await import('node-fetch')).default;
-    const res = await fetchImpl(endpoint, {
+    const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

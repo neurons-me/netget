@@ -1,23 +1,12 @@
 # Architecture
 
-## Stack role
-
-```
-this.me    → sovereign kernel. derives identity from (who, secret) seed. works offline.
-cleaker    → resolver. projects .me into a namespace surface. handles fallback chain.
-monad.ai   → daemon. runs the kernel over HTTP. registers on the mesh.
-netget     → gateway. routes physical requests. resolves where execution lives.
-```
-
-Each layer does one thing. None of them are the others.
-
 ---
 
 ## What each layer owns
 
 | Layer | Owns |
 |---|---|
-| `this.me` | Seed derivation, semantic tree, reactivity, memory |
+| `.me` | Seed derivation, semantic tree, reactivity, memory |
 | `cleaker` | Namespace binding, surface fallback, triad verification |
 | `monad.ai` | HTTP surface, kernel exposure, mesh announce/discover |
 | `netget` | Physical routing, domain → port mapping, SSL, monad placement |
@@ -26,17 +15,17 @@ Each layer does one thing. None of them are the others.
 
 ## The node
 
-A node is a machine running netget. It is the physical boundary of the stack:
+A node is *a machine running netget.* It is the physical boundary of the stack:
 
 ```
-suis-macbook-air.local          ← node hostname
-  port 80/443    → netget       ← entry point
-  port 8161      → monad        ← suign.cleaker.me kernel
-  port 3000      → any service  ← additional processes
-  ~/.get/html/   → landing page ← node identity page
+hostname.local ← node hostname
+  port 80/443 → netget ← entry point
+  port 8161 → monad ← suign.cleaker.me kernel
+  port 3000 → any service  ← additional processes
+  ~/.get/html/ → landing page ← node identity page
 ```
 
-When you visit `suis-macbook-air.local`, you reach the node's gateway. NetGet reads `~/.get/runtime/domain-map.json` and routes the request to the correct destination.
+When you visit `hostname.local`, you reach the node's gateway. NetGet reads `~/.get/runtime/domain-map.json` and routes the request to the correct destination.
 
 ---
 

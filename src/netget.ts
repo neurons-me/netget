@@ -7,7 +7,6 @@ import {
     type PortLease,
     type PortLeaseMode,
 } from './runtime/portLeases.js';
-
 export interface NetGetAppOptions {
     name?: string;
     port?: number | 'auto';
@@ -62,7 +61,6 @@ export interface NetGetConfig {
 const DEFAULT_MAIN_SERVER = 'http://local.netget';
 const DEFAULT_HEARTBEAT_MS = 3_000;
 const LOCAL_HOSTS = new Set(['local.netget', 'localhost', '127.0.0.1', '[::1]', '::1']);
-
 function normalizeMainServer(value?: string): string {
     const raw = (value || process.env.NETGET_LOCAL || DEFAULT_MAIN_SERVER).trim().replace(/\/+$/, '');
     const parsed = new URL(raw);
@@ -120,8 +118,7 @@ function buildRegistration(options: NetGetAppOptions, name: string, lease: PortL
 }
 
 async function postJson(endpoint: string, payload: unknown): Promise<void> {
-    const fetchImpl = globalThis.fetch || (await import('node-fetch')).default as any;
-    const res = await fetchImpl(endpoint, {
+    const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -146,10 +143,8 @@ export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSess
             : undefined;
     const lease = await allocatePortLease(name, { mode, preferredPort, heartbeatMs });
     const registration = buildRegistration(options, name, lease);
-
     let closed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
-
     const report = async (): Promise<void> => {
         const currentLease = await heartbeatPortLease(lease, 'active');
         registration.updatedAt = new Date().toISOString();
@@ -182,7 +177,6 @@ export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSess
         });
     }, heartbeatMs);
     timer.unref?.();
-
     const stop = async (): Promise<void> => {
         if (closed) return;
         closed = true;
@@ -222,7 +216,6 @@ export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSess
  */
 export class NetGet {
     private config?: NetGetConfig;
-
     constructor(config?: NetGetConfig) {
         this.config = config;
     }

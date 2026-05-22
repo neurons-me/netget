@@ -34,6 +34,7 @@ const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, (err) => {
   }
 });
 
+/** @type {import('express').Router} */
 const router = express.Router();
 
 router.get("/check-auth", (req, res) => {

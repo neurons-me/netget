@@ -24,6 +24,7 @@ dotenvFlow.config({
     default_node_env: 'development'
 });
 
+/** @type {import('express').Router} */
 const router = express.Router();
 
 // Configuration

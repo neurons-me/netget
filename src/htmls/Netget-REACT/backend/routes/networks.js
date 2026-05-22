@@ -9,6 +9,7 @@ import {
   migrateNetworksFromLocalStorage
 } from '../utils/networks_db.js';
 
+/** @type {import('express').Router} */
 const router = express.Router();
 
 /**

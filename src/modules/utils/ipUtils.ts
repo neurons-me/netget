@@ -1,5 +1,4 @@
 //netget/modules/utils/ipUtils.ts
-import fetch from 'node-fetch';
 import * as os from 'os';
 
 interface IPifyResponse {

@@ -12,8 +12,9 @@
         }
     },
     "scripts": {
+        "prebuild": "npm test",
         "start": "node --import tsx src/netget.cli.ts",
-        "test": "echo \"Error: no test specified\" && exit 1",
+        "test": "tsx tests/exposure-policy.test.ts && tsx tests/monad-proxy-config.test.ts",
         "build": "tsc -p tsconfig.lib.json",
         "dev": "tsx src/netget.cli.ts",
         "dev:main": "tsx src/netget.ts",

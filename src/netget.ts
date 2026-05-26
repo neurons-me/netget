@@ -1,5 +1,6 @@
 import os from 'os';
 import { resolveAppIdentity } from './runtime/appIdentity.js';
+import type { NetGetExposurePolicyInput } from './runtime/exposurePolicy.js';
 import {
     allocatePortLease,
     heartbeatPortLease,
@@ -19,11 +20,42 @@ export interface NetGetAppOptions {
     metadata?: Record<string, unknown>;
     heartbeatMs?: number;
     strict?: boolean;
+    kind?: NetGetAppKind;
+    status?: NetGetAppStatus;
+    health?: NetGetAppHealth;
+    ui?: NetGetAppUi;
+    exposure?: NetGetExposurePolicyInput;
+    lifecycle?: NetGetAppLifecycle;
+}
+
+export type NetGetAppKind = 'app' | 'monad' | 'service' | 'system';
+export type NetGetAppStatus = 'starting' | 'running' | 'paused' | 'stopped' | 'error';
+
+export interface NetGetAppHealth {
+    state: 'unknown' | 'healthy' | 'degraded' | 'unhealthy';
+    updatedAt?: string;
+    message?: string;
+}
+
+export interface NetGetAppUi {
+    hasAdminPanel?: boolean;
+    hasUserPanel?: boolean;
+    defaultPath?: string;
+}
+
+export interface NetGetAppLifecycle {
+    supportsStart?: boolean;
+    supportsStop?: boolean;
+    supportsRestart?: boolean;
+    supportsPause?: boolean;
+    supportsResume?: boolean;
+    supportsDelete?: boolean;
 }
 
 export interface NetGetAppRegistration {
     id: string;
     name: string;
+    kind?: NetGetAppKind;
     pid: number;
     cwd: string;
     hostname: string;
@@ -33,6 +65,11 @@ export interface NetGetAppRegistration {
     url?: string;
     tags: string[];
     metadata: Record<string, unknown>;
+    status?: NetGetAppStatus;
+    health?: NetGetAppHealth;
+    ui?: NetGetAppUi;
+    exposure?: NetGetExposurePolicyInput;
+    lifecycle?: NetGetAppLifecycle;
     startedAt: string;
     updatedAt: string;
     ttlMs: number;
@@ -99,6 +136,7 @@ function buildRegistration(options: NetGetAppOptions, name: string, lease: PortL
     return {
         id: lease.leaseId,
         name,
+        kind: options.kind || 'app',
         pid: process.pid,
         cwd: process.cwd(),
         hostname: os.hostname(),
@@ -108,6 +146,11 @@ function buildRegistration(options: NetGetAppOptions, name: string, lease: PortL
         url,
         tags: options.tags || [],
         metadata: options.metadata || {},
+        status: options.status,
+        health: options.health,
+        ui: options.ui,
+        exposure: options.exposure,
+        lifecycle: options.lifecycle,
         startedAt: now,
         updatedAt: now,
         ttlMs: lease.ttlMs,

@@ -1,3 +1,4 @@
+import type { NetGetExposurePolicyInput } from './runtime/exposurePolicy.js';
 import { type PortLease, type PortLeaseMode } from './runtime/portLeases.js';
 export interface NetGetAppOptions {
     name?: string;
@@ -11,10 +12,37 @@ export interface NetGetAppOptions {
     metadata?: Record<string, unknown>;
     heartbeatMs?: number;
     strict?: boolean;
+    kind?: NetGetAppKind;
+    status?: NetGetAppStatus;
+    health?: NetGetAppHealth;
+    ui?: NetGetAppUi;
+    exposure?: NetGetExposurePolicyInput;
+    lifecycle?: NetGetAppLifecycle;
+}
+export type NetGetAppKind = 'app' | 'monad' | 'service' | 'system';
+export type NetGetAppStatus = 'starting' | 'running' | 'paused' | 'stopped' | 'error';
+export interface NetGetAppHealth {
+    state: 'unknown' | 'healthy' | 'degraded' | 'unhealthy';
+    updatedAt?: string;
+    message?: string;
+}
+export interface NetGetAppUi {
+    hasAdminPanel?: boolean;
+    hasUserPanel?: boolean;
+    defaultPath?: string;
+}
+export interface NetGetAppLifecycle {
+    supportsStart?: boolean;
+    supportsStop?: boolean;
+    supportsRestart?: boolean;
+    supportsPause?: boolean;
+    supportsResume?: boolean;
+    supportsDelete?: boolean;
 }
 export interface NetGetAppRegistration {
     id: string;
     name: string;
+    kind?: NetGetAppKind;
     pid: number;
     cwd: string;
     hostname: string;
@@ -24,6 +52,11 @@ export interface NetGetAppRegistration {
     url?: string;
     tags: string[];
     metadata: Record<string, unknown>;
+    status?: NetGetAppStatus;
+    health?: NetGetAppHealth;
+    ui?: NetGetAppUi;
+    exposure?: NetGetExposurePolicyInput;
+    lifecycle?: NetGetAppLifecycle;
     startedAt: string;
     updatedAt: string;
     ttlMs: number;

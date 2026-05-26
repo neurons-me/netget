@@ -244,6 +244,19 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+    # Monad reverse proxy
+    location ~ ^/monads/([^/]+)(/.*)?$ {
+        if ($request_method = OPTIONS) { return 204; }
+        set $monad_proxy_name $1;
+        set $monad_proxy_tail $2;
+        set $monad_proxy_target "";
+        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
+        proxy_pass $monad_proxy_target;
+${proxyHeaders}
+        proxy_set_header X-NetGet-App-Kind monad;
+        proxy_set_header X-NetGet-Monad $monad_proxy_name;
+    }
+
     # Domains
     location /domains {
         if ($request_method = OPTIONS) { return 204; }

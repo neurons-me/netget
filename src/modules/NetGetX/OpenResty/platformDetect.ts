@@ -23,15 +23,23 @@ export interface OpenRestyStatus {
 }
 
 export const OPENRESTY_CANDIDATES: string[] = [
-    'openresty',
     '/opt/homebrew/bin/openresty',
     '/usr/local/bin/openresty',
     '/usr/local/openresty/bin/openresty',
     '/usr/sbin/openresty',
+    'openresty',
 ];
 
+function resolveExecutablePath(candidate: string): string {
+    if (path.isAbsolute(candidate)) return candidate;
+    const resolved = spawnSync('which', [candidate], { encoding: 'utf8' });
+    const resolvedPath = String(resolved.stdout || '').trim().split('\n')[0];
+    return resolvedPath || candidate;
+}
+
 export function findOpenRestyBin(): string | null {
-    for (const bin of OPENRESTY_CANDIDATES) {
+    for (const candidate of OPENRESTY_CANDIDATES) {
+        const bin = resolveExecutablePath(candidate);
         const r = spawnSync(bin, ['-v'], { encoding: 'utf8' });
         if (!r.error && r.status === 0) return bin;
     }
@@ -76,6 +84,16 @@ function linuxUserDirective(): string {
     return '';
 }
 
+/**
+ * On macOS, OpenResty runs as root via launchd.
+ * macOS TCC blocks root from accessing ~/Desktop and other user dirs.
+ * Setting worker processes to run as the current user fixes this.
+ */
+function macosUserDirective(): string {
+    const user = (process.env.SUDO_USER || process.env.USER || '').trim();
+    return user ? `user ${user} staff;` : '';
+}
+
 function layoutFromInstalledBinary(bin: string): OpenRestyLayout | null {
     const build = getOpenRestyBuildOutput(bin);
     const confPath = readBuildFlag(build, '--conf-path');
@@ -107,7 +125,7 @@ function layoutFromInstalledBinary(bin: string): OpenRestyLayout | null {
             `${luaDir}/?/init.lua`,
             ''
         ].join(';'),
-        userDirective: process.platform === 'linux' ? linuxUserDirective() : '',
+        userDirective: process.platform === 'linux' ? linuxUserDirective() : process.platform === 'darwin' ? macosUserDirective() : '',
         isSupported: true,
     };
 }
@@ -119,7 +137,7 @@ export function detectOpenRestyLayout(): OpenRestyLayout {
         return {
             layoutKey: 'unsupported',
             configDir: '', confDDir: '', logDir: '', configFilePath: '', luaDir: '', luaPackagePath: '',
-            userDirective: '',
+            userDirective: macosUserDirective(),
             isSupported: false,
             installNote: [
                 'OpenResty is not natively supported on Windows.',

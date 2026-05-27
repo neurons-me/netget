@@ -165,7 +165,7 @@ export default async function routingTableMenu(): Promise<void> {
     while (true) {
         console.clear();
         console.log(chalk.bold('📍 .Get Local > Main Server > Routing table'));
-        console.log(chalk.gray('Active routes are projected into domain-map.json and served by OpenResty.'));
+        console.log(chalk.gray('Active routes are projected into domain-map.json and served by the NetGet gateway.'));
         console.log(chalk.gray('Domains must be registered first in Domains & Certificates.\n'));
 
         const domains = (await getDomains())

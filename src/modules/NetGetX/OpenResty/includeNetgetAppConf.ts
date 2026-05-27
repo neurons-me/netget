@@ -42,7 +42,7 @@ async function copyLuaWithFallback(srcLuaDir: string, luaTargetDir: string): Pro
 
   const cmd = `sh -c 'mkdir -p "${luaTargetDir}" && cp -R "${srcLuaDir}/." "${luaTargetDir}/"'`;
   await handlePermission(
-    'Install/Update Lua scripts into OpenResty prefix',
+    'Install/Update NetGet gateway Lua scripts',
     cmd,
     `Run manually:\nsudo ${cmd}`
   );
@@ -50,12 +50,12 @@ async function copyLuaWithFallback(srcLuaDir: string, luaTargetDir: string): Pro
 }
 
 /**
- * Installs netget_app.conf into the detected OpenResty conf.d directory.
+ * Installs netget_app.conf into the detected gateway conf.d directory.
  */
 async function includeNetgetAppConf(): Promise<void> {
   const layout = detectOpenRestyLayout();
   if (!layout.isSupported) {
-    console.log(chalk.yellow('OpenResty automatic configuration is not supported on this platform.'));
+    console.log(chalk.yellow('NetGet gateway automatic configuration is not supported on this platform.'));
     if (layout.installNote) console.log(chalk.gray(layout.installNote));
     return;
   }
@@ -63,7 +63,7 @@ async function includeNetgetAppConf(): Promise<void> {
   const destConf = path.join(layout.confDDir, 'netget_app.conf');
   const sourceDir = path.dirname(new URL(import.meta.url).pathname);
 
-  console.log(chalk.gray(`OpenResty layout: ${layout.layoutKey}`));
+  console.log(chalk.gray(`Gateway engine layout: ${layout.layoutKey}`));
   console.log(chalk.gray(`nginx.conf: ${layout.configFilePath}`));
   console.log(chalk.gray(`conf.d: ${layout.confDDir}`));
 
@@ -92,23 +92,23 @@ async function includeNetgetAppConf(): Promise<void> {
   }
 
   const { reload } = await inquirer.prompt<{ reload: boolean }>([
-    { type: 'confirm', name: 'reload', message: 'Validate configuration and reload OpenResty now?', default: true }
+    { type: 'confirm', name: 'reload', message: 'Validate configuration and reload NetGet now?', default: true }
   ]);
 
   if (reload) {
     const bin = findOpenRestyBin();
     if (!bin) {
-      console.log(chalk.yellow('OpenResty binary not found. Install OpenResty before reloading.'));
+      console.log(chalk.yellow('Gateway engine binary not found. Install/repair the gateway engine before reloading.'));
       return;
     }
 
     const validation = validateOpenRestyConfig(bin);
     if (!validation.ok) {
-      console.log(chalk.yellow('OpenResty config validation did not pass without sudo:'));
+      console.log(chalk.yellow('NetGet gateway config validation did not pass without sudo:'));
       console.log(chalk.gray(validation.output || '(no output)'));
       console.log(chalk.gray(`Manual validation: sudo ${bin} -t`));
     } else {
-      console.log(chalk.green('OpenResty configuration is valid.'));
+      console.log(chalk.green('NetGet gateway configuration is valid.'));
     }
 
     const reloadCmd = process.platform === 'linux'
@@ -116,13 +116,13 @@ async function includeNetgetAppConf(): Promise<void> {
       : `sh -c '"${bin}" -s reload'`;
 
     await handlePermission(
-      'reload OpenResty',
+      'reload NetGet gateway',
       reloadCmd,
       `Run manually:\nsudo ${bin} -t\nsudo ${bin} -s reload`
     );
   }
 
-  console.log(chalk.green('netget_app.conf installed successfully.'));
+  console.log(chalk.green('NetGet gateway config installed successfully.'));
 }
 
 export default includeNetgetAppConf;

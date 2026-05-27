@@ -16,8 +16,9 @@ import {
 import {
     getOpenRestyServiceStatus,
     installOpenRestyService,
-    removeOpenRestyService,
     startOpenRestyOnce,
+    stopOpenRestyGateway,
+    waitForOpenRestyGateway,
     type OpenRestyServiceStatus,
 } from './openRestyService.ts';
 import mainServerFrontendMenu from './mainServerFrontend.cli.ts';
@@ -42,7 +43,7 @@ interface InstallAnswers {
     choice: InstallChoice;
 }
 
-const BREADCRUMB = '📍 .Get Local > Main Server > OpenResty';
+const BREADCRUMB = '📍 .Get Local > Main Server > Settings > Gateway engine';
 
 function commandExists(command: string): boolean {
     try {
@@ -140,15 +141,15 @@ function buildChoices(service: OpenRestyServiceStatus): Array<any> {
     const layout = detectOpenRestyLayout();
     const status = getOpenRestyStatus();
     const choices: Array<any> = [
-        { name: 'View full status', value: 'status' },
-        { name: service.mode === 'service' ? 'Reload now' : 'Start once / reload now', value: 'start-once' },
+        { name: 'View technical status', value: 'status' },
+        { name: service.mode === 'service' ? 'Reload NetGet now' : 'Start/reload NetGet once', value: 'start-once' },
         service.serviceActive
-            ? { name: 'Repair/reinstall service (auto-start is ON)', value: 'install-service' }
-            : { name: 'Install service (auto-start after reboot)', value: 'install-service' },
+            ? { name: 'Repair/reinstall NetGet service (auto-start is ON)', value: 'install-service' }
+            : { name: 'Install NetGet service (auto-start after reboot)', value: 'install-service' },
     ];
 
     if (service.serviceInstalled || service.serviceActive) {
-        choices.push({ name: 'Remove service', value: 'remove-service' });
+        choices.push({ name: 'Turn NetGet OFF (stop gateway and remove service)', value: 'remove-service' });
     }
 
     choices.push(
@@ -156,8 +157,8 @@ function buildChoices(service: OpenRestyServiceStatus): Array<any> {
         { name: 'Main Server UI target (dev/static/bundled)', value: 'frontend' },
         { name: 'Local HTTPS / self-signed certificates', value: 'local-https' },
         new inquirer.Separator(),
-        { name: status.installed ? `Verify binary (${status.bin})` : 'Verify OpenResty installation', value: 'verify' },
-        { name: 'Install/refresh netget_app.conf and Lua handlers', value: 'include-conf' },
+        { name: status.installed ? `Verify gateway engine binary (${status.bin})` : 'Verify gateway engine installation', value: 'verify' },
+        { name: 'Install/refresh NetGet gateway config and Lua handlers', value: 'include-conf' },
         { name: 'Repair/regenerate nginx.conf', value: 'repair-config' }
     );
 
@@ -179,17 +180,24 @@ function buildChoices(service: OpenRestyServiceStatus): Array<any> {
     return choices;
 }
 
+function isNetGetOnline(service: OpenRestyServiceStatus): boolean {
+    return service.httpListening || service.httpsListening;
+}
+
 function modeLabel(service: OpenRestyServiceStatus): string {
-    if (service.mode === 'service') return chalk.green('SERVICE ON');
-    if (service.mode === 'manual') return chalk.yellow('MANUAL RUN');
-    if (service.mode === 'stopped') return chalk.red('STOPPED');
+    if (isNetGetOnline(service)) return chalk.green('NETGET ON');
+    if (service.mode === 'service') return chalk.red('NETGET OFF');
+    if (service.mode === 'manual') return chalk.yellow('NETGET PARTIAL');
+    if (service.mode === 'stopped') return chalk.red('NETGET OFF');
     if (service.mode === 'unsupported') return chalk.yellow('UNSUPPORTED');
     return chalk.gray('UNKNOWN');
 }
 
 function modeMeaning(service: OpenRestyServiceStatus): string {
-    if (service.mode === 'service') return 'auto-starts after reboot';
-    if (service.mode === 'manual') return 'running now, but will stop after reboot';
+    if (isNetGetOnline(service) && service.mode === 'service') return 'gateway is listening and auto-starts after reboot';
+    if (isNetGetOnline(service) && service.mode === 'manual') return 'gateway is listening until this runtime stops';
+    if (service.mode === 'service') return 'service exists, but the gateway is not listening';
+    if (service.mode === 'manual') return 'process state is partial; gateway ports are not listening';
     if (service.mode === 'stopped') return 'not listening';
     if (service.mode === 'unsupported') return 'use WSL2 on Windows';
     return 'state could not be resolved';
@@ -203,9 +211,9 @@ function portSummary(service: OpenRestyServiceStatus): string {
 
 function printOpenRestyHeader(service: OpenRestyServiceStatus, message?: string): void {
     console.log(chalk.bold(BREADCRUMB));
-    console.log(`OpenResty: ${modeLabel(service)} ${chalk.gray(`(${modeMeaning(service)})`)} · ports ${portSummary(service)}`);
+    console.log(`NetGet: ${modeLabel(service)} ${chalk.gray(`(${modeMeaning(service)})`)} · ports ${portSummary(service)}`);
     if (service.serviceInstalled && !service.serviceActive) {
-        console.log(chalk.yellow('Service is installed, but not active.'));
+        console.log(chalk.yellow('NetGet service is installed, but not active.'));
     }
     if (message) console.log(`\n${message}`);
     console.log('');
@@ -216,14 +224,14 @@ function printOpenRestyFullStatus(service: OpenRestyServiceStatus): void {
     const status = getOpenRestyStatus();
 
     console.log(chalk.bold(BREADCRUMB));
-    console.log(chalk.cyan('\nOpenResty'));
+    console.log(chalk.cyan('\nGateway engine'));
     console.log(`  platform: ${process.platform} ${os.arch()}`);
     console.log(`  binary: ${status.bin ? chalk.green(status.bin) : chalk.yellow('not found')}`);
     if (status.version) console.log(`  version: ${chalk.gray(status.version)}`);
     console.log(`  layout: ${layout.isSupported ? chalk.gray(layout.layoutKey) : chalk.yellow('unsupported')}`);
     if (layout.isSupported) console.log(`  nginx.conf: ${layout.configFilePath}`);
 
-    console.log(chalk.cyan('\nOpenResty Runtime'));
+    console.log(chalk.cyan('\nNetGet Runtime'));
     console.log(`  mode: ${modeLabel(service)} ${chalk.gray(`- ${modeMeaning(service)}`)}`);
     console.log(`  binary: ${service.bin ? chalk.green(service.bin) : chalk.yellow('not found')}`);
     console.log(`  service: ${service.serviceName}`);
@@ -234,7 +242,7 @@ function printOpenRestyFullStatus(service: OpenRestyServiceStatus): void {
     console.log(`  detail: ${chalk.gray(service.detail)}\n`);
 }
 
-async function pause(message = 'Press Enter to return to OpenResty menu.'): Promise<void> {
+async function pause(message = 'Press Enter to return to Gateway engine.'): Promise<void> {
     await inquirer.prompt([{ type: 'input', name: 'continue', message }]);
 }
 
@@ -256,7 +264,7 @@ export default async function openRestyInstallationOptions(): Promise<void> {
         const answers: InstallAnswers = await inquirer.prompt([{
             type: 'list',
             name: 'choice',
-            message: 'OpenResty - choose an action:',
+            message: 'Gateway engine - choose an action:',
             choices: buildChoices(service)
         }]);
 
@@ -271,22 +279,22 @@ export default async function openRestyInstallationOptions(): Promise<void> {
                 case 'install-homebrew':
                     console.clear();
                     await installWithHomebrew();
-                    lastMessage = chalk.green('OpenResty Homebrew install/repair finished.');
+                    lastMessage = chalk.green('Gateway engine Homebrew install/repair finished.');
                     break;
                 case 'install-apt':
                     console.clear();
                     await installWithApt();
-                    lastMessage = chalk.green('OpenResty apt install finished.');
+                    lastMessage = chalk.green('Gateway engine apt install finished.');
                     break;
                 case 'install-source':
                     console.clear();
                     await installFromSource();
-                    lastMessage = chalk.green('OpenResty source install finished.');
+                    lastMessage = chalk.green('Gateway engine source install finished.');
                     break;
                 case 'include-conf':
                     console.clear();
                     await includeNetgetAppConf();
-                    lastMessage = chalk.green('OpenResty app config refreshed.');
+                    lastMessage = chalk.green('NetGet gateway config refreshed.');
                     break;
                 case 'repair-config':
                     console.clear();
@@ -312,16 +320,28 @@ export default async function openRestyInstallationOptions(): Promise<void> {
                     await pause();
                     break;
                 case 'start-once':
-                    if (await startOpenRestyOnce(true)) lastMessage = chalk.green('OpenResty started/reloaded. It is still manual unless the service is installed.');
-                    else lastMessage = chalk.yellow('OpenResty start/reload command did not finish successfully.');
+                    if (await startOpenRestyOnce(true)) {
+                        const next = await waitForOpenRestyGateway();
+                        lastMessage = isNetGetOnline(next)
+                            ? chalk.green('NetGet started/reloaded. It is still manual unless the service is installed.')
+                            : chalk.yellow(`NetGet start command completed, but the gateway is not listening yet. ${next.detail}`);
+                    } else {
+                        lastMessage = chalk.yellow('NetGet start/reload command did not finish successfully.');
+                    }
                     break;
                 case 'install-service':
-                    if (await installOpenRestyService()) lastMessage = chalk.green('Service ON: OpenResty will auto-start after reboot.');
-                    else lastMessage = chalk.yellow('OpenResty service install did not finish successfully.');
+                    if (await installOpenRestyService()) {
+                        const next = await waitForOpenRestyGateway();
+                        lastMessage = isNetGetOnline(next)
+                            ? chalk.green('NetGet ON: gateway is listening and will auto-start after reboot.')
+                            : chalk.yellow(`NetGet service was configured, but the gateway is not listening yet. ${next.detail}`);
+                    } else {
+                        lastMessage = chalk.yellow('NetGet service install did not finish successfully.');
+                    }
                     break;
                 case 'remove-service':
-                    if (await removeOpenRestyService()) lastMessage = chalk.green('Service removed. OpenResty may still be running manually until stopped/reloaded.');
-                    else lastMessage = chalk.yellow('OpenResty service removal did not finish successfully.');
+                    if (await stopOpenRestyGateway()) lastMessage = chalk.red('NetGet OFF: gateway stopped and service removed.');
+                    else lastMessage = chalk.yellow('NetGet OFF did not finish successfully.');
                     break;
                 case 'frontend':
                     await mainServerFrontendMenu();
@@ -337,7 +357,7 @@ export default async function openRestyInstallationOptions(): Promise<void> {
                     lastMessage = chalk.red('Invalid choice.');
             }
         } catch (error: any) {
-            lastMessage = chalk.red(`OpenResty action failed: ${error.message}`);
+            lastMessage = chalk.red(`Gateway action failed: ${error.message}`);
         }
     }
 }

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { detectOpenRestyLayout } from './platformDetect.ts';
@@ -5,10 +7,15 @@ import {
   getActiveStaticRoot,
   resolveMainServerFrontendConfig,
 } from './mainServerFrontend.ts';
+import { MKCERT_CERT_PATH, MKCERT_KEY_PATH } from '../Domains/SSL/mkcert/mkcert.ts';
 
 /**
  * Generate the content for netget_app.conf (app routes) with concrete paths.
  * We resolve xConfig from getNetgetDataDir() and bake absolute paths where nginx needs them.
+ *
+ * SSL is conditional: if the cert files are not present on disk, the server block
+ * only listens on port 80 so OpenResty starts cleanly even before certs are generated.
+ * Once certs exist (self-signed or mkcert), refresh the config and port 443 activates.
  */
 export function getNetgetAppConfContent(): string {
   const xConfig = getNetgetDataDir();
@@ -18,9 +25,18 @@ export function getNetgetAppConfContent(): string {
   // Ensure POSIX paths for nginx
   const activeStaticRoot = getActiveStaticRoot(frontend).replaceAll('\\', '/');
   const distRoot = path.posix.normalize(activeStaticRoot);
-  const sslSelfSignedCertPath: string = '/etc/ssl/certs/nginx-selfsigned.crt';
-  const sslSelfSignedKeyPath: string = '/etc/ssl/private/nginx-selfsigned.key';
   const devProxyTarget = frontend.devUrl;
+
+  // Certs live in ~/.netget/certs/ — user-owned, no sudo needed.
+  // Only emit HTTPS directives when the cert file actually exists on disk.
+  // Without this guard nginx refuses to start if ssl_certificate points to a missing file.
+  const certsPresent = fs.existsSync(MKCERT_CERT_PATH) && fs.existsSync(MKCERT_KEY_PATH);
+  const listenLines = certsPresent
+    ? '    listen 80;\n    listen [::]:80;\n    listen 443 ssl;\n    listen [::]:443 ssl;'
+    : '    listen 80;\n    listen [::]:80;';
+  const sslDirectives = certsPresent
+    ? `\n    ssl_certificate     ${MKCERT_CERT_PATH};\n    ssl_certificate_key ${MKCERT_KEY_PATH};\n`
+    : '';
 
   const proxyHeaders = `
         proxy_http_version 1.1;
@@ -107,15 +123,10 @@ lua_shared_dict jwt_cache 10m;
 log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
 
 server {
-    listen 80;
-    listen [::]:80;
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name local.netget localhost 127.0.0.1;
+${listenLines}
+    server_name local.netget localhost 127.0.0.1 ${(() => { const h = os.hostname(); return h.endsWith('.local') ? h : `${h}.local`; })()};
     client_max_body_size 500M;
-
-    ssl_certificate     ${sslSelfSignedCertPath};
-    ssl_certificate_key ${sslSelfSignedKeyPath};
+${sslDirectives}
 
     set $NETGET_DATA_DIR ${xConfig};
     set $netget_logs_path ${layout.logDir};

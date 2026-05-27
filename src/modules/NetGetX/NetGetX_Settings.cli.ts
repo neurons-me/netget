@@ -3,8 +3,9 @@ import chalk from 'chalk';
 import type { XStateData } from './xState.ts';
 import mainServerMenu from './mainServer/mainServer.cli.ts';
 import displayStateAndConfig from './config/x_StateAndConfig.ts';
+import openRestyInstallationOptions from './OpenResty/openRestyInstallationOptions.cli.ts';
 
-type SettingsAction = 'main-server-name' | 'diagnostics' | 'about' | 'back';
+type SettingsAction = 'main-server-name' | 'local-https' | 'gateway-engine' | 'diagnostics' | 'about' | 'back';
 
 function printSettingsHeader(x: XStateData, message?: string): void {
     console.log(chalk.bold('📍 .Get Local > Main Server > Settings'));
@@ -38,6 +39,9 @@ const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
                 message: 'Settings - choose an action:',
                 choices: [
                     { name: 'Public domain / local label', value: 'main-server-name' },
+                    { name: 'Local HTTPS / certificates',  value: 'local-https'      },
+                    new inquirer.Separator(),
+                    { name: 'Gateway engine advanced', value: 'gateway-engine' },
                     { name: 'Developer diagnostics: xConfig vs xState', value: 'diagnostics' },
                     { name: 'About Main Server', value: 'about' },
                     new inquirer.Separator(),
@@ -49,6 +53,17 @@ const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
         if (action === 'back') return;
         if (action === 'main-server-name') {
             await mainServerMenu(x);
+            continue;
+        }
+
+        if (action === 'local-https') {
+            const { default: localHttpsMenu } = await import('./Domains/SSL/selfSigned/localHttps.cli.ts');
+            await localHttpsMenu();
+            continue;
+        }
+
+        if (action === 'gateway-engine') {
+            await openRestyInstallationOptions();
             continue;
         }
 
@@ -64,8 +79,8 @@ const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
         if (action === 'about') {
             console.clear();
             console.log(chalk.bold('📍 .Get Local > Main Server > Settings > About'));
-            console.log(chalk.cyan('\nMain Server is the local NetGet control plane: OpenResty gateway, domains, certificates, and UI target.'));
-            console.log(chalk.gray('Use OpenResty for runtime/service state. Use Main Server UI target for dev/bundled frontend routing.\n'));
+            console.log(chalk.cyan('\nMain Server is the local NetGet control plane: gateway, domains, certificates, and UI target.'));
+            console.log(chalk.gray('Use NetGet ON/OFF for runtime state. Gateway engine advanced is for low-level repair and diagnostics.\n'));
             await pause();
         }
     }

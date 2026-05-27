@@ -71,14 +71,27 @@ const getSelfSignedCertificateStatus = async (): Promise<SelfSignedCertificateSt
     if (!certExists) return status;
 
     try {
-        const { stdout } = await execAsync(`openssl x509 -in "${certPath}" -noout -subject -issuer -dates -ext subjectAltName`);
-        const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-        status.subject = lines.find((line) => line.startsWith('subject='))?.replace(/^subject=\s*/, '');
-        status.issuer = lines.find((line) => line.startsWith('issuer='))?.replace(/^issuer=\s*/, '');
-        status.notBefore = lines.find((line) => line.startsWith('notBefore='))?.replace(/^notBefore=/, '');
-        status.notAfter = lines.find((line) => line.startsWith('notAfter='))?.replace(/^notAfter=/, '');
-        const sanIndex = lines.findIndex((line) => /Subject Alternative Name/i.test(line));
-        if (sanIndex >= 0 && lines[sanIndex + 1]) status.san = lines[sanIndex + 1];
+        // Use two separate calls for compatibility with macOS LibreSSL
+        // (LibreSSL's x509 does not support -ext / -extensions flags).
+        const { stdout: mainOut } = await execAsync(
+            `openssl x509 -in "${certPath}" -noout -subject -issuer -dates`
+        );
+        const lines = mainOut.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        status.subject   = lines.find((l) => l.startsWith('subject='))?.replace(/^subject=\s*/, '');
+        status.issuer    = lines.find((l) => l.startsWith('issuer='))?.replace(/^issuer=\s*/, '');
+        status.notBefore = lines.find((l) => l.startsWith('notBefore='))?.replace(/^notBefore=/, '');
+        status.notAfter  = lines.find((l) => l.startsWith('notAfter='))?.replace(/^notAfter=/, '');
+
+        // SAN: use -text and grep — works on both LibreSSL and OpenSSL.
+        try {
+            const { stdout: textOut } = await execAsync(
+                `openssl x509 -in "${certPath}" -noout -text`
+            );
+            const sanMatch = textOut.match(/Subject Alternative Name:\s*\n?\s*([^\n]+)/i);
+            if (sanMatch) status.san = sanMatch[1].trim();
+        } catch {
+            // SAN not critical — ignore if it fails
+        }
     } catch (error: any) {
         status.valid = false;
         status.error = error.message;

@@ -43,7 +43,7 @@ async function promptReloadConf(): Promise<void> {
     const { refresh } = await inquirer.prompt<{ refresh: boolean }>([{
         type: 'confirm',
         name: 'refresh',
-        message: 'Refresh netget_app.conf now so OpenResty uses this frontend target?',
+        message: 'Refresh NetGet gateway config now so this UI target is active?',
         default: true,
     }]);
     if (refresh) await includeNetgetAppConf();
@@ -72,7 +72,7 @@ export default async function mainServerFrontendMenu(): Promise<void> {
                 { name: 'Use custom built dist folder', value: 'custom-static' },
                 new inquirer.Separator(),
                 { name: 'Copy package built UI into ~/.get/dist', value: 'copy-bundled' },
-                { name: 'Refresh OpenResty app config', value: 'refresh-conf' },
+                { name: 'Refresh NetGet gateway config', value: 'refresh-conf' },
                 new inquirer.Separator(),
                 { name: 'Back', value: 'back' },
             ],

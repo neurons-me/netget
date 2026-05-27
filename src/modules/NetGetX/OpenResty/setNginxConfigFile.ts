@@ -1,10 +1,12 @@
 import inquirer from 'inquirer';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import chalk from 'chalk';
 import { handlePermission } from '../../utils/handlePermissions.ts';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { detectOpenRestyLayout, type OpenRestyLayout } from './platformDetect.ts';
+import { MKCERT_CERT_PATH, MKCERT_KEY_PATH } from '../Domains/SSL/mkcert/mkcert.ts';
 
 /**
  * Builds the nginx.conf content for the detected platform layout.
@@ -12,8 +14,8 @@ import { detectOpenRestyLayout, type OpenRestyLayout } from './platformDetect.ts
  */
 export function buildNginxConfigContent(layout: OpenRestyLayout = detectOpenRestyLayout()): string {
     const xConfig = getNetgetDataDir();
-    const sslCertPath = '/etc/ssl/certs/nginx-selfsigned.crt';
-    const sslKeyPath  = '/etc/ssl/private/nginx-selfsigned.key';
+    const sslCertPath = MKCERT_CERT_PATH;
+    const sslKeyPath  = MKCERT_KEY_PATH;
     const sqliteDatabasePath = path.join(xConfig, 'domains.db');
     const domainMapPath      = path.join(xConfig, 'runtime', 'domain-map.json');
     const domainMapVersionPath = path.join(xConfig, 'runtime', 'domain-map.version');

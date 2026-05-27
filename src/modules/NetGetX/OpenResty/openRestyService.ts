@@ -62,6 +62,26 @@ function checkPort(port: number): Promise<boolean> {
     });
 }
 
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isOpenRestyGatewayOnline(service: Pick<OpenRestyServiceStatus, 'httpListening' | 'httpsListening'>): boolean {
+    return service.httpListening || service.httpsListening;
+}
+
+export async function waitForOpenRestyGateway(timeoutMs = 4000): Promise<OpenRestyServiceStatus> {
+    const startedAt = Date.now();
+    let status = await getOpenRestyServiceStatus();
+
+    while (!isOpenRestyGatewayOnline(status) && Date.now() - startedAt < timeoutMs) {
+        await delay(250);
+        status = await getOpenRestyServiceStatus();
+    }
+
+    return status;
+}
+
 function buildMacOSPlist(bin: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -143,7 +163,13 @@ export async function getOpenRestyServiceStatus(): Promise<OpenRestyServiceStatu
             httpListening,
             httpsListening,
             mode,
-            detail: serviceActive ? 'launchd service is active.' : serviceInstalled ? 'launchd service is installed but not active.' : 'launchd service is not installed.',
+            detail: serviceActive
+                ? httpListening || httpsListening
+                    ? 'launchd service is active and the gateway is listening.'
+                    : 'launchd service is loaded, but the gateway ports are closed.'
+                : serviceInstalled
+                    ? 'launchd service is installed but not active.'
+                    : 'launchd service is not installed.',
         };
     }
 
@@ -165,7 +191,13 @@ export async function getOpenRestyServiceStatus(): Promise<OpenRestyServiceStatu
             httpListening,
             httpsListening,
             mode,
-            detail: serviceActive ? 'systemd service is active.' : serviceInstalled ? 'systemd service is installed but not active.' : 'systemd service is not installed.',
+            detail: serviceActive
+                ? httpListening || httpsListening
+                    ? 'systemd service is active and the gateway is listening.'
+                    : 'systemd service is active, but the gateway ports are closed.'
+                : serviceInstalled
+                    ? 'systemd service is installed but not active.'
+                    : 'systemd service is not installed.',
         };
     }
 
@@ -258,4 +290,31 @@ export async function removeOpenRestyService(): Promise<boolean> {
     }
 
     throw new Error('OpenResty service removal is only supported on macOS and Linux.');
+}
+
+export async function stopOpenRestyGateway(): Promise<boolean> {
+    const bin = findOpenRestyBin();
+    const stopRuntime = bin ? `"${bin}" -s quit >/dev/null 2>&1 || true` : 'true';
+
+    if (process.platform === 'darwin') {
+        return runSudoShell([
+            `launchctl bootout system "${MACOS_PLIST_PATH}" >/dev/null 2>&1 || true`,
+            `rm -f "${MACOS_PLIST_PATH}"`,
+            stopRuntime,
+        ].join(' && '));
+    }
+
+    if (process.platform === 'linux') {
+        const serviceCommands = canUseSystemd()
+            ? [
+                `systemctl disable --now ${SERVICE_NAME} >/dev/null 2>&1 || true`,
+                `rm -f "${LINUX_UNIT_PATH}"`,
+                'systemctl daemon-reload',
+            ]
+            : [`rm -f "${LINUX_UNIT_PATH}"`];
+        return runSudoShell([...serviceCommands, stopRuntime].join(' && '));
+    }
+
+    if (!bin) throw new Error('OpenResty binary not found.');
+    return runSudoShell(stopRuntime);
 }

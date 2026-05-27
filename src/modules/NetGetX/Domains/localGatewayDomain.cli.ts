@@ -23,7 +23,7 @@ function printLocalGatewayHeader(message = ''): void {
     console.clear();
     console.log(chalk.bold('📍 .Get Local > Main Server > Local gateway'));
     console.log(chalk.cyan('local.netget'));
-    console.log(chalk.gray('Reserved hostname for this machine. It points to the Main Server UI through local OpenResty.'));
+    console.log(chalk.gray('Reserved hostname for this machine. It points to the Main Server UI through the NetGet gateway.'));
     console.log(chalk.gray('It is not a public routed domain, so subdomains, domain deletion, and public SSL do not apply here.'));
     if (message) console.log(`\n${message}`);
     console.log('');

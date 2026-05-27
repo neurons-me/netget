@@ -1,6 +1,6 @@
 {
     "name": "netget",
-    "version": "2.6.51",
+    "version": "2.7.1",
     "description": "Rette Adepto.",
     "type": "module",
     "main": "./dist/index.js",
@@ -59,10 +59,10 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/suiGn/netget.git"
+        "url": "git+https://github.com/neurons-me/netget.git"
     },
     "homepage": "https://www.npmjs.com/package/netget",
-    "docs": "https://suign.github.io/netget",
+    "docs": "https://neurons-me.github.io/netget",
     "author": "Sui Gn",
     "contributors": [
         "pplalo"

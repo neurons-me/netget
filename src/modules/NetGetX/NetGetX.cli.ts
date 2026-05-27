@@ -19,6 +19,7 @@ import {
 } from './OpenResty/openRestyService.ts';
 import { getSelfSignedCertificateStatus } from './Domains/SSL/selfSignedCertificates.ts';
 import { isMkcertCAInstalled, isCertMkcertSigned, ensureMkcertCert } from './Domains/SSL/mkcert/mkcert.ts';
+import { GatewayClaimsManager } from './Auth/GatewayClaimsManager.ts';
 import fs from 'fs';
 
 interface MenuAnswers {
@@ -219,6 +220,18 @@ export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
                         ? chalk.red('NetGet OFF: gateway stopped and service removed.')
                         : chalk.yellow('NetGet OFF did not finish successfully.');
                 } else {
+                    // ── Bootstrap check ───────────────────────────────────
+                    const claimsMgr = new GatewayClaimsManager();
+                    if (claimsMgr.needsBootstrap()) {
+                        const { runBootstrapWizard } = await import('./Auth/bootstrapWizard.cli.ts');
+                        const ownerHash = await runBootstrapWizard();
+                        if (!ownerHash) {
+                            lastMessage = chalk.yellow('Bootstrap cancelled. NetGet was not started.');
+                            break;
+                        }
+                        console.log('');
+                    }
+
                     // ── Step 1: HTTPS cert ────────────────────────────────
                     console.log(chalk.cyan('\n[1/4] Setting up HTTPS cert…'));
                     const httpsResult = ensureMkcertCert();

@@ -70,6 +70,13 @@ function resolveDataDir() {
 let DATA_DIR = null;
 
 function resolveDataDirOnce() {
+    // Allow override via environment (used in tests and for cross-process
+    // integrations such as the Monad → NetGet usage bridge).
+    // The env var takes priority over the cached platform default so that
+    // both test isolation and runtime overrides work without restarting.
+    if (process.env.NETGET_DATA_DIR) {
+        return process.env.NETGET_DATA_DIR;
+    }
     if (!DATA_DIR) {
         DATA_DIR = resolveDataDir();
     }

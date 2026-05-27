@@ -159,6 +159,24 @@ if not app then
   return ngx.exit(ngx.HTTP_NOT_FOUND)
 end
 
+-- Gate 1: Trust — what surface does this identity get to expose?
+-- trust is materialized at heartbeat ingest (apps.lua derive_trust).
+-- The surface executes the already-resolved relationship; it does not re-derive.
+-- Absent trust field: backward-compat — skip this gate (pre-Capa-3 apps).
+local trust = tostring(app.trust or "")
+if trust == "guest" then
+  local uri = tostring(ngx.var.uri or "")
+  local is_health = uri == "/health" or uri == "/status"
+                    or uri:match("^/health[/?]") or uri:match("^/status[/?]")
+  if not is_health then
+    ngx.status = ngx.HTTP_FORBIDDEN
+    ngx.say("NetGet: monad has guest trust. Only /health and /status are accessible.")
+    return ngx.exit(ngx.HTTP_FORBIDDEN)
+  end
+end
+
+-- Gate 2: Exposure — from what network context can this surface be reached?
+-- Orthogonal to trust: trust is depth (which routes), exposure is reach (from where).
 local allowed, status = exposure_allows_request(app)
 if not allowed then
   ngx.status = status or ngx.HTTP_FORBIDDEN

@@ -12,6 +12,7 @@ end
 local netgetDir = getNetgetDataDir()
 local runtimeDir = netgetDir .. "/runtime"
 local appsPath = runtimeDir .. "/apps.json"
+local claimsPath = runtimeDir .. "/gateway-claims.json"
 
 local function set_json()
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
@@ -66,6 +67,31 @@ local function now_ms()
   return ngx.now() * 1000
 end
 
+-- Read the gateway claims snapshot (written by GatewayClaimsManager).
+-- Returns {} when the file is absent or unparseable — safe fallback to guest.
+local function read_claims()
+  local raw = read_file(claimsPath)
+  if not raw or raw == "" then return {} end
+  local decoded = cjson.decode(raw)
+  return type(decoded) == "table" and decoded or {}
+end
+
+-- Resolve trust level from the app's identity_hash against the gateway claims.
+-- Mirrors the semantic resolution of .me secret scopes (A0): the relationship
+-- between identity_hash and owner/admins IS the trust — no re-verification at
+-- route time, just a materialized field read from apps.json.
+--
+--   owner  → identity_hash == claims.owner
+--   admin  → identity_hash in claims.admins
+--   peer   → identity_hash present but not owner/admin
+--   guest  → identity_hash absent or empty
+local function derive_trust(identity_hash, claims)
+  if not identity_hash or identity_hash == "" then return "guest" end
+  if claims.owner and identity_hash == claims.owner then return "owner" end
+  if type(claims.admins) == "table" and claims.admins[identity_hash] then return "admin" end
+  return "peer"
+end
+
 local function scrub_dead_apps(registry)
   local current = now_ms()
   local live = {}
@@ -102,6 +128,16 @@ local function report_app()
   local registry = scrub_dead_apps(read_registry())
   app.lastSeenMs = now_ms()
   app.localOnly = true
+
+  -- Materialize trust level at ingest time — never re-derived at route time.
+  local claims = read_claims()
+  local meta = type(app.metadata) == "table" and app.metadata or {}
+  local id_hash = tostring(meta.identity_hash or meta.identityHash or "")
+  app.trust = derive_trust(id_hash, claims)
+  if app.trust ~= "guest" then
+    app.verified_at = now_ms()
+  end
+
   registry.apps[app.id] = app
 
   local ok, err = write_registry(registry)

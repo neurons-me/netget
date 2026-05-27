@@ -43,14 +43,14 @@ function readGatewaySeed(seed = process.env[GATEWAY_SEED_ENV]): string {
 export function deriveGatewayIdentity(seed = process.env[GATEWAY_SEED_ENV]): GatewayIdentityInfo {
     const runtime = new (ME as any)(readGatewaySeed(seed));
 
-    // me.identityHash — direct getter on the ME kernel (no ['!'] escape needed)
-    const hash = String((runtime as any).identityHash || '').trim();
+    // me['!'].identity() is the reflective runtime contract for the root identity.
+    const identity = (runtime as any)?.['!']?.identity?.();
+    const hash = String(identity?.hash || '').trim();
     if (!/^[0-9a-f]{64}$/.test(hash)) {
         throw new Error('.me did not expose a valid identity hash.');
     }
 
-    // me['!']()  — "who am I?" returns { hash, expression }
-    const expression = (runtime as any)?.['!']?.()?.expression ?? null;
+    const expression = identity?.expression ?? null;
 
     return {
         identityHash: hash,

@@ -16,7 +16,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.3",
-    "this.gui": "^1.3.65"
+    "this.gui": "^2.1.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
@@ -29,6 +29,7 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.14.0",
+    "terser": "^5.48.0",
     "vite": "^6.0.5"
   }
 }

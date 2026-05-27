@@ -34,7 +34,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import NetGetAppBar from '../components/AppBar/NetGetAppBar.jsx';
 import Footer from '../components/Footer/Footer.jsx';
 
-const domains_route = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const domains_route = "";   // same origin — nginx proxies to the Express backend
 
 const Logs = () => {
     const navigate = useNavigate();
@@ -63,16 +63,9 @@ const Logs = () => {
                 offset: offset.toString()
             });
 
-            const response = await fetch(`${domains_route}/logs?${params}`, {
-                method: 'GET',
-                credentials: 'include'
-            });
+            const response = await fetch(`${domains_route}/logs?${params}`);
 
             if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    window.location.href = '/login';
-                    return;
-                }
                 throw new Error('Failed to fetch logs');
             }
 
@@ -205,14 +198,8 @@ const Logs = () => {
         return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
     };
 
-    const handleRowClick = (log) => {
-        // Navigate to log detail page with log data
-        navigate(`/logs/${log.domain}`, { 
-            state: { 
-                logData: log,
-                returnPath: '/logs'
-            } 
-        });
+    const handleRowClick = (_log) => {
+        // Future: detailed log view
     };
 
     return (

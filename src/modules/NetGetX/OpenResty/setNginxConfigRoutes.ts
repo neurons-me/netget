@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { detectOpenRestyLayout } from './platformDetect.ts';
 import {
@@ -115,6 +116,30 @@ ${proxyHeaders}
     
   const machineHostname = (() => { const h = os.hostname(); return h.endsWith('.local') ? h : `${h}.local`; })();
 
+  // ─── Shared vendor assets (React UMD) — served by mesh, never reach the monad ──
+  // Resolve paths relative to all.this root (6 levels up from this file's directory).
+  const allThisRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../');
+  const reactUmdDir = path.join(allThisRoot, 'packages/GUI/npm/node_modules/react/umd').replaceAll('\\', '/');
+  const reactDomUmdDir = path.join(allThisRoot, 'packages/GUI/npm/node_modules/react-dom/umd').replaceAll('\\', '/');
+  const vendorLocations = fs.existsSync(reactUmdDir) ? `
+    # Vendor assets — mesh intercepts, monad never sees these requests
+    location /vendor/react/ {
+        alias ${reactUmdDir}/;
+        expires 1d;
+        add_header Cache-Control "public, max-age=86400";
+        add_header Access-Control-Allow-Origin "*";
+        access_log off;
+    }
+
+    location /vendor/react-dom/ {
+        alias ${reactDomUmdDir}/;
+        expires 1d;
+        add_header Cache-Control "public, max-age=86400";
+        add_header Access-Control-Allow-Origin "*";
+        access_log off;
+    }
+` : '';
+
   // ─── Namespace surface server block ────────────────────────────────────────
   // Routes <machine-hostname> → the monad whose namespace matches the host header.
   // The monad endpoint is resolved at request time from apps.json via Lua.
@@ -130,7 +155,7 @@ ${sslDirectives}
     set $NETGET_DATA_DIR ${xConfig};
     access_log ${layout.logDir}/netget_access.log netget_access;
     error_log  ${layout.logDir}/netget_error.log warn;
-
+${vendorLocations}
     location / {
         set $surface_proxy_target "";
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;

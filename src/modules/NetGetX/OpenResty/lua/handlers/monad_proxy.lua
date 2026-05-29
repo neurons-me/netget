@@ -9,8 +9,9 @@ local function getNetgetDataDir()
   return os.getenv("HOME") .. "/.get"
 end
 
-local runtimeDir = getNetgetDataDir() .. "/runtime"
-local appsPath = runtimeDir .. "/apps.json"
+local runtimeDir  = getNetgetDataDir() .. "/runtime"
+local appsPath    = runtimeDir .. "/apps.json"
+local catalogPath = runtimeDir .. "/monad-catalog.json"
 
 local function read_file(path)
   local f = io.open(path, "r")
@@ -31,6 +32,25 @@ local function read_registry()
   end
   decoded.apps = decoded.apps or {}
   return decoded
+end
+
+local function read_catalog()
+  local raw = read_file(catalogPath)
+  if not raw or raw == "" then return {} end
+  local decoded = cjson.decode(raw)
+  return type(decoded) == "table" and decoded or {}
+end
+
+local function spawn_monad(entry, name)
+  local cmd = tostring(entry.cmd or "")
+  if cmd == "" then return false end
+  local home = os.getenv("HOME") or ""
+  local cwd  = tostring(entry.cwd or home):gsub("^~", home)
+  local log  = runtimeDir .. "/" .. name .. ".spawn.log"
+  local full = string.format("cd %s && %s >> %s 2>&1 &", cwd, cmd, log)
+  local h = io.popen(full)
+  if h then h:close() end
+  return true
 end
 
 local function normalize_token(value)
@@ -152,17 +172,42 @@ local function resolve_target(app)
   return protocol .. "://" .. host .. ":" .. tostring(port)
 end
 
-local app = find_monad(ngx.var.monad_proxy_name)
+-- ── Name-based routing with catalog auto-start ────────────────────────────────
+-- Name is the stable identity. Port is just transport.
+-- If the monad isn't live, check the catalog and spawn it, then wait up to 8s.
+
+local wanted = normalize_token(ngx.var.monad_proxy_name)
+local app = find_monad(wanted)
+
 if not app then
-  ngx.status = ngx.HTTP_NOT_FOUND
-  ngx.say("NetGet monad is not available.")
-  return ngx.exit(ngx.HTTP_NOT_FOUND)
+  local catalog = read_catalog()
+  local entry   = catalog[wanted]
+
+  if entry and entry.autoStart ~= false then
+    spawn_monad(entry, wanted)
+    for _ = 1, 16 do
+      ngx.sleep(0.5)
+      app = find_monad(wanted)
+      if app then break end
+    end
+  end
+
+  if not app then
+    ngx.status = entry and ngx.HTTP_SERVICE_UNAVAILABLE or ngx.HTTP_NOT_FOUND
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({
+      error   = entry and "monad_starting" or "monad_not_found",
+      name    = wanted,
+      message = entry
+        and ("Monad '" .. wanted .. "' is starting — retry in a moment.")
+        or  ("Monad '" .. wanted .. "' is not registered. "
+             .. "Add it to monad-catalog.json to enable auto-start."),
+    }))
+    return ngx.exit(ngx.status)
+  end
 end
 
--- Gate 1: Trust — what surface does this identity get to expose?
--- trust is materialized at heartbeat ingest (apps.lua derive_trust).
--- The surface executes the already-resolved relationship; it does not re-derive.
--- Absent trust field: backward-compat — skip this gate (pre-Capa-3 apps).
+-- Gate 1: Trust
 local trust = tostring(app.trust or "")
 if trust == "guest" then
   local uri = tostring(ngx.var.uri or "")
@@ -175,8 +220,7 @@ if trust == "guest" then
   end
 end
 
--- Gate 2: Exposure — from what network context can this surface be reached?
--- Orthogonal to trust: trust is depth (which routes), exposure is reach (from where).
+-- Gate 2: Exposure
 local allowed, status = exposure_allows_request(app)
 if not allowed then
   ngx.status = status or ngx.HTTP_FORBIDDEN

@@ -49,6 +49,9 @@ export default function GatewayDashboard({
               adminCount:  data.adminCount  ?? 0,
               scopes:      Array.isArray(data.scopes) ? data.scopes : [],
               updatedAt:   data.updatedAt   ?? null,
+              ip:          data.ip          ?? undefined,
+              port:        data.port        ?? undefined,
+              scheme:      data.scheme      ?? 'https',
             },
           });
         }

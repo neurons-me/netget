@@ -1,8 +1,27 @@
 node_modules
+**/node_modules
+**/node_modules/**
+*.tgz
 src/**/*.tsbuildinfo
 
-# Main Server UI source app is used for development only.
-# Publish the built UI under assets/main-server-ui/dist instead.
+# Generated docs/cache output is local-only.
+docs/.vitepress/cache
+docs/.vitepress/cache/**
+
+# Development and legacy UI trees are intentionally not part of the package.
+gui
+gui/**
+main-server
+main-server/**
 main-server-ui
 main-server-ui/**
+src/htmls/Netget-REACT
+src/htmls/Netget-REACT/**
+
+# Tests stay in the repository; the package surface is guarded by
+# tests/package-surface.test.ts before build.
+tests
+tests/**
+
+# Publish the small, official package UI build only.
 !assets/main-server-ui/dist/**

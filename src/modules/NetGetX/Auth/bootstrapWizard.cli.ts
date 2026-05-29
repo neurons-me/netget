@@ -11,31 +11,35 @@
  *
  * ```text
  * 1. Print first-run banner
- * 2. ensureGatewayIdentity()  →  derive `.me` identity from SEED
- * 3. Display identityHash
- * 4. Confirm prompt
- * 5. mgr.bootstrapOwner(identityHash)  →  write gateway-claims.json
- * 6. Success summary
+ * 2. Prompt: username  (visible)
+ * 3. Prompt: secret    (masked with inquirer password)
+ * 4. deriveIdentityFromCredentials(username, secret)
+ *    → same double-keccak256 path that Cleaker uses in the browser
+ * 5. Confirm prompt
+ * 6. mgr.bootstrapOwner(identityHash)  →  atomic write to gateway-claims.json
+ * 7. chmod 600 on gateway-claims.json  →  OS-level access control
+ * 8. Success summary
  * ```
  *
- * The resulting `identityHash` is the deterministic `.me` identity hash.
- * This hash controls all admin access to `local.netget` until ownership is
- * explicitly transferred.
+ * The resulting `identityHash` is byte-identical to what the browser Cleaker
+ * produces for the same credentials — so login in local.netget works immediately
+ * after anchor without any additional setup.
  *
  * @see {@link module:NetGetX.Auth.GatewayClaimsManager}
  * @see {@link module:NetGetX.Auth.GatewayIdentity}
  */
 
+import fs       from 'fs';
+import os       from 'os';
 import inquirer from 'inquirer';
 import chalk    from 'chalk';
-import { GatewayClaimsManager } from './GatewayClaimsManager.ts';
-import { ensureGatewayIdentity }  from './GatewayIdentity.ts';
 
-// ---------------------------------------------------------------------------
-// Banner
-// ---------------------------------------------------------------------------
+import { GatewayClaimsManager, getGatewayClaimsPath } from './GatewayClaimsManager.ts';
+import { deriveIdentityFromCredentials, deriveGatewayProofKey } from './GatewayIdentity.ts';
 
-function printBootstrapBanner(): void {
+// ── Banner ────────────────────────────────────────────────────────────────────
+
+function printBootstrapBanner(hostname: string): void {
     console.clear();
     console.log(chalk.bold.cyan(`
   ╔════════════════════════════════════════════════╗
@@ -44,18 +48,18 @@ function printBootstrapBanner(): void {
     console.log(`
   Welcome.  This gateway has ${chalk.bold('no owner yet')}.
 
-  NetGet will derive the gateway owner from your ${chalk.bold('.me seed')}.
-  Your ${chalk.bold('identity hash')} becomes the gateway owner — the root claim
-  that controls domains, apps, routing, and admin access.
+  You are about to anchor a ${chalk.bold('.me human identity')} to this machine.
+  The machine session is:  ${chalk.yellow.bold(hostname)}
 
-  ${chalk.gray('No gateway keypair is generated. .me remains the proof layer.')}
-  ${chalk.gray('Set SEED in the environment before starting NetGet.')}
+  Enter the ${chalk.bold('username + secret')} you use with ${chalk.bold('Cleaker / .me')}.
+  The same credentials unlock this panel from any browser on this network.
+
+  ${chalk.gray('Nothing is sent over the network. The hash is derived locally.')}
+  ${chalk.gray('Your secret is never stored — only the resulting 64-char hash.')}
 `);
 }
 
-// ---------------------------------------------------------------------------
-// runBootstrapWizard
-// ---------------------------------------------------------------------------
+// ── runBootstrapWizard ────────────────────────────────────────────────────────
 
 /**
  * Runs the first-run bootstrap wizard interactively.
@@ -65,41 +69,81 @@ function printBootstrapBanner(): void {
  *          gateway is already bootstrapped (safe to call defensively).
  */
 export async function runBootstrapWizard(): Promise<string | null> {
-    const mgr = new GatewayClaimsManager();
+    const mgr      = new GatewayClaimsManager();
+    const hostname = os.hostname();
 
     // Already bootstrapped — nothing to do.
     if (!mgr.needsBootstrap()) {
         return mgr.read()!.owner;
     }
 
-    printBootstrapBanner();
+    printBootstrapBanner(hostname);
 
-    // ── Step 1: identity ──────────────────────────────────────────────────
-    console.log(chalk.cyan('  [1/2] Resolving your .me identity…'));
-    let identity;
+    // ── Step 1: credentials ───────────────────────────────────────────────────
+    const { who, secret } = await inquirer.prompt<{ who: string; secret: string }>([
+        {
+            type:     'input',
+            name:     'who',
+            message:  chalk.bold('Username (.me / Cleaker):'),
+            validate: (v: string) => v.trim().length > 0 || 'Username is required.',
+        },
+        {
+            type:     'password',
+            name:     'secret',
+            message:  chalk.bold('Secret (masked):'),
+            mask:     '●',
+            validate: (v: string) => v.length > 0 || 'Secret is required.',
+        },
+    ]);
+
+    // ── Step 2: derive identityHash + Ed25519 proof key ──────────────────────
+    console.log(chalk.cyan('\n  [1/2] Deriving .me identity…'));
+
+    // Normalize username the same way Cleaker does in the browser:
+    // trim + lowercase so the CLI and browser always hash the same bytes.
+    const normalizedWho = who.trim().toLowerCase();
+
+    let identityHash: string;
+    let proofPublicKey: string | null = null;
     try {
-        identity = ensureGatewayIdentity();
+        // Exact same double-keccak256 path as Cleaker in the browser.
+        // Uses normalized (lowercase, trimmed) username to match browser behavior.
+        identityHash = deriveIdentityFromCredentials(normalizedWho, secret);
     } catch (err) {
-        console.error(chalk.red(`\n  ✖ Could not resolve .me identity: ${(err as Error).message}`));
+        console.error(chalk.red(`\n  ✖ Could not derive .me identity: ${(err as Error).message}`));
         return null;
     }
 
-    console.log(chalk.green(`  ✔ .me identity resolved from ${identity.seedEnv}.`));
+    // Derive the Ed25519 proof key via cleaker(me, namespace).
+    // The third arg is the hostname (= rootNamespace), matching what the browser
+    // Cleaker passes as proof.rootNamespace during challenge-response auth.
+    const machineHostname = hostname.toLowerCase().endsWith('.local')
+        ? hostname.toLowerCase()
+        : `${hostname.toLowerCase()}.local`;
+    try {
+        proofPublicKey = await deriveGatewayProofKey(normalizedWho, secret, machineHostname);
+        console.log(chalk.green(`  ✔ Identity + Ed25519 proof key derived.`));
+    } catch {
+        // Non-fatal: if WebCrypto is unavailable, fall back to hash-only auth.
+        console.log(chalk.green(`  ✔ Identity derived.`));
+        console.warn(chalk.yellow('  ⚠ Ed25519 key derivation skipped — WebCrypto not available. Hash-only auth will be used.'));
+    }
 
     console.log(`
-  ${chalk.bold('Your identity hash:')}
-  ${chalk.yellow.bold('  ' + identity.identityHash)}
+  ${chalk.bold('Human identity:')}    ${chalk.yellow.bold(who + '.' + hostname)}
+  ${chalk.bold('Identity hash:')}     ${chalk.yellow.bold(identityHash)}
+  ${chalk.bold('Ed25519 pubkey:')}    ${chalk.yellow(proofPublicKey ?? '(not derived — hash-only auth)')}
 
-  ${chalk.gray('This 64-char hex string is derived by .me from your seed.')}
-  ${chalk.gray('Keep the seed safe — .me uses it for proof of ownership.')}
+  ${chalk.gray('The browser signs a challenge nonce with the Ed25519 key on each login.')}
+  ${chalk.gray('Secret never leaves the browser. Key rotates only if seed phrase changes.')}
 `);
 
-    // ── Step 2: confirm ───────────────────────────────────────────────────
+    // ── Step 3: confirm ───────────────────────────────────────────────────────
     const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
         {
             type:    'confirm',
             name:    'confirm',
-            message: chalk.bold('Set this identity as gateway owner and start NetGet?'),
+            message: chalk.bold(`Set "${who}.${hostname}" as gateway owner and start NetGet?`),
             default: true,
         },
     ]);
@@ -109,21 +153,39 @@ export async function runBootstrapWizard(): Promise<string | null> {
         return null;
     }
 
-    // ── Step 3: write claims ──────────────────────────────────────────────
+    // ── Step 4: write claims ──────────────────────────────────────────────────
     console.log(chalk.cyan('\n  [2/2] Writing gateway claims…'));
+
     try {
-        mgr.bootstrapOwner(identity.identityHash);
+        // GatewayClaimsManager handles:
+        //   - atomic write (tmp → rename, nginx never sees partial file)
+        //   - SHA-256 version hash (triggers Lua hot-reload)
+        //   - companion .version file bump
+        // proofPublicKey is stored in claims.pubkeys — enables Ed25519 challenge-response.
+        mgr.bootstrapOwner(identityHash, proofPublicKey);
     } catch (err) {
         console.error(chalk.red(`\n  ✖ Could not write gateway claims: ${(err as Error).message}`));
         return null;
     }
 
-    console.log(chalk.green('  ✔ Gateway owner set.\n'));
-    console.log(`  Gateway ID:   ${chalk.bold(mgr.gatewayId)}`);
-    console.log(`  Owner hash:   ${chalk.yellow(identity.identityHash)}`);
-    console.log(`  Admin scopes: ${chalk.green('all (domains, apps, routes, gateway)')}`);
-    console.log(chalk.gray('\n  The admin panel is now active at https://local.netget'));
-    console.log('');
+    // chmod 600 — only the OS user who ran this command can read/write.
+    // This is the physical proof that the OS authorised this anchor.
+    try {
+        fs.chmodSync(getGatewayClaimsPath(), 0o600);
+    } catch {
+        // Non-fatal on systems where chmod semantics differ (e.g. some Docker envs).
+        console.warn(chalk.yellow('  ⚠ Could not set chmod 600 on gateway-claims.json.'));
+    }
 
-    return identity.identityHash;
+    console.log(chalk.green('  ✔ Gateway owner set.\n'));
+    console.log(`  Machine session:  ${chalk.bold(hostname)}`);
+    console.log(`  Human identity:   ${chalk.bold(who + '.' + hostname)}`);
+    console.log(`  Identity hash:    ${chalk.yellow(identityHash)}`);
+    console.log(`  Ed25519 pubkey:   ${chalk.yellow(proofPublicKey ?? '(not stored — hash-only auth)')}`);
+    console.log(`  Auth mode:        ${chalk.green(proofPublicKey ? 'Ed25519 challenge-response ✓' : 'hash comparison (legacy)')}`);
+    console.log(`  Admin scopes:     ${chalk.green('all (domains, apps, routes, gateway)')}`);
+    console.log(`  Claims file:      ${chalk.gray(getGatewayClaimsPath())} ${chalk.green('(chmod 600)')}`);
+    console.log(chalk.gray('\n  The admin panel is now active at https://local.netget\n'));
+
+    return identityHash;
 }

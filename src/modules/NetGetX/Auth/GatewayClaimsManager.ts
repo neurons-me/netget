@@ -56,6 +56,29 @@ import path   from 'path';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
 // ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively sorts all keys of plain objects so that JSON.stringify always
+ * produces the same canonical string regardless of insertion order.
+ * Arrays and primitives are returned as-is.
+ */
+function sortKeysDeep(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(sortKeysDeep);
+    }
+    if (value !== null && typeof value === 'object') {
+        const sorted: Record<string, unknown> = {};
+        for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+            sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+        }
+        return sorted;
+    }
+    return value;
+}
+
+// ---------------------------------------------------------------------------
 // Scope definitions
 // ---------------------------------------------------------------------------
 
@@ -115,6 +138,21 @@ export interface GatewayClaimsSnapshot {
      * Grants define what each admin can do beyond simple authentication.
      */
     grants: Record<string, GatewayScope[]>;
+
+    /**
+     * Map of `identityHash → Ed25519 public key (base64url, 32 bytes raw)`.
+     *
+     * Written during `netget claim` via `bootstrapOwner(identityHash, pubkey)`.
+     * nginx Lua uses this for challenge-response verification in `/me/auth`.
+     *
+     * Key is the same deterministic Ed25519 key derived by Cleaker via:
+     *   HKDF(compoundSeed, "me.prove.v1", expression) → 32-byte signing seed
+     * so it rotates only if the user changes their seed phrase.
+     *
+     * Gateways anchored before this field was added will have an empty map;
+     * Lua falls back to legacy hash comparison in that case.
+     */
+    pubkeys: Record<string, string>;
 
     /**
      * SHA-256 of the canonical (sorted-keys) JSON of the payload fields.
@@ -211,7 +249,7 @@ export class GatewayClaimsManager {
      * @returns Hex-encoded SHA-256 of the canonical JSON (first 16 bytes = 32 hex chars).
      */
     static computeVersion(snapshot: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'>): string {
-        const stable = JSON.stringify(snapshot, Object.keys(snapshot).sort());
+        const stable = JSON.stringify(sortKeysDeep(snapshot));
         return crypto.createHash('sha256').update(stable, 'utf8').digest('hex').slice(0, 32);
     }
 
@@ -220,7 +258,7 @@ export class GatewayClaimsManager {
      * Used as the starting point for bootstrap.
      */
     static empty(gatewayId: string): GatewayClaimsSnapshot {
-        const base = { gatewayId, owner: null, admins: {}, grants: {} };
+        const base = { gatewayId, owner: null, admins: {}, grants: {}, pubkeys: {} };
         return {
             ...base,
             version: GatewayClaimsManager.computeVersion(base),
@@ -348,24 +386,33 @@ export class GatewayClaimsManager {
      *   - `owner`
      *   - entry in `admins`
      *   - entry in `grants` with `scopes` (defaults to {@link FULL_ADMIN_SCOPES})
+     *   - entry in `pubkeys` with the Ed25519 public key (if provided)
      *
-     * @param identityHash - Ed25519 identity hash from `monad /claims/signIn`.
+     * @param identityHash - Identity hash derived from `.me` credentials.
+     * @param pubkey       - Ed25519 public key (base64url) for challenge-response auth.
+     *                       Pass `null` / omit on legacy bootstraps (hash-only auth).
      * @param scopes       - Scopes to grant; defaults to full admin scopes.
      *
      * @throws If bootstrap has already been performed.
      */
-    bootstrapOwner(identityHash: string, scopes: GatewayScope[] = FULL_ADMIN_SCOPES): void {
+    bootstrapOwner(
+        identityHash: string,
+        pubkey:  string | null = null,
+        scopes: GatewayScope[] = FULL_ADMIN_SCOPES,
+    ): void {
         if (this.hasOwner()) {
             throw new Error(
                 `Gateway "${this.gatewayId}" already has an owner. ` +
                 'Use grantAdmin() to add additional admins.'
             );
         }
+        const pubkeys: Record<string, string> = pubkey ? { [identityHash]: pubkey } : {};
         const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
             gatewayId: this.gatewayId,
             owner:     identityHash,
             admins:    { [identityHash]: true },
             grants:    { [identityHash]: scopes },
+            pubkeys,
         };
         this.write({
             ...base,
@@ -380,21 +427,48 @@ export class GatewayClaimsManager {
      * The current snapshot is read, mutated, and atomically re-written.
      * Idempotent: calling with an already-granted identity updates its scopes.
      *
-     * @param identityHash - Identity to promote.
-     * @param scopes       - Scopes to grant; defaults to {@link FULL_ADMIN_SCOPES}.
+     * Accepts two call signatures for backward compatibility:
+     *   - `grantAdmin(hash, scopes?)` — legacy; no pubkey stored
+     *   - `grantAdmin(hash, pubkey, scopes?)` — new; stores Ed25519 pubkey
+     *
+     * @param identityHash   - Identity to promote.
+     * @param pubkeyOrScopes - Either an Ed25519 public key (base64url string),
+     *                         a GatewayScope[] for the legacy call signature,
+     *                         or `null` to leave any existing pubkey unchanged.
+     * @param scopes         - Scopes to grant (only used when pubkeyOrScopes is
+     *                         a string or null); defaults to {@link FULL_ADMIN_SCOPES}.
      *
      * @throws If the gateway has not been bootstrapped yet.
      */
-    grantAdmin(identityHash: string, scopes: GatewayScope[] = FULL_ADMIN_SCOPES): void {
+    grantAdmin(
+        identityHash: string,
+        pubkeyOrScopes: string | null | GatewayScope[] = null,
+        scopes: GatewayScope[] = FULL_ADMIN_SCOPES,
+    ): void {
+        // Backward compat: if second arg is an array it's the old (hash, scopes) form.
+        let pubkey: string | null;
+        let resolvedScopes: GatewayScope[];
+        if (Array.isArray(pubkeyOrScopes)) {
+            pubkey         = null;
+            resolvedScopes = pubkeyOrScopes as GatewayScope[];
+        } else {
+            pubkey         = pubkeyOrScopes;
+            resolvedScopes = scopes;
+        }
         const current = this.read();
         if (!current?.owner) {
             throw new Error('Gateway has no owner. Call bootstrapOwner() first.');
         }
+        const existingPubkeys = current.pubkeys ?? {};
+        const nextPubkeys = pubkey
+            ? { ...existingPubkeys, [identityHash]: pubkey }
+            : existingPubkeys;
         const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
             gatewayId: current.gatewayId,
             owner:     current.owner,
             admins:    { ...current.admins, [identityHash]: true },
-            grants:    { ...current.grants, [identityHash]: scopes },
+            grants:    { ...current.grants, [identityHash]: resolvedScopes },
+            pubkeys:   nextPubkeys,
         };
         this.write({
             ...base,
@@ -423,14 +497,17 @@ export class GatewayClaimsManager {
         }
         const admins  = { ...current.admins };
         const grants  = { ...current.grants };
+        const pubkeys = { ...(current.pubkeys ?? {}) };
         delete admins[identityHash];
         delete grants[identityHash];
+        delete pubkeys[identityHash];
 
         const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
             gatewayId: current.gatewayId,
             owner:     current.owner,
             admins,
             grants,
+            pubkeys,
         };
         this.write({
             ...base,
@@ -465,6 +542,7 @@ export class GatewayClaimsManager {
             owner:     newOwnerIdentityHash,
             admins:    current.admins,
             grants:    current.grants,
+            pubkeys:   current.pubkeys ?? {},
         };
         this.write({
             ...base,

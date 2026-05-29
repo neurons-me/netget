@@ -288,6 +288,45 @@ program
   });
 
 program
+  .command('claim')
+  .description('Claim this gateway — establish your .me identity as the owner (first-run setup or key update)')
+  .option('--reset', 'Force re-claim even if gateway is already claimed (updates Ed25519 key)')
+  .action(async (opts: { reset?: boolean }) => {
+    try {
+      const { GatewayClaimsManager, getGatewayClaimsPath } = await import('./modules/NetGetX/Auth/GatewayClaimsManager.ts');
+      const mgr = new GatewayClaimsManager();
+
+      if (!mgr.needsBootstrap() && !opts.reset) {
+        // Already bootstrapped — show current state.
+        const claims = mgr.read()!;
+        console.log(chalk.green('\n  ✔ Gateway is already anchored.\n'));
+        console.log(`  Owner hash:   ${chalk.yellow(claims.owner)}`);
+        const pubkey = claims.owner ? claims.pubkeys?.[claims.owner] : null;
+        console.log(`  Ed25519 key:  ${chalk.yellow(pubkey ?? '(none — hash-only auth)')}`);
+        console.log(`  Auth mode:    ${chalk.green(pubkey ? 'Ed25519 challenge-response ✓' : 'hash comparison (legacy)')}`);
+        console.log(`  Claims file:  ${chalk.gray(getGatewayClaimsPath())}`);
+        console.log(chalk.gray('\n  Run with --reset to re-claim and update the Ed25519 key.\n'));
+        process.exit(0);
+      }
+
+      if (opts.reset && !mgr.needsBootstrap()) {
+        // Remove the claims file so bootstrapOwner() treats this as a fresh gateway.
+        const { unlinkSync } = await import('fs');
+        try { unlinkSync(getGatewayClaimsPath()); } catch { /* already gone */ }
+        console.log(chalk.yellow('  Previous claim cleared. Re-claiming…\n'));
+      }
+
+      const { runBootstrapWizard } = await import('./modules/NetGetX/Auth/bootstrapWizard.cli.ts');
+      const hash = await runBootstrapWizard();
+      process.exit(hash ? 0 : 1);
+    } catch (err: any) {
+      console.error(chalk.red(`\nClaim failed: ${err.message}`));
+      if (DEBUG && err.stack) console.error(chalk.gray(err.stack));
+      process.exit(1);
+    }
+  });
+
+program
   .command('generate-domain-map')
   .description('Project current domain config into ~/.get/runtime/domain-map.json for OpenResty')
   .action(async () => {

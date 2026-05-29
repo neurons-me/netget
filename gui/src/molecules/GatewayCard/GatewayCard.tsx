@@ -19,6 +19,12 @@ export interface GatewayCardProps {
   scopes?: string[];
   /** ISO date of the last claim snapshot update */
   updatedAt?: string | null;
+  /** IP address nginx is listening on */
+  ip?: string;
+  /** Port nginx is listening on */
+  port?: number;
+  /** Scheme (http or https) */
+  scheme?: string;
 }
 
 export default function GatewayCard({
@@ -28,6 +34,9 @@ export default function GatewayCard({
   adminCount = 0,
   scopes = [],
   updatedAt,
+  ip,
+  port,
+  scheme = 'https',
 }: GatewayCardProps) {
   return (
     <Card
@@ -54,6 +63,18 @@ export default function GatewayCard({
         </Typography>
         <HashLabel hash={owner ?? ''} fallback="not set" sx={{ mt: 0.25 }} />
       </Box>
+
+      {/* Network row — IP + port */}
+      {(ip || port) && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography variant="caption" sx={{ opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Listening on
+          </Typography>
+          <Typography variant="body2" fontWeight={600} sx={{ fontFamily: 'monospace', mt: 0.25 }}>
+            {scheme}://{ip}{port && port !== 443 && port !== 80 ? `:${port}` : ''}
+          </Typography>
+        </Box>
+      )}
 
       {/* Stats row */}
       <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap' }}>

@@ -167,10 +167,14 @@ export function generateMkcertCert(): boolean {
     const localDomain  = hostname.endsWith('.local') ? hostname : `${hostname}.local`;
     const extraHosts   = localDomain !== 'localhost.local' ? [localDomain] : [];
 
+    // Also include *.hostname for NRP handle subdomains:
+    //   {handle}.suis-macbook-air.local → identity surface per NRP
+    const wildcardHosts = extraHosts.map(h => `*.${h}`);
+
     const r = spawnSync(bin, [
         '-cert-file', MKCERT_CERT_PATH,
         '-key-file',  MKCERT_KEY_PATH,
-        'local.netget', 'localhost', '127.0.0.1', ...extraHosts,
+        'local.netget', 'localhost', '127.0.0.1', ...extraHosts, ...wildcardHosts,
     ], { stdio: 'inherit' });
 
     return !r.error && r.status === 0;

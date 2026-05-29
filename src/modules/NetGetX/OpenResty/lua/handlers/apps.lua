@@ -9,10 +9,11 @@ local function getNetgetDataDir()
   return os.getenv("HOME") .. "/.get"
 end
 
-local netgetDir = getNetgetDataDir()
-local runtimeDir = netgetDir .. "/runtime"
-local appsPath = runtimeDir .. "/apps.json"
-local claimsPath = runtimeDir .. "/gateway-claims.json"
+local netgetDir   = getNetgetDataDir()
+local runtimeDir  = netgetDir .. "/runtime"
+local appsPath    = runtimeDir .. "/apps.json"
+local claimsPath  = runtimeDir .. "/gateway-claims.json"
+local catalogPath = runtimeDir .. "/monad-catalog.json"
 
 local function set_json()
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
@@ -77,10 +78,6 @@ local function read_claims()
 end
 
 -- Resolve trust level from the app's identity_hash against the gateway claims.
--- Mirrors the semantic resolution of .me secret scopes (A0): the relationship
--- between identity_hash and owner/admins IS the trust — no re-verification at
--- route time, just a materialized field read from apps.json.
---
 --   owner  → identity_hash == claims.owner
 --   admin  → identity_hash in claims.admins
 --   peer   → identity_hash present but not owner/admin
@@ -161,7 +158,9 @@ local function list_apps()
     table.insert(apps, app)
   end
 
-  return json(200, { success = true, apps = apps, count = #apps, updatedAt = registry.updatedAt })
+  local count = #apps
+  if count == 0 then apps = cjson.empty_array end
+  return json(200, { success = true, apps = apps, count = count, updatedAt = registry.updatedAt })
 end
 
 local function release_app()
@@ -191,6 +190,166 @@ local function release_app()
   return json(200, { success = true, id = req.id })
 end
 
+local function restart_all()
+  if not is_local_request() then
+    return json(403, { success = false, error = "Only local requests can restart monads." })
+  end
+  if ngx.req.get_method() ~= "POST" then
+    return json(405, { success = false, error = "Use POST." })
+  end
+  local registry = scrub_dead_apps(read_registry())
+  local restarted, skipped = {}, {}
+  for _, app in pairs(registry.apps or {}) do
+    local port = tonumber(app.port)
+    if port and port > 0 then
+      local handle = io.popen(string.format("lsof -ti tcp:%d 2>/dev/null", port))
+      local pid_str = handle and handle:read("*l")
+      if handle then handle:close() end
+      local pid = tonumber(pid_str)
+      if pid then
+        os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+        table.insert(restarted, { name = app.name, port = port, pid = pid })
+      else
+        table.insert(skipped, { name = app.name, port = port })
+      end
+    end
+  end
+  return json(200, { success = true, restarted = restarted, skipped = skipped, count = #restarted })
+end
+
+-- ── Catalog: name → start command registry ───────────────────────────────────
+
+local function read_catalog()
+  local f = io.open(catalogPath, "r")
+  if not f then return {} end
+  local raw = f:read("*a"); f:close()
+  if not raw or raw == "" then return {} end
+  local decoded = cjson.decode(raw)
+  return type(decoded) == "table" and decoded or {}
+end
+
+local function write_catalog(catalog)
+  os.execute("mkdir -p " .. runtimeDir)
+  local tmp = catalogPath .. ".tmp"
+  local f, err = io.open(tmp, "w")
+  if not f then return nil, err end
+  f:write(cjson.encode(catalog))
+  f:close()
+  return os.rename(tmp, catalogPath)
+end
+
+local function normalize_name(s)
+  return tostring(s or ""):lower():match("^([a-z0-9][a-z0-9%-%_%.]*)")
+end
+
+local function list_catalog()
+  if not is_local_request() then
+    return json(403, { success = false, error = "Catalog is local-only." })
+  end
+  local catalog = read_catalog()
+  local entries = {}
+  for name, entry in pairs(catalog) do
+    local e = type(entry) == "table" and entry or {}
+    table.insert(entries, {
+      name      = name,
+      cmd       = e.cmd or "",
+      cwd       = e.cwd or "",
+      autoStart = e.autoStart ~= false,
+    })
+  end
+  local count = #entries
+  if count == 0 then entries = cjson.empty_array end
+  return json(200, { success = true, catalog = entries, count = count })
+end
+
+local function upsert_catalog()
+  if not is_local_request() then
+    return json(403, { success = false, error = "Catalog is local-only." })
+  end
+  ngx.req.read_body()
+  local body = ngx.req.get_body_data()
+  if not body or body == "" then
+    return json(400, { success = false, error = "JSON body required." })
+  end
+  local req = cjson.decode(body)
+  if not req or type(req) ~= "table" then
+    return json(400, { success = false, error = "Invalid JSON." })
+  end
+  local name = normalize_name(req.name)
+  if not name or name == "" then
+    return json(400, { success = false, error = "name is required (alphanumeric, hyphens, dots)." })
+  end
+  local cmd = tostring(req.cmd or "")
+  if cmd == "" then
+    return json(400, { success = false, error = "cmd (start command) is required." })
+  end
+  local catalog = read_catalog()
+  catalog[name] = {
+    cmd       = cmd,
+    cwd       = tostring(req.cwd or "~"),
+    autoStart = req.autoStart ~= false,
+  }
+  local ok, err = write_catalog(catalog)
+  if not ok then
+    return json(500, { success = false, error = err or "Could not write catalog." })
+  end
+  return json(200, { success = true, name = name })
+end
+
+local function delete_catalog_entry()
+  if not is_local_request() then
+    return json(403, { success = false, error = "Catalog is local-only." })
+  end
+  ngx.req.read_body()
+  local body = ngx.req.get_body_data()
+  if not body or body == "" then
+    return json(400, { success = false, error = "JSON body required." })
+  end
+  local req = cjson.decode(body)
+  if not req or not req.name then
+    return json(400, { success = false, error = "name is required." })
+  end
+  local catalog = read_catalog()
+  catalog[req.name] = nil
+  local ok, err = write_catalog(catalog)
+  if not ok then
+    return json(500, { success = false, error = err or "Could not write catalog." })
+  end
+  return json(200, { success = true, name = req.name })
+end
+
+local function spawn_catalog_monad()
+  if not is_local_request() then
+    return json(403, { success = false, error = "Spawn is local-only." })
+  end
+  if ngx.req.get_method() ~= "POST" then
+    return json(405, { success = false, error = "Use POST." })
+  end
+  ngx.req.read_body()
+  local body = ngx.req.get_body_data()
+  local req  = body and cjson.decode(body) or {}
+  local name = normalize_name(type(req) == "table" and req.name or "")
+  if not name or name == "" then
+    return json(400, { success = false, error = "name is required." })
+  end
+  local catalog = read_catalog()
+  local entry   = catalog[name]
+  if not entry then
+    return json(404, { success = false, error = "Monad '" .. name .. "' not in catalog." })
+  end
+  local cmd = tostring(entry.cmd or "")
+  if cmd == "" then
+    return json(400, { success = false, error = "Catalog entry has no cmd." })
+  end
+  local home = os.getenv("HOME") or ""
+  local cwd  = tostring(entry.cwd or home):gsub("^~", home)
+  local log  = runtimeDir .. "/" .. name .. ".spawn.log"
+  local full = string.format("cd %s && %s >> %s 2>&1 &", cwd, cmd, log)
+  local h = io.popen(full)
+  if h then h:close() end
+  return json(200, { success = true, name = name, message = "Spawn signal sent." })
+end
+
 local action = ngx.var.apps_action
 if action == "report" then
   return report_app()
@@ -198,6 +357,16 @@ elseif action == "list" then
   return list_apps()
 elseif action == "release" then
   return release_app()
+elseif action == "restart_all" then
+  return restart_all()
+elseif action == "catalog_list" then
+  return list_catalog()
+elseif action == "catalog_upsert" then
+  return upsert_catalog()
+elseif action == "catalog_delete" then
+  return delete_catalog_entry()
+elseif action == "catalog_spawn" then
+  return spawn_catalog_monad()
 end
 
 return json(404, { success = false, error = "Unknown apps action." })

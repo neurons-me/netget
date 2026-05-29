@@ -1,5 +1,5 @@
 -- gateway_identity.lua
--- Returns the resolved gateway claims snapshot for the local.netget GUI.
+-- Returns gateway identity: IP, port, scheme, bootstrapped state.
 -- Reads gateway-claims.json — never calls .me at runtime.
 -- loopback-only: nginx server_name local.netget enforces this at the network level.
 
@@ -24,46 +24,40 @@ local function read_file(path)
   return data
 end
 
-local function count_keys(t)
-  local n = 0
-  for _ in pairs(t) do n = n + 1 end
-  return n
+-- Parse /sbin/ifconfig output to find the first non-loopback, non-link-local IPv4.
+local function get_local_ip()
+  local handle = io.popen("/sbin/ifconfig 2>/dev/null")
+  if not handle then return nil end
+  local output = handle:read("*a")
+  handle:close()
+  if not output or output == "" then return nil end
+  for ip in output:gmatch("inet%s+(%d+%.%d+%.%d+%.%d+)") do
+    if ip ~= "127.0.0.1" and not ip:match("^169%.254%.") then
+      return ip
+    end
+  end
+  return nil
 end
 
 ngx.header["Content-Type"] = "application/json; charset=utf-8"
 
 local raw = read_file(claimsPath)
-if not raw or raw == "" then
-  ngx.say(cjson.encode({
-    gatewayId   = os.getenv("HOSTNAME") or "unknown",
-    owner       = cjson.null,
-    bootstrapped = false,
-    adminCount  = 0,
-    scopes      = cjson.empty_array,
-    version     = cjson.null,
-    updatedAt   = cjson.null,
-  }))
-  return
+local bootstrapped = false
+
+if raw and raw ~= "" then
+  local claims = cjson.decode(raw)
+  if claims and type(claims) == "table" then
+    bootstrapped = claims.owner ~= nil and claims.owner ~= cjson.null
+  end
 end
 
-local claims = cjson.decode(raw)
-if not claims or type(claims) ~= "table" then
-  ngx.status = 500
-  ngx.say(cjson.encode({ error = "Failed to parse gateway-claims.json" }))
-  return
-end
-
-local owner       = claims.owner
-local admins      = type(claims.admins) == "table" and claims.admins or {}
-local grants      = type(claims.grants) == "table" and claims.grants or {}
-local ownerScopes = (owner and grants[owner]) or cjson.empty_array
+local ip     = get_local_ip()
+local scheme = "https"
+local port   = 443
 
 ngx.say(cjson.encode({
-  gatewayId    = claims.gatewayId or "unknown",
-  owner        = owner or cjson.null,
-  bootstrapped = owner ~= nil and owner ~= cjson.null,
-  adminCount   = count_keys(admins),
-  scopes       = ownerScopes,
-  version      = claims.version  or cjson.null,
-  updatedAt    = claims.updatedAt or cjson.null,
+  ip           = ip or cjson.null,
+  port         = port,
+  scheme       = scheme,
+  bootstrapped = bootstrapped,
 }))

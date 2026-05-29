@@ -162,7 +162,8 @@ export async function runBootstrapWizard(): Promise<string | null> {
         //   - SHA-256 version hash (triggers Lua hot-reload)
         //   - companion .version file bump
         // proofPublicKey is stored in claims.pubkeys — enables Ed25519 challenge-response.
-        mgr.bootstrapOwner(identityHash, proofPublicKey);
+        // normalizedWho is stored in claims.usernames — shows human-readable name in admin panel.
+        mgr.bootstrapOwner(identityHash, proofPublicKey, undefined, normalizedWho);
     } catch (err) {
         console.error(chalk.red(`\n  ✖ Could not write gateway claims: ${(err as Error).message}`));
         return null;

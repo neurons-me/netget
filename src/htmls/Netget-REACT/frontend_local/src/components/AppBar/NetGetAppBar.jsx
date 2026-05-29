@@ -28,6 +28,9 @@ const NetGetAppBar = () => {
           <Button color="inherit" onClick={() => navigate("/home")} sx={{ color: "#bbb", textTransform: "none" }}>
             Gateway
           </Button>
+          <Button color="inherit" onClick={() => navigate("/domains")} sx={{ color: "#bbb", textTransform: "none" }}>
+            Domains
+          </Button>
           <Button color="inherit" onClick={() => navigate("/logs")} sx={{ color: "#bbb", textTransform: "none" }}>
             Logs
           </Button>

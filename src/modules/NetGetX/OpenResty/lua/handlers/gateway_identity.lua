@@ -1,7 +1,12 @@
 -- gateway_identity.lua
--- Returns gateway identity: IP, port, scheme, bootstrapped state.
+-- Returns gateway identity: IP, port, scheme, bootstrapped state, and claims summary.
 -- Reads gateway-claims.json — never calls .me at runtime.
 -- loopback-only: nginx server_name local.netget enforces this at the network level.
+--
+-- Response shape (matches GatewayCardProps in netget.gui):
+--   ip, port, scheme, bootstrapped,
+--   gatewayId, owner (identityHash string | null),
+--   adminCount, scopes, updatedAt
 
 local cjson = require "cjson.safe"
 
@@ -41,13 +46,40 @@ end
 
 ngx.header["Content-Type"] = "application/json; charset=utf-8"
 
-local raw = read_file(claimsPath)
-local bootstrapped = false
+local raw    = read_file(claimsPath)
+local claims = nil
 
 if raw and raw ~= "" then
-  local claims = cjson.decode(raw)
-  if claims and type(claims) == "table" then
-    bootstrapped = claims.owner ~= nil and claims.owner ~= cjson.null
+  local decoded = cjson.decode(raw)
+  if decoded and type(decoded) == "table" then
+    claims = decoded
+  end
+end
+
+local bootstrapped = claims ~= nil and claims.owner ~= nil and claims.owner ~= cjson.null
+
+-- Count admins (excluding owner so we report unique non-owner admin count).
+local admin_count = 0
+if claims and type(claims.admins) == "table" then
+  for hash, _ in pairs(claims.admins) do
+    if hash ~= claims.owner then
+      admin_count = admin_count + 1
+    end
+  end
+end
+
+-- Owner scopes.
+local scopes = cjson.empty_array
+if claims and type(claims.grants) == "table" and type(claims.grants[claims.owner]) == "table" then
+  scopes = claims.grants[claims.owner]
+end
+
+-- updatedAt as ISO 8601 string (claims stores it as epoch ms).
+local updated_at = cjson.null
+if claims and claims.updatedAt then
+  local ts = tonumber(claims.updatedAt)
+  if ts and ts > 0 then
+    updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(ts / 1000))
   end
 end
 
@@ -60,4 +92,9 @@ ngx.say(cjson.encode({
   port         = port,
   scheme       = scheme,
   bootstrapped = bootstrapped,
+  gatewayId    = (claims and claims.gatewayId) or ngx.var.hostname or cjson.null,
+  owner        = (claims and claims.owner)     or cjson.null,
+  adminCount   = admin_count,
+  scopes       = scopes,
+  updatedAt    = updated_at,
 }))

@@ -153,6 +153,7 @@ local function issue_session(claims, identity_hash, public_key)
     publicKey    = public_key or cjson.null,
     gatewayId    = claims.gatewayId or "",
     isOwner      = (claims.owner == identity_hash),
+    isAdmin      = type(claims.admins) == "table" and claims.admins[identity_hash] == true,
     scopes       = scope_count > 0 and scopes or cjson.empty_array,
   })
 end
@@ -405,6 +406,7 @@ local function check_auth()
     authenticated = true,
     identityHash  = identity_hash,
     isOwner       = ngx.ctx.me_is_owner or false,
+    isAdmin       = ngx.ctx.me_is_admin or false,
     scopes        = ngx.ctx.me_scopes   or cjson.empty_array,
     gatewayId     = claims and claims.gatewayId or "",
   }))
@@ -469,20 +471,20 @@ local function legacy_hash_auth(body)
   local admins  = type(claims.admins)  == "table" and claims.admins  or {}
   local pubkeys = type(claims.pubkeys) == "table" and claims.pubkeys or {}
 
-  if admins[hash] ~= true then
-    respond(ngx.HTTP_UNAUTHORIZED, {
-      success = false,
-      error   = "IDENTITY_NOT_AUTHORISED",
-      message = "Identity not found in gateway admins.",
-    })
-    return
-  end
-
-  if pubkeys[hash] then
+  if type(pubkeys[hash]) == "string" and pubkeys[hash] ~= "" then
     respond(ngx.HTTP_UNAUTHORIZED, {
       success = false,
       error   = "PROOF_REQUIRED",
       message = "This identity is anchored with an Ed25519 proof key.",
+    })
+    return
+  end
+
+  if admins[hash] ~= true then
+    respond(ngx.HTTP_UNAUTHORIZED, {
+      success = false,
+      error   = "IDENTITY_NOT_AUTHORISED",
+      message = "Identity not found in legacy gateway admins.",
     })
     return
   end
@@ -531,18 +533,8 @@ local function proof_auth(body)
     return
   end
 
-  local admins           = type(claims.admins)  == "table" and claims.admins  or {}
   local pubkeys          = type(claims.pubkeys) == "table" and claims.pubkeys or {}
   local stored_public_key = pubkeys[payload.identityHash]
-
-  if admins[payload.identityHash] ~= true then
-    respond(ngx.HTTP_UNAUTHORIZED, {
-      success = false,
-      error   = "IDENTITY_NOT_AUTHORISED",
-      message = "Identity not found in gateway admins.",
-    })
-    return
-  end
 
   if type(stored_public_key) ~= "string" or stored_public_key == "" then
     respond(ngx.HTTP_UNAUTHORIZED, {

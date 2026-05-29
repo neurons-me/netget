@@ -14,22 +14,24 @@ local function getNetgetDataDir()
   return os.getenv("HOME") .. "/.get"
 end
 
-local netgetDir = getNetgetDataDir()
+local netgetDir          = getNetgetDataDir()
 local sqliteDatabasePath = netgetDir .. "/domains.db"
+local domainMapPath      = netgetDir .. "/runtime/domain-map.json"
+local domainMapVersion   = netgetDir .. "/runtime/domain-map.version"
 
 local function set_json()
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
 end
 
 local function auth_required()
-  -- Skip auth for HTTP (local development)
+  -- Skip auth for HTTP (local development / loopback)
   local scheme = ngx.var.scheme or "http"
   if scheme ~= "https" then
     ngx.log(ngx.INFO, "Skipping auth for HTTP connection in domains.lua")
     return true
   end
-  
-  -- For HTTPS, require JWT token
+
+  -- For HTTPS, require JWT token (legacy — will migrate to Ed25519 proof auth)
   local cookie = ck:new()
   local token = cookie:get("token")
   if not token then return false end
@@ -45,9 +47,8 @@ local function read_body_json()
   return obj or {}
 end
 
--- naive sqlite access via shell (requires sqlite3 CLI installed). For production replace with proper Lua SQLite binding.
+-- naive sqlite access via shell (requires sqlite3 CLI installed).
 local function exec_sql(query, params)
-  -- params is array; we simple escape single quotes
   if params then
     for _, p in ipairs(params) do
       local safe = tostring(p):gsub("'", "''")
@@ -62,20 +63,29 @@ local function exec_sql(query, params)
   return out
 end
 
+-- Bump domain-map.version so Lua routing workers hot-reload the map.
+-- The actual domain-map.json re-generation happens in the TypeScript layer
+-- (domainMap.ts generateDomainMap()); here we just signal a version change
+-- so the next netget process call regenerates it.
+local function bump_domain_map_version()
+  local ts = tostring(ngx.now() * 1000)
+  local f = io.open(domainMapVersion, "w")
+  if f then f:write(ts); f:close() end
+end
+
 local function list_domains()
-  local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains";
+  local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains"
   local out = exec_sql(sql)
   if not out or out == "" then out = "[]" end
-  -- Parse and wrap in named object
   local domains = cjson.decode(out) or {}
-  ngx.say(cjson.encode({ domains = domains }))
+  if #domains == 0 then domains = cjson.empty_array end
+  ngx.say(cjson.encode({ success = true, domains = domains, count = #domains }))
 end
 
 local function list_subdomains(parent)
-  local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains WHERE subdomain = ? AND domain != ?";
+  local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains WHERE subdomain = ? AND domain != ?"
   local out = exec_sql(sql, { parent, parent })
   if not out or out == "" then out = "[]" end
-  -- Parse and wrap in named object
   local subdomains = cjson.decode(out) or {}
   ngx.say(cjson.encode({ subdomains = subdomains }))
 end
@@ -86,7 +96,7 @@ local function get_domain_target(domain)
     ngx.say(cjson.encode({ error = "Missing domain" }))
     return
   end
-  local sql = "SELECT target FROM domains WHERE domain = ? LIMIT 1";
+  local sql = "SELECT target FROM domains WHERE domain = ? LIMIT 1"
   local out = exec_sql(sql, { domain })
   if not out or out == "" or out == "[]" then
     ngx.status = 404
@@ -100,13 +110,16 @@ end
 
 local function add_domain()
   local body = read_body_json()
-  local required = { "domain", "email", "target", "owner" }
-  for _, r in ipairs(required) do
-    if not body[r] or body[r] == "" then
-      ngx.status = 400
-      ngx.say(cjson.encode({ error = "Missing required field: " .. r }))
-      return
-    end
+  -- Only domain and target are required — email and owner default gracefully.
+  if not body.domain or body.domain == "" then
+    ngx.status = 400
+    ngx.say(cjson.encode({ error = "domain is required" }))
+    return
+  end
+  if not body.target or body.target == "" then
+    ngx.status = 400
+    ngx.say(cjson.encode({ error = "target is required" }))
+    return
   end
   -- check exists
   local check = exec_sql("SELECT domain FROM domains WHERE domain = ?", { body.domain })
@@ -120,36 +133,57 @@ local function add_domain()
   local params = {
     body.domain,
     body.subdomain or '',
-    body.email,
-    body.sslMode or 'letsencrypt',
+    body.email or '',
+    body.sslMode or 'none',
     body.sslCertificate or '',
     body.sslCertificateKey or '',
     body.target,
-    body.type or 'server',
+    body.type or 'proxy',
     body.projectPath or '',
-    body.owner,
+    body.owner or '',
   }
   exec_sql(sql, params)
-  ngx.say(cjson.encode({ success = true, message = "Domain added successfully", domain = body.domain }))
+  bump_domain_map_version()
+  ngx.say(cjson.encode({ success = true, domain = body.domain }))
 end
 
 local function update_domain()
   local body = read_body_json()
   if not body.domain or not body.updatedFields then
     ngx.status = 400
-    ngx.say(cjson.encode({ error = "Missing required fields" }))
+    ngx.say(cjson.encode({ error = "domain and updatedFields are required" }))
     return
   end
   local updates = {}
   local params = {}
-  for k,v in pairs(body.updatedFields) do
+  for k, v in pairs(body.updatedFields) do
     table.insert(updates, k .. " = ?")
     table.insert(params, v)
   end
   table.insert(params, body.domain)
   local sql = string.format("UPDATE domains SET %s WHERE domain = ?", table.concat(updates, ", "))
   exec_sql(sql, params)
-  ngx.say(cjson.encode({ success = true, message = "Domain updated successfully" }))
+  bump_domain_map_version()
+  ngx.say(cjson.encode({ success = true, domain = body.domain }))
+end
+
+local function delete_domain()
+  local body = read_body_json()
+  local domain = body.domain or (ngx.var.delete_domain or "")
+  if not domain or domain == "" then
+    ngx.status = 400
+    ngx.say(cjson.encode({ error = "domain is required" }))
+    return
+  end
+  local check = exec_sql("SELECT domain FROM domains WHERE domain = ?", { domain })
+  if not check or check == "" or check == "[]" then
+    ngx.status = 404
+    ngx.say(cjson.encode({ error = "Domain not found" }))
+    return
+  end
+  exec_sql("DELETE FROM domains WHERE domain = ?", { domain })
+  bump_domain_map_version()
+  ngx.say(cjson.encode({ success = true, domain = domain }))
 end
 
 local action = ngx.var.domain_action
@@ -175,7 +209,11 @@ elseif action == "add_domain" then
 
 elseif action == "update_domain" then
   return update_domain()
+
+elseif action == "delete_domain" then
+  return delete_domain()
+
 else
   ngx.status = 404
-  ngx.say("{}")
+  ngx.say(cjson.encode({ error = "Unknown domain action" }))
 end

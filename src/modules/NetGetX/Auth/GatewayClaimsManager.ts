@@ -155,6 +155,17 @@ export interface GatewayClaimsSnapshot {
     pubkeys: Record<string, string>;
 
     /**
+     * Map of `identityHash → username` (the `.me` expression / handle).
+     *
+     * Written during `netget claim` and `grantAdmin` when a username is known.
+     * nginx Lua uses this in `gateway_claims()` to return human-readable names
+     * alongside identity hashes — without it the UI falls back to truncated hashes.
+     *
+     * Old snapshots without this field are treated as an empty map by Lua.
+     */
+    usernames: Record<string, string>;
+
+    /**
      * SHA-256 of the canonical (sorted-keys) JSON of the payload fields.
      * Used by nginx Lua as a change-detection signal — identical to the
      * `domain-map.version` mechanism.
@@ -258,7 +269,7 @@ export class GatewayClaimsManager {
      * Used as the starting point for bootstrap.
      */
     static empty(gatewayId: string): GatewayClaimsSnapshot {
-        const base = { gatewayId, owner: null, admins: {}, grants: {}, pubkeys: {} };
+        const base = { gatewayId, owner: null, admins: {}, grants: {}, pubkeys: {}, usernames: {} };
         return {
             ...base,
             version: GatewayClaimsManager.computeVersion(base),
@@ -392,13 +403,17 @@ export class GatewayClaimsManager {
      * @param pubkey       - Ed25519 public key (base64url) for challenge-response auth.
      *                       Pass `null` / omit on legacy bootstraps (hash-only auth).
      * @param scopes       - Scopes to grant; defaults to full admin scopes.
+     * @param username     - The `.me` expression / handle (e.g. `suign`).
+     *                       Stored in the `usernames` map so the admin panel can
+     *                       show human-readable names next to identity hashes.
      *
      * @throws If bootstrap has already been performed.
      */
     bootstrapOwner(
         identityHash: string,
-        pubkey:  string | null = null,
-        scopes: GatewayScope[] = FULL_ADMIN_SCOPES,
+        pubkey:    string | null  = null,
+        scopes:    GatewayScope[] = FULL_ADMIN_SCOPES,
+        username?: string,
     ): void {
         if (this.hasOwner()) {
             throw new Error(
@@ -406,13 +421,15 @@ export class GatewayClaimsManager {
                 'Use grantAdmin() to add additional admins.'
             );
         }
-        const pubkeys: Record<string, string> = pubkey ? { [identityHash]: pubkey } : {};
+        const pubkeys:   Record<string, string> = pubkey   ? { [identityHash]: pubkey }   : {};
+        const usernames: Record<string, string> = username ? { [identityHash]: username } : {};
         const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
             gatewayId: this.gatewayId,
             owner:     identityHash,
             admins:    { [identityHash]: true },
             grants:    { [identityHash]: scopes },
             pubkeys,
+            usernames,
         };
         this.write({
             ...base,
@@ -437,13 +454,16 @@ export class GatewayClaimsManager {
      *                         or `null` to leave any existing pubkey unchanged.
      * @param scopes         - Scopes to grant (only used when pubkeyOrScopes is
      *                         a string or null); defaults to {@link FULL_ADMIN_SCOPES}.
+     * @param username       - The `.me` expression / handle to associate with this
+     *                         identity in the `usernames` map for human-readable display.
      *
      * @throws If the gateway has not been bootstrapped yet.
      */
     grantAdmin(
         identityHash: string,
         pubkeyOrScopes: string | null | GatewayScope[] = null,
-        scopes: GatewayScope[] = FULL_ADMIN_SCOPES,
+        scopes:   GatewayScope[] = FULL_ADMIN_SCOPES,
+        username?: string,
     ): void {
         // Backward compat: if second arg is an array it's the old (hash, scopes) form.
         let pubkey: string | null;
@@ -459,16 +479,17 @@ export class GatewayClaimsManager {
         if (!current?.owner) {
             throw new Error('Gateway has no owner. Call bootstrapOwner() first.');
         }
-        const existingPubkeys = current.pubkeys ?? {};
-        const nextPubkeys = pubkey
-            ? { ...existingPubkeys, [identityHash]: pubkey }
-            : existingPubkeys;
+        const existingPubkeys   = current.pubkeys   ?? {};
+        const existingUsernames = current.usernames ?? {};
+        const nextPubkeys   = pubkey   ? { ...existingPubkeys,   [identityHash]: pubkey   } : existingPubkeys;
+        const nextUsernames = username ? { ...existingUsernames, [identityHash]: username } : existingUsernames;
         const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
             gatewayId: current.gatewayId,
             owner:     current.owner,
             admins:    { ...current.admins, [identityHash]: true },
             grants:    { ...current.grants, [identityHash]: resolvedScopes },
             pubkeys:   nextPubkeys,
+            usernames: nextUsernames,
         };
         this.write({
             ...base,
@@ -495,12 +516,14 @@ export class GatewayClaimsManager {
                 'Cannot revoke the gateway owner. Transfer ownership first.'
             );
         }
-        const admins  = { ...current.admins };
-        const grants  = { ...current.grants };
-        const pubkeys = { ...(current.pubkeys ?? {}) };
+        const admins     = { ...current.admins };
+        const grants     = { ...current.grants };
+        const pubkeys    = { ...(current.pubkeys   ?? {}) };
+        const usernames  = { ...(current.usernames ?? {}) };
         delete admins[identityHash];
         delete grants[identityHash];
         delete pubkeys[identityHash];
+        delete usernames[identityHash];
 
         const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
             gatewayId: current.gatewayId,
@@ -508,6 +531,7 @@ export class GatewayClaimsManager {
             admins,
             grants,
             pubkeys,
+            usernames,
         };
         this.write({
             ...base,
@@ -542,7 +566,8 @@ export class GatewayClaimsManager {
             owner:     newOwnerIdentityHash,
             admins:    current.admins,
             grants:    current.grants,
-            pubkeys:   current.pubkeys ?? {},
+            pubkeys:   current.pubkeys   ?? {},
+            usernames: current.usernames ?? {},
         };
         this.write({
             ...base,

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <title>namespace</title>
+  <link rel="stylesheet" href="/ns-assets/styles.css" />
+  <script>window.__THIS_GUI_DISABLE_AUTOBOOT__ = true;</script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="/vendor/react/react.production.min.js"></script>
+  <script src="/vendor/react-dom/react-dom.production.min.js"></script>
+  <script src="/ns-assets/this.gui.umd.js"></script>
+
+  <script>
+    (function () {
+      const GUI = window.GUI;
+      if (!GUI || typeof GUI.mount !== 'function') {
+        document.getElementById('root').innerHTML =
+          '<p style="font-family:monospace;padding:2rem;color:#98a7b3">GUI not ready</p>';
+        return;
+      }
+
+      // Parse NRP from current URL:
+      //   /              → root blockchain feed
+      //   /name          → blocks where path = name
+      //   /@fatima       → fatima's blockchain root
+      //   /@fatima/name  → fatima's name block
+      const endpoint = window.location.origin;
+      const pathname = window.location.pathname.replace(/\/$/, '') || null;
+      const blockPath = pathname || undefined;
+
+      GUI.mount({
+        type: 'Namespace',
+        props: {
+          endpoint,
+          defaultTab: 'blocks',
+          tabs: ['blocks'],
+          ...(blockPath ? { blockPath } : {}),
+        }
+      }, document.getElementById('root'), { showUnknown: true });
+    })();
+  </script>
+</body>
+</html>

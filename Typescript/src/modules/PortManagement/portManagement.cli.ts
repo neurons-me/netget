@@ -1,0 +1,204 @@
+// portManagement.cli.ts
+import inquirer from 'inquirer';
+import chalk from 'chalk';
+import { exec } from 'child_process';
+import util from 'util';
+import pm2 from 'pm2';
+
+const execPromise = util.promisify(exec);
+
+interface PM2Process {
+    name: string;
+    pid: number;
+    [key: string]: any;
+}
+
+async function listPM2Processes(): Promise<PM2Process[]> {
+    return new Promise((resolve, reject) => {
+        pm2.connect(err => {
+            if (err) {
+                return reject(err);
+            }
+
+            pm2.list((listErr, processList) => {
+                pm2.disconnect();
+                if (listErr) {
+                    return reject(listErr);
+                }
+                resolve((processList || []) as PM2Process[]);
+            });
+        });
+    });
+}
+
+/**
+ * Port Management CLI  
+ * @memberof module:PortManagement
+ *  
+ */
+export async function PortManagement_CLI(): Promise<void> {
+    console.clear();
+    console.log(chalk.green('Port Management Menu'));
+
+    const actions = [
+        'What\'s On Port?',
+        'Kill Process On Port',
+        'List all Processes',
+        'Go Back'
+    ];
+    const { action } = await inquirer.prompt({
+        type: 'list',
+        name: 'action',
+        message: 'Select an action:',
+        choices: actions,
+    });
+
+    switch (action) {
+
+        case 'What\'s On Port?':
+            const { portToCheck } = await inquirer.prompt({
+                type: 'input',
+                name: 'portToCheck',
+                message: 'Enter the port number to check:',
+                validate: (value: string) => !isNaN(Number(value)) || 'Please enter a valid number',
+            });
+
+            try {
+                const { stdout, stderr } = await execPromise(`lsof -i :${portToCheck}`);
+                if (stderr) {
+                    console.error(chalk.red('Error:'), stderr);
+                } else if (!stdout.trim()) {
+                    console.log(chalk.yellow(`No processes running on port ${portToCheck}.`));
+                } else {
+                    console.log(chalk.green(`Processes running on port ${portToCheck}:\n`), stdout);
+                }
+            } catch (error: any) {
+                if (error.code === 1) {
+                    console.log(chalk.yellow(`No processes running on port ${portToCheck}.`));
+                } else {
+                    console.error(chalk.red('Error fetching port details:'), error);
+                }
+            }
+            break;
+
+        case 'Kill Process On Port':
+            const { portToKill } = await inquirer.prompt({
+                type: 'input',
+                name: 'portToKill',
+                message: 'Enter the port number to kill processes on:',
+                validate: (value: string) => !isNaN(Number(value)) || 'Please enter a valid number',
+            });
+
+            try {
+                // Show what's running before asking to kill
+                let processInfo = '';
+                try {
+                    const { stdout: infoOut } = await execPromise(`lsof -i :${portToKill}`);
+                    processInfo = infoOut.trim();
+                } catch (_) {}
+
+                if (!processInfo) {
+                    console.log(chalk.yellow(`No processes found on port ${portToKill}.`));
+                    break;
+                }
+
+                console.log(chalk.cyan(`\nProcesses running on port ${portToKill}:\n`));
+                console.log(processInfo);
+                console.log('');
+
+                const { confirmKill } = await inquirer.prompt({
+                    type: 'confirm',
+                    name: 'confirmKill',
+                    message: chalk.red(`Kill the process(es) on port ${portToKill}?`),
+                    default: false,
+                });
+
+                if (!confirmKill) {
+                    console.log(chalk.yellow('Aborted.'));
+                    break;
+                }
+
+                const { stdout: pidOut } = await execPromise(`lsof -i :${portToKill} -t`);
+                const pids = pidOut.split('\n').filter(Boolean);
+
+                for (const pid of pids) {
+                    const pm2Processes: PM2Process[] = await listPM2Processes();
+                    const pm2Process = pm2Processes.find(proc => proc.pid == Number(pid));
+
+                    if (pm2Process) {
+                        console.log(chalk.yellow(`PID ${pid} is managed by PM2 — stopping ${pm2Process.name}...`));
+                        await stopPM2Process(pm2Process.name);
+                    } else {
+                        const { stderr: killError } = await execPromise(`kill -9 ${pid}`);
+                        if (killError) {
+                            console.error(chalk.red(`Failed to kill PID ${pid}:`), killError);
+                        } else {
+                            console.log(chalk.green(`Killed PID ${pid} on port ${portToKill}.`));
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(chalk.red('Error fetching port details or killing processes:'), error);
+            }
+            break;
+
+        case 'List all Processes':
+            try {
+                listPM2Processes().then(processes => {
+                    if (processes.length === 0) {
+                        console.log(chalk.yellow('No PM2 processes found.'));
+                    } else {
+                        console.log(chalk.green('PM2 Processes:'));
+                        processes.forEach(proc => {
+                            console.log(`- Name: ${proc.name}, PID: ${proc.pid}`);
+                        });
+                    }
+                }).catch(err => {
+                    console.error(chalk.red('Error listing PM2 processes:'), err);
+                });
+            }
+            catch (error) {
+                console.error(chalk.red('Error listing PM2 processes:'), error);
+            }
+            break;
+
+        case 'Go Back':
+            return;
+
+        default:
+            console.log(chalk.red('Invalid choice, please try again.'));
+            break;
+    }
+
+    // Wait for user to press enter before returning to the main menu
+    await inquirer.prompt({
+        type: 'input',
+        name: 'continue',
+        message: 'Press Enter to continue...',
+    });
+
+    await PortManagement_CLI(); // Show the Port Management menu again after an action
+}
+
+async function stopPM2Process(processName: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        pm2.connect(err => {
+            if (err) {
+                console.error(chalk.red('PM2 connection error:'), err);
+                return reject(err);
+            }
+
+            pm2.stop(processName, err => {
+                if (err) {
+                    console.error(chalk.red(`Failed to stop PM2 process ${processName}:`), err);
+                    pm2.disconnect();
+                    return reject(err);
+                }
+
+                console.log(chalk.green(`Stopped PM2 process ${processName}.`));
+                pm2.disconnect();
+                resolve();
+            });
+        });
+    });
+}

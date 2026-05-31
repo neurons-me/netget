@@ -70,8 +70,8 @@
         "inquirer": "^12.10.0",
         "open": "^10.2.0",
         "pm2": "^6.0.14",
-        "cleaker": "workspace:*",
-        "this.me": "workspace:*",
+        "cleaker": "^3.2.1",
+        "this.me": "^3.9.1",
         "tsx": "^4.21.0",
         "typescript": "^5.9.3"
     },

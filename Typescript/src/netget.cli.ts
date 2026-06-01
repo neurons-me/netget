@@ -346,15 +346,16 @@ program
       const service = await getOpenRestyServiceStatus();
       const isOnline = service.httpListening || service.httpsListening;
 
+      // Always refresh cert + config so git pull changes take effect.
+      process.stdout.write(chalk.cyan('[1/3] HTTPS cert… '));
+      const certResult = ensureMkcertCert();
+      console.log(certResult.ok ? chalk.green('✔') : chalk.yellow(`skipped (${certResult.message})`));
+
+      process.stdout.write(chalk.cyan('[2/3] Gateway config… '));
+      await includeNetgetAppConf();
+      console.log(chalk.green('✔'));
+
       if (!isOnline) {
-        process.stdout.write(chalk.cyan('[1/3] Generating HTTPS cert… '));
-        const certResult = ensureMkcertCert();
-        console.log(certResult.ok ? chalk.green('✔') : chalk.yellow(`skipped (${certResult.message})`));
-
-        process.stdout.write(chalk.cyan('[2/3] Writing gateway config… '));
-        await includeNetgetAppConf();
-        console.log(chalk.green('✔'));
-
         process.stdout.write(chalk.cyan('[3/3] Starting gateway… '));
         const installed = await installOpenRestyService();
         if (!installed) {
@@ -367,7 +368,10 @@ program
           ? chalk.green('✔ listening on 80/443.')
           : chalk.yellow('⚠  not yet listening.'));
       } else {
-        console.log(chalk.green('✔ Gateway already running.'));
+        process.stdout.write(chalk.cyan('[3/3] Reloading gateway… '));
+        const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+        await startOpenRestyOnce(true);
+        console.log(chalk.green('✔'));
       }
 
       // ── Step 2: Claim ────────────────────────────────────────────────────────

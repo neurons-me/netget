@@ -72,7 +72,7 @@ local function wants_html()
   return accept:find("text/html") ~= nil
 end
 
-local function send_no_monad_page(reason)
+local function send_no_monad_page(reason, is_registered)
   ngx.status = 503
   if wants_html() then
     ngx.header["Content-Type"] = "text/html; charset=utf-8"
@@ -112,7 +112,7 @@ local function send_no_monad_page(reason)
     <img src="https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" alt="neurons.me"/>
   </div>
   <h1>NetGet</h1>
-  <p class="subtitle">GATEWAY NOT INITIALIZED</p>
+  <p class="subtitle">]] .. (is_registered and "NO LIVE MONAD" or "GATEWAY NOT INITIALIZED") .. [[</p>
 
   <div class="display-row">
     <div class="display-label">Host</div>
@@ -121,7 +121,15 @@ local function send_no_monad_page(reason)
 
   <div class="divider"></div>
 
-  <div class="step-list">
+  <div class="step-list">]] .. (is_registered and [[
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text"><strong>Start a monad:</strong><span class="cmd">monads start local</span></div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text"><strong>Refresh</strong> this page.</div>
+    </div>]] or [[
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-text"><strong>Run on this server:</strong><span class="cmd">netget init</span></div>
@@ -129,7 +137,7 @@ local function send_no_monad_page(reason)
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-text"><strong>Refresh</strong> this page.</div>
-    </div>
+    </div>]]) .. [[
   </div>
 
   <p class="footer"><a href="https://github.com/neurons-me/netget">neurons-me/netget</a></p>
@@ -148,7 +156,7 @@ end
 
 local raw = read_file(appsPath)
 if not raw or raw == "" then
-  return send_no_monad_page("no monad registered yet")
+  return send_no_monad_page("no monad registered yet", false)
 end
 
 local registry = cjson.decode(raw)
@@ -200,7 +208,7 @@ for _, app in pairs(registry.apps) do
 end
 
 if #candidates == 0 then
-  return send_no_monad_page("no live monad for: " .. host)
+  return send_no_monad_page("no live monad for: " .. host, true)
 end
 
 -- Reduce: pick the most recently seen monad (highest lastSeenMs).

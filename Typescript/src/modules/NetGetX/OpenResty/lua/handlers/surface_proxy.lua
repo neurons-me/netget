@@ -118,24 +118,16 @@ local function send_no_monad_page(reason)
     <div class="display-label">Host</div>
     <div class="display-val" id="host-display">—</div>
   </div>
-  <div class="display-row">
-    <div class="display-label">Status</div>
-    <div class="display-val muted">no monad registered</div>
-  </div>
 
   <div class="divider"></div>
 
   <div class="step-list">
     <div class="step">
       <div class="step-num">1</div>
-      <div class="step-text"><strong>On this server, run:</strong><span class="cmd">netget</span></div>
+      <div class="step-text"><strong>Run on this server:</strong><span class="cmd">netget init</span></div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
-      <div class="step-text">Navigate to <strong>Main Server</strong> — auto-setup will start a monad.</div>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
       <div class="step-text"><strong>Refresh</strong> this page.</div>
     </div>
   </div>

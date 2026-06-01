@@ -327,6 +327,63 @@ program
   });
 
 program
+  .command('init')
+  .alias('initialize')
+  .description('Initialize Gateway — generate certs, write config, and start the gateway service')
+  .action(async () => {
+    try {
+      const chalk = (await import('chalk')).default;
+      const { loadOrCreateXConfig } = await import('./modules/NetGetX/config/xConfig.ts');
+      const { ensureMkcertCert } = await import('./modules/NetGetX/Domains/SSL/mkcert/mkcert.ts');
+      const { includeNetgetAppConf } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
+      const { installOpenRestyService, waitForOpenRestyGateway, getOpenRestyServiceStatus } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+
+      const service = await getOpenRestyServiceStatus();
+      const isOnline = service.httpListening || service.httpsListening;
+      if (isOnline) {
+        console.log(chalk.green('Gateway is already running.'));
+        return;
+      }
+
+      console.log(chalk.cyan('\n⚡ Initializing Gateway…\n'));
+      await loadOrCreateXConfig();
+
+      // 1. HTTPS cert
+      process.stdout.write(chalk.cyan('[1/3] Generating HTTPS cert… '));
+      const certResult = ensureMkcertCert();
+      console.log(certResult.ok ? chalk.green('✔') : chalk.yellow(`skipped (${certResult.message})`));
+
+      // 2. Gateway config
+      process.stdout.write(chalk.cyan('[2/3] Writing gateway config… '));
+      await (includeNetgetAppConf as any)();
+      console.log(chalk.green('✔'));
+
+      // 3. Start service
+      process.stdout.write(chalk.cyan('[3/3] Starting gateway service… '));
+      const installed = await installOpenRestyService();
+      if (!installed) {
+        console.log(chalk.red('✗'));
+        console.error(chalk.red('Failed to start gateway. Try: sudo openresty'));
+        process.exit(1);
+      }
+      console.log(chalk.green('✔'));
+
+      const next = await waitForOpenRestyGateway();
+      const online = next.httpListening || next.httpsListening;
+      if (online) {
+        console.log(chalk.green('\n✔ Gateway initialized and listening on ports 80/443.'));
+        console.log(chalk.gray('Refresh your browser to continue.\n'));
+      } else {
+        console.log(chalk.yellow('\nGateway configured but not yet listening. Check: sudo openresty -t'));
+      }
+    } catch (err: any) {
+      const chalk = (await import('chalk')).default;
+      console.error(chalk.red(`Init failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+program
   .command('generate-domain-map')
   .description('Project current domain config into ~/.get/runtime/domain-map.json for OpenResty')
   .action(async () => {

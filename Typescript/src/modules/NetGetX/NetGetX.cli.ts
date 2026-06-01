@@ -172,11 +172,61 @@ function stopSpinner(timer: NodeJS.Timeout, finalLine: string): void {
  * NetGetX_CLI
  * @memberof module:NetGetX 
  */
+/**
+ * ensureGatewayReady — silent bootstrap on first entry.
+ *
+ * Runs automatically when the gateway is not online:
+ *   1. Generate HTTPS cert (mkcert / self-signed)
+ *   2. Write gateway config (netget_app.conf + nginx.conf)
+ *   3. Install & start OpenResty service
+ *
+ * No user interaction required unless sudo fails.
+ * Idempotent — safe to call every time; each step is a no-op if already done.
+ */
+async function ensureGatewayReady(): Promise<string> {
+    const service = await getOpenRestyServiceStatus();
+    if (isNetGetOnline(service)) return '';
+
+    console.log(chalk.cyan('\n⚡ Gateway is offline — running auto-setup…\n'));
+
+    // Step 1: HTTPS cert
+    const spinner1 = startSpinner('[1/3] Generating HTTPS cert…');
+    const httpsResult = ensureMkcertCert();
+    stopSpinner(spinner1, httpsResult.ok
+        ? chalk.green('  ✔ HTTPS cert ready.')
+        : chalk.yellow(`  ⚠  HTTPS skipped: ${httpsResult.message}`));
+
+    // Step 2: Write gateway config (picks up public IP, local IP, hostname)
+    const spinner2 = startSpinner('[2/3] Writing gateway config…');
+    await includeNetgetAppConf();
+    stopSpinner(spinner2, chalk.green('  ✔ Config written.'));
+
+    // Step 3: Install & start OpenResty
+    const spinner3 = startSpinner('[3/3] Starting gateway service (may need sudo)…');
+    const installed = await installOpenRestyService();
+    stopSpinner(spinner3, installed
+        ? chalk.green('  ✔ Gateway service started.')
+        : chalk.yellow('  ⚠  Gateway service failed — try "NetGet ON" manually.'));
+
+    if (installed) {
+        const waitTimer = startSpinner('Waiting for ports 80/443…');
+        const next = await waitForOpenRestyGateway();
+        const online = isNetGetOnline(next);
+        stopSpinner(waitTimer, online
+            ? chalk.green('  ✔ Gateway listening on 80/443.')
+            : chalk.yellow(`  ⚠  Ports not responding yet. ${next.detail}`));
+        return online ? chalk.green('Gateway auto-started ✔') : '';
+    }
+    return '';
+}
+
 export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
     if (!x) {
         x = await loadOrCreateXConfig() as XStateData;
     }
-    let lastMessage = '';
+
+    // Auto-bootstrap on first entry if gateway is not running
+    let lastMessage = await ensureGatewayReady();
 
     while (true) {
         console.clear();

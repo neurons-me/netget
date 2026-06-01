@@ -6,6 +6,7 @@
 --   2. Extract rootspace from request host
 --      jabellae.suis-macbook-air.local → rootspace = suis-macbook-air.local
 --      suis-macbook-air.local          → rootspace = suis-macbook-air.local
+--      34.28.109.244 (IP)              → fallback: any live monad on this machine
 --   3. Collect ALL live monads that claim that rootspace
 --   4. Reduce to the single best candidate by recency (most recently seen wins)
 --   5. Route to its endpoint — the monad handles semantic resolution internally
@@ -32,6 +33,17 @@ local function read_file(path)
   local data = f:read("*a")
   f:close()
   return data
+end
+
+-- True when host is a raw IPv4 or IPv6 address (not a hostname).
+-- IP-based requests fall back to "any live monad" — the namespace is
+-- determined by whatever monad is registered on this machine.
+local function is_ip(h)
+  -- IPv4: digits and dots only
+  if h:match("^%d+%.%d+%.%d+%.%d+$") then return true end
+  -- IPv6: contains colons
+  if h:match(":") then return true end
+  return false
 end
 
 -- Extract rootspace from a compound namespace.
@@ -74,12 +86,14 @@ if not registry or type(registry.apps) ~= "table" then
   return ngx.exit(502)
 end
 
-local nowMs    = ngx.now() * 1000
+local nowMs     = ngx.now() * 1000
 local rootspace = rootspace_of(host)
+local host_is_ip = is_ip(host)
 
--- Collect all live candidates that claim this rootspace.
--- A monad "claims" the rootspace if its namespace equals the rootspace,
--- or if the request host is the rootspace itself.
+-- Collect all live candidates.
+-- Matching rules:
+--   hostname request → match by namespace == rootspace or namespace == host
+--   IP request       → match any live monad (IP is routing only, not identity)
 local candidates = {}
 
 for _, app in pairs(registry.apps) do
@@ -94,10 +108,18 @@ for _, app in pairs(registry.apps) do
       local ep = meta.directEndpoint or meta.endpoint or meta.controlEndpoint
 
       if ep and ep ~= "" then
-        -- Match if: namespace IS the rootspace, OR namespace IS the full host
-        local matches = (ns == rootspace) or (ns == host)
+        local matches
+        if host_is_ip then
+          -- IP-based request: any live monad can answer.
+          -- Hostname is transport only — namespace is resolved by the monad.
+          matches = true
+        else
+          -- Hostname-based request: match by namespace
+          matches = (ns == rootspace) or (ns == host)
+        end
+
         if matches then
-          table.insert(candidates, { ep = ep, lastSeen = lastSeen })
+          table.insert(candidates, { ep = ep, lastSeen = lastSeen, ns = ns })
         end
       end
     end
@@ -111,7 +133,8 @@ if #candidates == 0 then
     error     = "no live monad for: " .. host,
     rootspace = rootspace,
     host      = host,
-    hint      = "Start a monad with this namespace and ensure it registers with netget",
+    is_ip     = host_is_ip,
+    hint      = "Start a monad and ensure it registers with netget",
   }))
   return ngx.exit(502)
 end

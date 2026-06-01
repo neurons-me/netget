@@ -119,6 +119,22 @@ ${proxyHeaders}
   // Escape dots for PCRE regex in nginx server_name  (e.g. "suis-macbook-air\.local")
   const machineHostnameRegex = machineHostnameLower.replace(/\./g, '\\.');
 
+  // Resolve public and local IPs from xConfig so nginx server_name covers all
+  // entry points — hostname, local IP, and public IP all route to the same monad.
+  const xConfigData = (() => {
+    try {
+      const p = path.join(xConfig, 'xConfig.json');
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch { /* ignore */ }
+    return {};
+  })();
+  const publicIP = String(xConfigData.publicIP || '').trim();
+  const localIP  = String(xConfigData.localIP  || '').trim();
+  // Extra server_name tokens beyond the hostname (IPs, if known)
+  const extraServerNames = [localIP, publicIP]
+    .filter(ip => ip && ip !== '127.0.0.1' && ip !== '::1')
+    .join(' ');
+
   // ─── Shared vendor assets (React UMD) — served by mesh, never reach the monad ──
   // Resolve paths relative to all.this root (6 levels up from this file's directory).
   const allThisRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../');
@@ -178,7 +194,7 @@ ${proxyHeaders}
 # Everything goes to the monad — it decides HTML vs JSON from Accept header.
 server {
 ${listenLines}
-    server_name ${machineHostnameLower};
+    server_name ${machineHostnameLower}${extraServerNames ? ' ' + extraServerNames : ''};
     client_max_body_size 500M;
 ${sslDirectives}
     set $NETGET_DATA_DIR ${xConfig};

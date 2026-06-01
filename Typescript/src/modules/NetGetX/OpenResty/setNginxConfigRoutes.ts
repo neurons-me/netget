@@ -254,7 +254,8 @@ ${proxyHeaders}
 # NRP namespace tree:
 #   ${machineHostnameLower}              → monad root (surface_proxy.lua → registered monad)
 #   {handle}.${machineHostnameLower}     → handle identity surface (nrp_handle.lua → local.netget)
-#   local.netget / localhost / 127.0.0.1 → gateway admin UI + Lua API
+#   ${machineHostnameLower.replace(/\.local$/, '')}.netget  → admin/control plane (LAN access)
+#   local.netget / localhost / 127.0.0.1 → admin/control plane (loopback alias)
 
 lua_shared_dict jwt_cache      10m;
 lua_shared_dict gateway_nonces  1m;
@@ -265,7 +266,7 @@ ${nrpHandleBlock}
 
 server {
 ${listenLines}
-    server_name local.netget localhost 127.0.0.1;
+    server_name local.netget ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1;
     client_max_body_size 500M;
 ${sslDirectives}
 

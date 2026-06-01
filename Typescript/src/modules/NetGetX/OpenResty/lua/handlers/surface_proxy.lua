@@ -81,50 +81,70 @@ local function send_no_monad_page(reason)
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>NetGet — Setup Required</title>
+<title>NetGet</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet"/>
 <style>
-  :root { --green: #4caf50; --dark: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--dark); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; max-width: 480px; width: 100%; padding: 2.5rem; text-align: center; }
-  .logo { margin-bottom: 2rem; }
-  .logo img { width: 72px; height: 72px; object-fit: contain; }
-  h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 2rem; }
-  .step { display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: flex-start; text-align: left; }
-  .step-num { background: var(--green); color: #000; border-radius: 50%; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; margin-top: 0.15rem; }
-  .step-text { font-size: 0.9rem; line-height: 1.5; color: var(--muted); }
-  .step-text strong { color: var(--text); }
-  code { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem 1rem; display: block; font-size: 0.9rem; color: var(--green); margin-top: 0.5rem; font-family: monospace; letter-spacing: 0.04em; }
-  .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
-  .note { font-size: 0.8rem; color: var(--muted); }
-  .note a { color: var(--green); text-decoration: none; }
+  body { background: #121416; font-family: 'Roboto', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  .pedal { width: 95%; max-width: 520px; background: #141e1d; padding: 30px; border-radius: 12px; box-shadow: 0 8px 18px rgba(0,0,0,0.6); text-align: center; }
+  .logo { margin-bottom: 20px; }
+  .logo img { width: 52px; height: 52px; object-fit: contain; }
+  h1 { color: #17bdcc; font-size: 1.6em; letter-spacing: 2px; text-shadow: 0 0 6px rgba(23,189,204,0.4); margin-bottom: 6px; }
+  .subtitle { color: #4a6e6b; font-size: 0.85em; margin-bottom: 28px; letter-spacing: 1px; }
+  .display-row { margin-bottom: 14px; text-align: left; }
+  .display-label { color: #fff; font-size: 0.8em; margin-bottom: 5px; letter-spacing: 1px; text-transform: uppercase; }
+  .display-val { background: #0b1416; color: #17bdcc; font-size: 0.9em; padding: 10px 14px; border-radius: 6px; border: 1px solid #1a2528; font-family: 'Courier New', monospace; }
+  .display-val.muted { color: #4a6e6b; }
+  .divider { border: none; border-top: 1px solid #1a2528; margin: 24px 0; }
+  .step-list { text-align: left; display: flex; flex-direction: column; gap: 12px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; }
+  .step-num { background: #17bdcc; color: #0b1416; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7em; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .step-text { color: #8aacaa; font-size: 0.88em; line-height: 1.5; }
+  .step-text strong { color: #e0f0ef; }
+  .cmd { background: #0b1416; border: 1px solid #1a2528; border-radius: 6px; padding: 8px 14px; color: #17bdcc; font-family: 'Courier New', monospace; font-size: 0.9em; margin-top: 6px; display: block; letter-spacing: 0.05em; }
+  .footer { margin-top: 24px; font-size: 0.75em; color: #2d4a47; }
+  .footer a { color: #2d4a47; text-decoration: none; }
 </style>
 </head>
 <body>
-<div class="card">
+<div class="pedal">
   <div class="logo">
     <img src="https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" alt="neurons.me"/>
   </div>
-  <h1>Gateway not initialized</h1>
+  <h1>NetGet</h1>
+  <p class="subtitle">GATEWAY NOT INITIALIZED</p>
 
-  <div class="step">
-    <div class="step-num">1</div>
-    <div class="step-text"><strong>Run on this server:</strong><code>netget</code></div>
+  <div class="display-row">
+    <div class="display-label">Host</div>
+    <div class="display-val" id="host-display">—</div>
+  </div>
+  <div class="display-row">
+    <div class="display-label">Status</div>
+    <div class="display-val muted">no monad registered</div>
   </div>
 
-  <div class="step">
-    <div class="step-num">2</div>
-    <div class="step-text"><strong>Navigate to Main Server</strong> — the gateway will auto-setup and start a monad.</div>
+  <div class="divider"></div>
+
+  <div class="step-list">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text"><strong>On this server, run:</strong><span class="cmd">netget</span></div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">Navigate to <strong>Main Server</strong> — auto-setup will start a monad.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text"><strong>Refresh</strong> this page.</div>
+    </div>
   </div>
 
-  <div class="step">
-    <div class="step-num">3</div>
-    <div class="step-text"><strong>Refresh this page</strong> once the monad is running.</div>
-  </div>
-
-  <hr class="divider"/>
-  <p class="note"><a href="https://github.com/neurons-me/netget">github.com/neurons-me/netget</a></p>
+  <p class="footer"><a href="https://github.com/neurons-me/netget">neurons-me/netget</a></p>
 </div>
+<script>
+  document.getElementById('host-display').textContent = window.location.hostname;
+</script>
 </body>
 </html>]])
   else

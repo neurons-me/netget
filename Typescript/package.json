@@ -23,6 +23,7 @@
         "src/kernel/**/*.ts",
         "src/utils/**/*.ts",
         "src/utils/netgetPaths.js",
+        "assets/main-server-ui/dist/",
         "src/htmls/NetgetErrorCodeHandler.html",
         "src/htmls/cleaker.html",
         "src/htmls/netgetX.html",

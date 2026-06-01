@@ -64,6 +64,40 @@ local function rootspace_of(host)
   return host
 end
 
+local function normalize_host(value)
+  local raw = tostring(value or ""):lower()
+  raw = raw:gsub("^https?://", "")
+  raw = raw:gsub("^%[", ""):gsub("%]$", "")
+  raw = raw:match("^([^:/]+)") or raw
+  return raw
+end
+
+local function table_has_host(values, target)
+  if type(values) ~= "table" then return false end
+  for _, value in pairs(values) do
+    if normalize_host(value) == target then return true end
+  end
+  return false
+end
+
+local function app_claims_host(app, meta, target)
+  if not target or target == "" then return false end
+  if normalize_host(meta.namespace) == target then return true end
+  if normalize_host(meta.identity) == target then return true end
+  if normalize_host(meta.host) == target then return true end
+  if normalize_host(meta.hostname) == target then return true end
+  if normalize_host(meta.publicHost) == target then return true end
+  if normalize_host(meta.public_host) == target then return true end
+  if normalize_host(meta.domain) == target then return true end
+  if table_has_host(meta.aliases, target) then return true end
+  if table_has_host(meta.hosts, target) then return true end
+  if table_has_host(meta.domains, target) then return true end
+  if table_has_host(meta.claimedNamespaces, target) then return true end
+  if table_has_host(meta.claimed_namespaces, target) then return true end
+  if table_has_host(app.tags, target) then return true end
+  return false
+end
+
 local host = (ngx.var.host or ""):lower()
 host = host:match("^([^:]+)") or host
 
@@ -195,8 +229,8 @@ for _, app in pairs(registry.apps) do
           -- Hostname is transport only — namespace is resolved by the monad.
           matches = true
         else
-          -- Hostname-based request: match by namespace
-          matches = (ns == rootspace) or (ns == host)
+          -- Hostname-based request: match by canonical namespace or declared aliases.
+          matches = app_claims_host(app, meta, rootspace) or app_claims_host(app, meta, host)
         end
 
         if matches then

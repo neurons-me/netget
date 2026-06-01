@@ -85,31 +85,31 @@ local function send_no_monad_page(reason)
 <style>
   :root { --green: #4caf50; --dark: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--dark); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; max-width: 560px; width: 100%; padding: 2.5rem; }
-  .logo { font-size: 1.1rem; font-weight: 700; color: var(--green); letter-spacing: 0.05em; margin-bottom: 2rem; display: flex; align-items: center; gap: 0.5rem; }
-  .logo::before { content: "◈"; font-size: 1.4rem; }
-  h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.5rem; }
-  .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; line-height: 1.5; }
-  .step { display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: flex-start; }
+  body { background: var(--dark); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; max-width: 480px; width: 100%; padding: 2.5rem; text-align: center; }
+  .logo { margin-bottom: 2rem; }
+  .logo img { width: 72px; height: 72px; object-fit: contain; }
+  h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 2rem; }
+  .step { display: flex; gap: 1rem; margin-bottom: 1.25rem; align-items: flex-start; text-align: left; }
   .step-num { background: var(--green); color: #000; border-radius: 50%; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; margin-top: 0.15rem; }
   .step-text { font-size: 0.9rem; line-height: 1.5; color: var(--muted); }
   .step-text strong { color: var(--text); }
-  code { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; display: block; font-size: 0.85rem; color: var(--green); margin-top: 0.5rem; letter-spacing: 0.02em; }
+  code { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem 1rem; display: block; font-size: 0.9rem; color: var(--green); margin-top: 0.5rem; font-family: monospace; letter-spacing: 0.04em; }
   .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
-  .note { font-size: 0.8rem; color: var(--muted); text-align: center; }
+  .note { font-size: 0.8rem; color: var(--muted); }
   .note a { color: var(--green); text-decoration: none; }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">NetGet</div>
+  <div class="logo">
+    <img src="https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" alt="neurons.me"/>
+  </div>
   <h1>Gateway not initialized</h1>
-  <p class="sub">No monad is running on this node yet. Set up this server through the NetGet CLI.</p>
 
   <div class="step">
     <div class="step-num">1</div>
-    <div class="step-text"><strong>SSH into this server</strong> and run:<code>netget</code></div>
+    <div class="step-text"><strong>Run on this server:</strong><code>netget</code></div>
   </div>
 
   <div class="step">
@@ -123,7 +123,7 @@ local function send_no_monad_page(reason)
   </div>
 
   <hr class="divider"/>
-  <p class="note">NetGet — <a href="https://github.com/neurons-me/netget">github.com/neurons-me/netget</a></p>
+  <p class="note"><a href="https://github.com/neurons-me/netget">github.com/neurons-me/netget</a></p>
 </div>
 </body>
 </html>]])

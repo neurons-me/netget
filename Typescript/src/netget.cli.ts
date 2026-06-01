@@ -335,47 +335,64 @@ program
       const chalk = (await import('chalk')).default;
       const { loadOrCreateXConfig } = await import('./modules/NetGetX/config/xConfig.ts');
       const { ensureMkcertCert } = await import('./modules/NetGetX/Domains/SSL/mkcert/mkcert.ts');
-      const { includeNetgetAppConf } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
+      const includeNetgetAppConf = (await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts')).default;
       const { installOpenRestyService, waitForOpenRestyGateway, getOpenRestyServiceStatus } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+      const { GatewayClaimsManager } = await import('./modules/NetGetX/Auth/GatewayClaimsManager.ts');
 
-      const service = await getOpenRestyServiceStatus();
-      const isOnline = service.httpListening || service.httpsListening;
-      if (isOnline) {
-        console.log(chalk.green('Gateway is already running.'));
-        return;
-      }
-
-      console.log(chalk.cyan('\n⚡ Initializing Gateway…\n'));
+      console.log(chalk.cyan('\n⚡ netget init\n'));
       await loadOrCreateXConfig();
 
-      // 1. HTTPS cert
-      process.stdout.write(chalk.cyan('[1/3] Generating HTTPS cert… '));
-      const certResult = ensureMkcertCert();
-      console.log(certResult.ok ? chalk.green('✔') : chalk.yellow(`skipped (${certResult.message})`));
+      // ── Step 1: Gateway ──────────────────────────────────────────────────────
+      const service = await getOpenRestyServiceStatus();
+      const isOnline = service.httpListening || service.httpsListening;
 
-      // 2. Gateway config
-      process.stdout.write(chalk.cyan('[2/3] Writing gateway config… '));
-      await (includeNetgetAppConf as any)();
-      console.log(chalk.green('✔'));
+      if (!isOnline) {
+        process.stdout.write(chalk.cyan('[1/3] Generating HTTPS cert… '));
+        const certResult = ensureMkcertCert();
+        console.log(certResult.ok ? chalk.green('✔') : chalk.yellow(`skipped (${certResult.message})`));
 
-      // 3. Start service
-      process.stdout.write(chalk.cyan('[3/3] Starting gateway service… '));
-      const installed = await installOpenRestyService();
-      if (!installed) {
-        console.log(chalk.red('✗'));
-        console.error(chalk.red('Failed to start gateway. Try: sudo openresty'));
-        process.exit(1);
-      }
-      console.log(chalk.green('✔'));
+        process.stdout.write(chalk.cyan('[2/3] Writing gateway config… '));
+        await includeNetgetAppConf();
+        console.log(chalk.green('✔'));
 
-      const next = await waitForOpenRestyGateway();
-      const online = next.httpListening || next.httpsListening;
-      if (online) {
-        console.log(chalk.green('\n✔ Gateway initialized and listening on ports 80/443.'));
-        console.log(chalk.gray('Refresh your browser to continue.\n'));
+        process.stdout.write(chalk.cyan('[3/3] Starting gateway… '));
+        const installed = await installOpenRestyService();
+        if (!installed) {
+          console.log(chalk.red('✗'));
+          console.error(chalk.red('Failed to start gateway. Try: sudo openresty'));
+          process.exit(1);
+        }
+        const next = await waitForOpenRestyGateway();
+        console.log((next.httpListening || next.httpsListening)
+          ? chalk.green('✔ listening on 80/443.')
+          : chalk.yellow('⚠  not yet listening.'));
       } else {
-        console.log(chalk.yellow('\nGateway configured but not yet listening. Check: sudo openresty -t'));
+        console.log(chalk.green('✔ Gateway already running.'));
       }
+
+      // ── Step 2: Claim ────────────────────────────────────────────────────────
+      const mgr = new GatewayClaimsManager();
+      if (mgr.needsBootstrap()) {
+        console.log(chalk.cyan('\n── Establish gateway identity ──'));
+        console.log(chalk.gray('Your credentials are never stored — only the resulting hash.\n'));
+        const { runBootstrapWizard } = await import('./modules/NetGetX/Auth/bootstrapWizard.cli.ts');
+        const ownerHash = await runBootstrapWizard();
+        if (!ownerHash) {
+          console.log(chalk.yellow('\nClaim skipped. Run netget init again to claim later.'));
+          return;
+        }
+        console.log(chalk.green('\n✔ Gateway claimed.'));
+      } else {
+        console.log(chalk.green('✔ Gateway already claimed.'));
+      }
+
+      // ── Step 3: Monad ────────────────────────────────────────────────────────
+      console.log(chalk.cyan('\n── Start monad ──'));
+      console.log(chalk.gray('Run the following to register a monad with this gateway:\n'));
+      console.log(chalk.white('  cd <your-monad-directory>'));
+      console.log(chalk.white('  netget monad start local\n'));
+      console.log(chalk.green('✔ Init complete. Refresh your browser.\n'));
+
     } catch (err: any) {
       const chalk = (await import('chalk')).default;
       console.error(chalk.red(`Init failed: ${err.message}`));

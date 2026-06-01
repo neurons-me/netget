@@ -388,10 +388,10 @@ program
 
       // ── Step 3: Monad ────────────────────────────────────────────────────────
       console.log(chalk.cyan('\n── Start monad ──'));
-      console.log(chalk.gray('Run the following to register a monad with this gateway:\n'));
-      console.log(chalk.white('  cd <your-monad-directory>'));
-      console.log(chalk.white('  netget monad start local\n'));
-      console.log(chalk.green('✔ Init complete. Refresh your browser.\n'));
+      console.log(chalk.gray('Install and start a monad to serve this gateway:\n'));
+      console.log(chalk.white('  npm install -g monad.ai'));
+      console.log(chalk.white('  monads start local\n'));
+      console.log(chalk.green('✔ Init complete. Refresh your browser after starting the monad.\n'));
 
     } catch (err: any) {
       const chalk = (await import('chalk')).default;

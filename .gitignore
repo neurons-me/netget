@@ -1,1 +1,27 @@
+# ─── System Files ──────────────────────────────
+.DS_Store
+**/.DS_Store
+*.log
+*.tmp
+
+# ─── Node ──────────────────────────────────────
+node_modules/
+Typescript/node_modules/
+Typescript/dist/
+Typescript/build/
+Typescript/coverage/
+
+# ─── Python ────────────────────────────────────
+Python/__pycache__/
+Python/**/*.pyc
+Python/dist/
+Python/build/
+
+# ─── Rust ──────────────────────────────────────
+Rust/target/
+
+# ─── Claude Code ───────────────────────────────
+.claude/
+
+# ─── Legacy ────────────────────────────────────
 assets/main-server-ui/dist/

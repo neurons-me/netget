@@ -1,8 +1,10 @@
 {
   "entryPoints": ["./src/index.ts"],
   "out": "docs/api",
-  "plugin": ["typedoc-plugin-markdown"],
+  "cleanOutputDir": true,
+  "hostedBaseUrl": "https://neurons-me.github.io/netget/Typescript/docs/api/",
   "excludePrivate": true,
   "excludeInternal": true,
-  "readme": "none"
+  "readme": "none",
+  "skipErrorChecking": true
 }

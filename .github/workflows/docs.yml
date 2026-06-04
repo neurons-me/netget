@@ -1,0 +1,38 @@
+name: Deploy netget Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Typescript/docs/**"
+      - "Typescript/src/**"
+      - "Typescript/typedoc.json"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install VitePress
+        run: npm install --no-save vitepress
+      - name: Build VitePress
+        run: npx vitepress build Typescript/docs
+        env:
+          VITEPRESS_BASE: /netget/Typescript/typedocs/
+      - name: Add .nojekyll
+        run: mkdir -p Typescript/typedocs && touch Typescript/typedocs/.nojekyll
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./Typescript/typedocs
+          destination_dir: Typescript/typedocs
+          keep_files: true

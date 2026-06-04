@@ -1,0 +1,44 @@
+title: netget
+description: A Gateway To the Web.
+url: https://neurons-me.github.io
+baseurl: "/netget"
+
+remote_theme: neurons-me/neurons-me
+
+plugins:
+  - jekyll-remote-theme
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  parse_block_html: true
+  hard_wrap: false
+
+exclude:
+  - Typescript/node_modules
+  - Typescript/dist
+  - Typescript/dist-types
+  - Typescript/src
+  - Typescript/tests
+  - Typescript/scripts
+  - Typescript/assets
+  - Typescript/docs
+  - Typescript/.storybook
+  - Python/__pycache__
+  - Rust/target
+  - node_modules
+  - "*/node_modules"
+  - vendor
+
+me_theme:
+  brand: netget
+  favicon: "https://res.cloudinary.com/dkwnxf6gm/image/upload/v1778254832/me.docs.axioms__1_-removebg-preview_xvdqof.png"
+  nav:
+    - label: Home
+      url: https://neurons-me.github.io/
+    - label: Docs
+      relative_url: /docs/
+    - label: Github
+      url: https://github.com/neurons-me/netget
+    - label: All.This
+      url: https://neurons-me.github.io/all.this/

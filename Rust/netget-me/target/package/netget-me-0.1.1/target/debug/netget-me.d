@@ -1,0 +1,1 @@
+/Users/abellae/Desktop/Neuroverse/netget.space/packages/crate/netget-daemon-crate/target/package/netget-me-0.1.1/target/debug/netget-me: /Users/abellae/Desktop/Neuroverse/netget.space/packages/crate/netget-daemon-crate/target/package/netget-me-0.1.1/src/main.rs

@@ -1,0 +1,1 @@
+/Users/abellae/Desktop/Neuroverse/https-netget/cargo/target/package/netget-daemon-0.1.0/target/debug/netget-daemon: /Users/abellae/Desktop/Neuroverse/https-netget/cargo/target/package/netget-daemon-0.1.0/src/main.rs

@@ -1,0 +1,14 @@
+[package]
+name = "netget-me"
+version = "0.1.1"
+authors = ["suiGn admin@neurons.me"]
+edition = "2021"
+description = "Netget Daemon."
+license = "MIT"
+repository = "https://github.com/neurons-me/netget"
+homepage = "https://netget.me"
+readme = "README.md"
+keywords = ["netget", "routing", "reverse-proxy", "static", "port"]
+categories = ["network-programming", "web-programming"]
+
+[dependencies]

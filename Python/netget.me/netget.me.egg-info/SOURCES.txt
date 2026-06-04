@@ -1,0 +1,7 @@
+README.md
+setup.py
+netget/__init__.py
+netget.me.egg-info/PKG-INFO
+netget.me.egg-info/SOURCES.txt
+netget.me.egg-info/dependency_links.txt
+netget.me.egg-info/top_level.txt

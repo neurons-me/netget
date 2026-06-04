@@ -22,7 +22,15 @@ exclude:
   - Typescript/tests
   - Typescript/scripts
   - Typescript/assets
-  - Typescript/docs
+  - Typescript/docs/index.md
+  - Typescript/docs/Architecture.md
+  - Typescript/docs/DomainMap.md
+  - Typescript/docs/NetGet.md
+  - Typescript/docs/Packaging.md
+  - Typescript/docs/Placement.md
+  - Typescript/docs/monad-exposure-policy.md
+  - Typescript/docs/.vitepress
+  - Typescript/docs/NRP
   - Typescript/.storybook
   - Python/__pycache__
   - Rust/target

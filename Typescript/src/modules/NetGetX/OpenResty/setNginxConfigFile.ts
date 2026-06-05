@@ -108,6 +108,12 @@ http {
 
         root ${xConfig}/html;
 
+        location /.well-known/acme-challenge/ {
+            root ${xConfig}/html;
+            try_files $uri =404;
+            access_log off;
+        }
+
         location / {
             index index.html;
             try_files $uri /index.html;

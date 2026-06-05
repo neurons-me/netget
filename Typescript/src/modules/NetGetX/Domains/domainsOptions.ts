@@ -172,12 +172,30 @@ async function advanceSettings(): Promise<void> {
         const answers: any = await inquirer.prompt([{
             type: 'list', name: 'action', message: 'Select an option:',
             choices: [
+                { name: 'Provision SSL (Let\'s Encrypt)', value: 'provision' },
+                { name: 'Sync Certs from Let\'s Encrypt', value: 'sync' },
                 { name: 'Scan All SSL Certificates Issued', value: 'scan' },
                 { name: 'View Certbot Logs', value: 'logs' },
                 { name: 'Back', value: 'back' },
             ],
         }]);
         switch (answers.action) {
+            case 'provision': {
+                const { provisionCert } = await import('./SSL/Certbot/certbotProvision.js');
+                const input: any = await inquirer.prompt([
+                    { type: 'input', name: 'domain', message: 'Domain to provision (e.g. netget.site):', validate: (v: string) => v ? true : 'Required' },
+                    { type: 'input', name: 'email',  message: 'Contact email for Let\'s Encrypt:', validate: (v: string) => v ? true : 'Required' },
+                ]);
+                const result = await provisionCert(input.domain, input.email);
+                if (result.ok) console.log(chalk.green(`✓ ${result.message}`));
+                else           console.log(chalk.red(`✗ ${result.message}`));
+                break;
+            }
+            case 'sync': {
+                const { syncCertsFromLetsEncrypt } = await import('./SSL/Certbot/certbotProvision.js');
+                await syncCertsFromLetsEncrypt();
+                break;
+            }
             case 'scan': await scanAndLogCertificates(); break;
             case 'logs': console.log(chalk.yellow('Certbot logs soon to be implemented.')); break;
             case 'back': return;
@@ -311,6 +329,7 @@ const editOrDeleteDomain = async (domain: string): Promise<void> => {
             type: 'list', name: 'action', message: 'Select an option:',
             choices: [
                 { name: 'Edit Domain', value: 'editDomain' },
+                { name: 'Provision SSL (Let\'s Encrypt)', value: 'provisionSSL' },
                 { name: 'Delete Domain', value: 'deleteDomain' },
                 { name: 'Back', value: 'back' },
             ],
@@ -322,6 +341,19 @@ const editOrDeleteDomain = async (domain: string): Promise<void> => {
                 await editDomainDetails(domain);
                 console.log(chalk.green(`Route settings for ${domain} edited successfully.`));
                 return;
+            case 'provisionSSL': {
+                const { provisionCert } = await import('./SSL/Certbot/certbotProvision.js');
+                const emailAnswer: any = await inquirer.prompt([{
+                    type: 'input', name: 'email',
+                    message: `Contact email for Let's Encrypt (for ${domain}):`,
+                    default: domainConfig.email || '',
+                    validate: (v: string) => v ? true : 'Required',
+                }]);
+                const result = await provisionCert(domain, emailAnswer.email);
+                if (result.ok) console.log(chalk.green(`✓ ${result.message}`));
+                else           console.log(chalk.red(`✗ ${result.message}`));
+                return;
+            }
             case 'deleteDomain': {
                 const confirmDelete: any = await inquirer.prompt([{
                     type: 'confirm', name: 'confirm',

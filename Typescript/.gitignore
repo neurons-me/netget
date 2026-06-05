@@ -1,4 +1,8 @@
-```gitignore
+# Build output
+dist/
+dist-types/
+.turbo/
+
 # Logs
 logs
 *.log
@@ -22,12 +26,11 @@ yarn.lock
 
 # OS generated files
 .DS_Store
+**/.DS_Store
 
 # Local environment files
 *.local
 .env
-
-# Ignore all .env files
 .env*
 
 # Editor directories and files
@@ -39,5 +42,3 @@ yarn.lock
 *.njsproj
 *.sln
 *.sw?
-```
-**/.DS_Store

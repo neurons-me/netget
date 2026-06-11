@@ -109,6 +109,17 @@ end
 local function send_no_monad_page(reason, is_registered)
   ngx.status = 503
   if wants_html() then
+    if _G.render_no_monad then
+      local hint = is_registered
+        and "Start a monad with this namespace and ensure it registers with netget."
+        or "Run `netget init` on this server, then refresh."
+      local body = _G.render_no_monad(host, rootspace_of(host), hint, reason)
+      if body then
+        ngx.header["Content-Type"] = "text/html; charset=utf-8"
+        ngx.say(body)
+        return ngx.exit(503)
+      end
+    end
     ngx.header["Content-Type"] = "text/html; charset=utf-8"
     ngx.say([[<!DOCTYPE html>
 <html lang="en">

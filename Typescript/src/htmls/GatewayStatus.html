@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Netget Gateway Status</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        font-family: "Roboto", sans-serif;
+      }
+
+      @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+
+      .container {
+        min-height: 100vh;
+        background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+        color: #333;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        padding: 48px 16px;
+      }
+
+      .title {
+        font-size: 28px;
+        font-weight: 700;
+        text-align: center;
+        color: #fff;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .paper {
+        width: 100%;
+        max-width: 640px;
+        padding: 32px;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+      }
+
+      .paper p {
+        font-size: 15px;
+        line-height: 1.6;
+        color: #555;
+      }
+
+      .paper code {
+        background: #f1f1f1;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+
+      .meta {
+        font-size: 13px;
+        color: #888;
+        word-break: break-all;
+      }
+
+      .button {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        background-color: #1976d2;
+        color: #fff;
+        transition: all 0.2s ease;
+      }
+
+      .button:hover {
+        background-color: #1565c0;
+      }
+
+      /* ─── State sections ──────────────────────────────────────────────────
+         Each .state-* block is hidden by default. The Lua renderer sets
+         body class to "state-N" (N = 1..4); CSS below shows only the
+         matching block via `.state-N .state-N-content { display: block }`.
+         This is a simple, gsub-friendly convention: no client JS needed,
+         the body class is injected server-side. */
+      .state-content { display: none; }
+      body.state-1 .state-1-content,
+      body.state-2 .state-2-content,
+      body.state-3 .state-3-content,
+      body.state-4 .state-4-content {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      @media (max-width: 600px) {
+        .paper { padding: 24px; }
+        .title { font-size: 22px; }
+      }
+    </style>
+  </head>
+  <body class="state-{{STATE}}">
+    <div class="container">
+      <div class="title">Netget Gateway</div>
+
+      <div class="paper">
+        <!-- State 1: NOT_CONFIGURED -->
+        <div class="state-content state-1-content">
+          <p>👋 Welcome to your netget gateway — no main domain configured yet.</p>
+          <p>This gateway's public IP is: <code>{{PUBLIC_IP}}</code></p>
+          <p>
+            To finish setup, run the <code>netget</code> CLI on this machine,
+            then choose <strong>Main Server → Set public domain</strong> and
+            point your domain's DNS A record at the public IP above.
+          </p>
+          <a class="button" href="https://netget.site/docs" target="_blank" rel="noopener">View setup docs</a>
+        </div>
+
+        <!-- State 2: ACME_PENDING -->
+        <div class="state-content state-2-content">
+          <p>🔒 Setting up HTTPS for <code>{{HOST}}</code>…</p>
+          <p>
+            A TLS certificate is being provisioned for this domain. This
+            usually takes a minute or two. Please refresh this page shortly.
+          </p>
+          <p>
+            Tip: make sure <code>{{HOST}}</code>'s DNS A record points to this
+            gateway's public IP (<code>{{PUBLIC_IP}}</code>) so certificate
+            validation can succeed.
+          </p>
+        </div>
+
+        <!-- State 3: DOMAIN_NOT_FOUND -->
+        <div class="state-content state-3-content">
+          <p><code>{{HOST}}</code> is not registered with this netget gateway.</p>
+          <p>
+            To register it, point an A record for <code>{{HOST}}</code> at
+            <code>{{PUBLIC_IP}}</code> (or a CNAME at
+            <code>{{MAIN_SERVER}}</code>), then run:
+          </p>
+          <p><code>netget domain add {{HOST}}</code></p>
+          <a class="button" href="/docs/custom-domains.md" target="_blank" rel="noopener">Custom domains docs</a>
+        </div>
+
+        <!-- State 4: SERVICE_UNAVAILABLE -->
+        <div class="state-content state-4-content">
+          <p><code>{{HOST}}</code> is registered, but the service at <code>{{TARGET}}</code> isn't responding.</p>
+          <p>
+            The gateway routing is correct, but the backend application
+            appears to be offline. Check that the service at
+            <code>{{TARGET}}</code> is running, then refresh this page.
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

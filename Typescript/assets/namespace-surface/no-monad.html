@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <title>{{HOST}} — NetGet</title>
+  <link rel="stylesheet" href="/ns-assets/styles.css" />
+  <script>window.__THIS_GUI_DISABLE_AUTOBOOT__ = true;</script>
+  <style>
+    .netget-no-monad-banner {
+      font-family: 'Roboto', sans-serif;
+      background: #141e1d;
+      color: #e0f0ef;
+      padding: 16px 24px;
+      border-bottom: 1px solid #1a2528;
+    }
+    .netget-no-monad-banner h1 {
+      color: #17bdcc;
+      font-size: 1.1em;
+      letter-spacing: 1px;
+      margin: 0 0 6px;
+    }
+    .netget-no-monad-banner .row { font-size: 0.85em; color: #8aacaa; margin: 2px 0; }
+    .netget-no-monad-banner .row strong { color: #e0f0ef; }
+    .netget-no-monad-banner .cmd {
+      display: inline-block;
+      margin-top: 8px;
+      background: #0b1416;
+      border: 1px solid #1a2528;
+      border-radius: 6px;
+      padding: 6px 12px;
+      color: #17bdcc;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85em;
+    }
+  </style>
+</head>
+<body>
+  <div class="netget-no-monad-banner">
+    <h1>NO LIVE MONAD</h1>
+    <div class="row"><strong>Host:</strong> {{HOST}}</div>
+    <div class="row"><strong>Rootspace:</strong> {{ROOTSPACE}}</div>
+    <div class="row"><strong>Reason:</strong> {{ERROR}}</div>
+    <div class="row">{{HINT}}</div>
+    <span class="cmd">monads start local</span>
+  </div>
+  <div id="root"></div>
+
+  <script src="/vendor/react/react.production.min.js"></script>
+  <script src="/vendor/react-dom/react-dom.production.min.js"></script>
+  <script src="/ns-assets/this.gui.umd.js"></script>
+
+  <script>
+    (function () {
+      window.__NETGET_DATA__ = {
+        host: {{HOST_JSON}},
+        rootspace: {{ROOTSPACE_JSON}},
+        hint: {{HINT_JSON}},
+        error: {{ERROR_JSON}}
+      };
+
+      const GUI = window.GUI;
+      if (!GUI || typeof GUI.mount !== 'function') {
+        document.getElementById('root').innerHTML =
+          '<p style="font-family:monospace;padding:2rem;color:#98a7b3">GUI not ready</p>';
+        return;
+      }
+
+      const endpoint = window.location.origin;
+      const pathname = window.location.pathname.replace(/\/$/, '') || null;
+      const blockPath = pathname || undefined;
+
+      GUI.mount({
+        type: 'Namespace',
+        props: {
+          endpoint,
+          defaultTab: 'blocks',
+          tabs: ['blocks'],
+          ...(blockPath ? { blockPath } : {}),
+        }
+      }, document.getElementById('root'), { showUnknown: true });
+    })();
+  </script>
+</body>
+</html>

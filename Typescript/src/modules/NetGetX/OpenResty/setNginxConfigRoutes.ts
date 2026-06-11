@@ -9,6 +9,7 @@ import {
   resolveMainServerFrontendConfig,
 } from './mainServerFrontend.ts';
 import { MKCERT_CERT_PATH, MKCERT_KEY_PATH } from '../Domains/SSL/mkcert/mkcert.ts';
+import { getDomainMapPath } from '../../../runtime/domainMap.ts';
 
 /**
  * Generate the content for netget_app.conf (app routes) with concrete paths.
@@ -173,6 +174,61 @@ ${proxyHeaders}
     }
 ` : '';
 
+  // ─── Public domain server blocks (Let's Encrypt) ───────────────────────────
+  // For each registered public domain that has a real Let's Encrypt cert on disk,
+  // emit a dedicated server block on 443 with that cert. Without this, public
+  // domains fall through to the first server block (mkcert/self-signed cert).
+  const publicDomainBlocks = (() => {
+    let domains: string[] = [];
+    try {
+      const mapPath = getDomainMapPath();
+      if (fs.existsSync(mapPath)) {
+        const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+        domains = Object.keys(map.domains || {});
+      }
+    } catch { /* ignore */ }
+
+    return domains.map(domain => {
+      const letsencryptLiveRoot = process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
+      const liveDir = path.join(letsencryptLiveRoot, domain);
+      const certPath = path.join(liveDir, 'fullchain.pem');
+      const keyPath = path.join(liveDir, 'privkey.pem');
+      if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return '';
+
+      return `
+# ─── Public Domain (Let's Encrypt) ─────────────────────────────────────────────
+# ${domain} → registered public domain with a Let's Encrypt certificate.
+server {
+    listen 80;
+    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${domain};
+    client_max_body_size 500M;
+    ssl_certificate     ${certPath};
+    ssl_certificate_key ${keyPath};
+
+    set $NETGET_DATA_DIR ${xConfig};
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+${vendorLocations}
+${namespaceAssetLocations}
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_proxy_target "";
+        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+        proxy_pass $surface_proxy_target;
+${proxyHeaders}
+        add_header Vary "Accept" always;
+        add_header Cache-Control "no-store" always;
+        proxy_set_header X-NetGet-Surface $host;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+}
+`;
+    }).join('');
+  })();
+
   // ─── NRP server blocks ─────────────────────────────────────────────────────
   //
   // NRP namespace tree for this machine:
@@ -263,6 +319,7 @@ lua_shared_dict gateway_nonces  1m;
 log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
 ${namespaceSurfaceBlock}
 ${nrpHandleBlock}
+${publicDomainBlocks}
 
 server {
 ${listenLines}

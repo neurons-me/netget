@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import chalk from 'chalk';
+import { fileURLToPath } from 'url';
 import { handlePermission } from '../../utils/handlePermissions.ts';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { detectOpenRestyLayout, type OpenRestyLayout } from './platformDetect.ts';
@@ -20,6 +21,19 @@ export function buildNginxConfigContent(layout: OpenRestyLayout = detectOpenRest
     const domainMapPath      = path.join(xConfig, 'runtime', 'domain-map.json');
     const domainMapVersionPath = path.join(xConfig, 'runtime', 'domain-map.version');
     const appRegistryPath = path.join(xConfig, 'runtime', 'apps.json');
+    const gatewayStatusTemplatePath = path.join(fileURLToPath(new URL('../../../htmls/GatewayStatus.html', import.meta.url)));
+    const noMonadTemplatePath = path.join(fileURLToPath(new URL('../../../../assets/namespace-surface/no-monad.html', import.meta.url)));
+
+    // mainServerName drives State 1 (NOT_CONFIGURED). Empty/unset → no public
+    // domain has been set up yet via `netget` CLI → Main Server → Set public domain.
+    let mainServerName = '';
+    try {
+        const xConfigPath = path.join(xConfig, 'xConfig.json');
+        if (fs.existsSync(xConfigPath)) {
+            const xConfigData = JSON.parse(fs.readFileSync(xConfigPath, 'utf8'));
+            mainServerName = String(xConfigData.mainServerName || '').trim();
+        }
+    } catch { /* ignore — treat as unconfigured */ }
 
     const userLine = layout.userDirective ? `${layout.userDirective}\n` : '';
     const envLines = [
@@ -65,6 +79,9 @@ http {
         local cjson = require "cjson"
         local MAP_PATH     = "${domainMapPath}"
         local VERSION_PATH = "${domainMapVersionPath}"
+        local GATEWAY_STATUS_TEMPLATE_PATH = "${gatewayStatusTemplatePath}"
+        local NO_MONAD_TEMPLATE_PATH = "${noMonadTemplatePath}"
+        local MAIN_SERVER_NAME = "${mainServerName}"
 
         local function read_file(p)
             local f = io.open(p, "r")
@@ -85,6 +102,65 @@ http {
 
         load_map()
         _G.DOMAIN_MAP_VERSION = read_file(VERSION_PATH) or ""
+
+        -- GatewayStatus.html template: read once at init, gsub'd per request.
+        _G.GATEWAY_STATUS_TEMPLATE = read_file(GATEWAY_STATUS_TEMPLATE_PATH)
+        _G.MAIN_SERVER_NAME = MAIN_SERVER_NAME
+
+        -- no-monad.html template (NRP namespace surface, state 5): read once at
+        -- init, gsub'd per request by surface_proxy.lua when no live monad
+        -- claims the requested namespace.
+        _G.NO_MONAD_TEMPLATE = read_file(NO_MONAD_TEMPLATE_PATH)
+
+        -- Renders no-monad.html with placeholders substituted via gsub.
+        -- cjson.encode is used for the JS-literal placeholders so the
+        -- injected window.__NETGET_DATA__ is valid JSON even when host/error
+        -- contain quotes or other special characters.
+        function _G.render_no_monad(host, rootspace, hint, err)
+            local tpl = _G.NO_MONAD_TEMPLATE
+            if not tpl then return nil end
+            local out = tpl
+            out = out:gsub("{{HOST}}", host or "")
+            out = out:gsub("{{ROOTSPACE}}", rootspace or "")
+            out = out:gsub("{{HINT}}", hint or "")
+            out = out:gsub("{{ERROR}}", err or "")
+            out = out:gsub("{{HOST_JSON}}", (cjson.encode(host or "")))
+            out = out:gsub("{{ROOTSPACE_JSON}}", (cjson.encode(rootspace or "")))
+            out = out:gsub("{{HINT_JSON}}", (cjson.encode(hint or "")))
+            out = out:gsub("{{ERROR_JSON}}", (cjson.encode(err or "")))
+            return out
+        end
+
+        -- Public IP: fetched once and cached for the life of the worker.
+        -- Used to populate {{PUBLIC_IP}} in GatewayStatus.html states 1/2/3.
+        _G.GATEWAY_PUBLIC_IP = ""
+        local function fetch_public_ip(premature)
+            if premature then return end
+            local httpc = require("resty.http").new()
+            httpc:set_timeout(3000)
+            local res, err = httpc:request_uri("https://api.ipify.org", { method = "GET" })
+            if res and res.status == 200 and res.body then
+                _G.GATEWAY_PUBLIC_IP = (res.body or ""):gsub("%s+", "")
+            end
+        end
+        local ok, err = ngx.timer.at(0, fetch_public_ip)
+        if not ok then
+            ngx.log(ngx.ERR, "public IP fetch timer failed to start: ", err)
+        end
+
+        -- Renders GatewayStatus.html for the given state (1-4) with placeholders
+        -- substituted via gsub. HOST/TARGET default to "" when not applicable.
+        function _G.render_gateway_status(state, host, target)
+            local tpl = _G.GATEWAY_STATUS_TEMPLATE
+            if not tpl then return nil end
+            local out = tpl
+            out = out:gsub("{{STATE}}", tostring(state))
+            out = out:gsub("{{HOST}}", host or "")
+            out = out:gsub("{{TARGET}}", target or "")
+            out = out:gsub("{{PUBLIC_IP}}", _G.GATEWAY_PUBLIC_IP or "")
+            out = out:gsub("{{MAIN_SERVER}}", _G.MAIN_SERVER_NAME or "")
+            return out
+        end
 
         local function check_reload(premature)
             if premature then return end
@@ -115,8 +191,43 @@ http {
         }
 
         location / {
-            index index.html;
-            try_files $uri /index.html;
+            # State 1 (NOT_CONFIGURED): if no public main domain has been set
+            # via the netget CLI -> Main Server -> Set public domain, this default
+            # server block would otherwise serve the panel's static dist/ for
+            # ANY host. We special-case this: serve the GatewayStatus page
+            # instead, EXCEPT for requests to local.netget/localhost/127.0.0.1,
+            # which must continue to show the real panel so the CLI-driven
+            # setup flow (which runs against local.netget) keeps working.
+            content_by_lua_block {
+                if _G.MAIN_SERVER_NAME == "" then
+                    local host = string.lower(ngx.var.host or ""):gsub(":%d+$", "")
+                    local is_local = host == "local.netget"
+                        or host == "localhost"
+                        or host == "127.0.0.1"
+                        or host:match("%.local$")
+
+                    if not is_local then
+                        local body = _G.render_gateway_status(1, host, "")
+                        if body then
+                            ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                            ngx.say(body)
+                            return
+                        end
+                    end
+                end
+
+                -- Fall through to serving the static panel.
+                local index_path = "${xConfig}/html/index.html"
+                local f = io.open(index_path, "r")
+                if not f then
+                    ngx.exit(ngx.HTTP_NOT_FOUND)
+                    return
+                end
+                local content = f:read("*a")
+                f:close()
+                ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                ngx.say(content)
+            }
         }
 
         error_page 400 401 402 403 404 405 406 407 408 409 410 411 412 413 414 415 416 417 418 421 422 423 424 425 426 428 429 431 451 500 501 502 503 504 505 506 507 508 510 511 /NetgetErrorCodeHandler.html;
@@ -136,6 +247,7 @@ http {
 
         set $target_url "";
         set $root "";
+        set $gateway_target "";
 
         access_by_lua_block {
             local ssl_cache = ngx.shared.ssl_cache
@@ -276,8 +388,34 @@ http {
                 end
 
                 if not route then
+                    -- State 3 (DOMAIN_NOT_FOUND): host is not registered in
+                    -- domain-map.json and is not local.netget/*.local/an IP.
+                    -- Serve the GatewayStatus page with setup instructions
+                    -- instead of a bare 404.
+                    local body = _G.render_gateway_status(3, host, "")
+                    if body then
+                        ngx.status = ngx.HTTP_NOT_FOUND
+                        ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                        ngx.say(body)
+                        return
+                    end
                     ngx.exit(ngx.HTTP_NOT_FOUND)
                     return
+                end
+
+                -- State 2 (ACME_PENDING): domain is registered but its cert
+                -- has not been provisioned yet (route.ssl.enabled == false).
+                -- For plain HTTP (port 80) requests, show the "setting up
+                -- HTTPS" status page instead of proxying/serving normally —
+                -- the backend may not even be reachable yet, and this avoids
+                -- a confusing error while Let's Encrypt issuance is pending.
+                if ngx.var.server_port == "80" and route.ssl and route.ssl.enabled == false then
+                    local body = _G.render_gateway_status(2, host, "")
+                    if body then
+                        ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                        ngx.say(body)
+                        return
+                    end
                 end
 
                 if route.type == "server" or route.type == "proxy" then
@@ -330,6 +468,7 @@ http {
                     end
 
                     ngx.var.target_url = "http://" .. target
+                    ngx.var.gateway_target = target
                     ngx.exec("@server")
                 elseif route.type == "static" then
                     local root = route.root
@@ -369,6 +508,28 @@ http {
             proxy_connect_timeout              60s;
             proxy_send_timeout                 60s;
             proxy_read_timeout                 60s;
+
+            # State 4 (SERVICE_UNAVAILABLE): host is registered with a valid
+            # target, but the proxied backend is down (connection refused or
+            # 502/503/504). Show the GatewayStatus page instead of a raw
+            # nginx error.
+            proxy_intercept_errors on;
+            error_page 502 503 504 = @gateway_service_unavailable;
+        }
+
+        location @gateway_service_unavailable {
+            internal;
+            default_type 'text/html; charset=utf-8';
+            content_by_lua_block {
+                local host = string.lower(ngx.var.host or ""):gsub(":%d+$", "")
+                local body = _G.render_gateway_status(4, host, ngx.var.gateway_target or "")
+                if body then
+                    ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
+                    ngx.say(body)
+                else
+                    ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
+                end
+            }
         }
 
         location ~* \.(conf|sh|sql|env|log)$ {

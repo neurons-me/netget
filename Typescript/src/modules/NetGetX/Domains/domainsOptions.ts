@@ -75,7 +75,11 @@ async function logDomainInfo(domain: string): Promise<void> {
 
 async function domainsTable(): Promise<void> {
     const rows = await getDomains();
-    const visibleRows = rows.filter(row => !isReservedLocalDomain(row.domain));
+    // The main server's own panel domain is registered automatically (owner: 'main-server')
+    // so OpenResty can serve it with a real cert — it's not a user app and shouldn't show
+    // up alongside domains people register for their own projects. Manage it from
+    // Main Server > Public domain instead.
+    const visibleRows = rows.filter(row => !isReservedLocalDomain(row.domain) && row.owner !== 'main-server');
     if (visibleRows.length === 0) {
         console.log(chalk.yellow('No domains registered.'));
     } else {

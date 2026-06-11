@@ -102,8 +102,10 @@ async function mainServerMenu(x: XStateData): Promise<void> {
         if (action === 'back') return;
 
         if (action === 'clear') {
+            const previous = String(x.mainServerName || '').trim();
             await saveXConfig({ mainServerName: '' });
             x.mainServerName = '';
+            await cleanupMainServerDomainRecord(previous);
             lastMessage = chalk.green('Public domain/local label cleared.');
             continue;
         }
@@ -129,14 +131,111 @@ async function mainServerMenu(x: XStateData): Promise<void> {
 
         try {
             const cleanName = newMainServer.trim();
+            const previous = String(x.mainServerName || '').trim();
             await saveXConfig({ mainServerName: cleanName });
             x.mainServerName = cleanName;
+
+            if (previous && previous !== cleanName) {
+                await cleanupMainServerDomainRecord(previous);
+            }
             lastMessage = exposure.applies
                 ? chalk.green(`Public domain set to: ${cleanName}`)
                 : chalk.green(cleanName ? `Local label set to: ${cleanName}` : 'Left unset for local/NAT mode.');
+
+            // For real public domains, offer to wire up registration + Let's Encrypt + domain-map
+            // in one go, so the panel becomes reachable as https://<domain> immediately.
+            if (exposure.applies && cleanName) {
+                await offerProvisionMainDomain(x, cleanName);
+            }
         } catch (error: any) {
             lastMessage = chalk.red(`Error updating value: ${error.message}`);
         }
+    }
+}
+
+/**
+ * Remove the auto-registered domain-store record for a previous main server
+ * domain (owner: 'main-server'). Only ever touches records this flow created
+ * itself — never a user's own app domains. Best-effort: regenerates the
+ * domain-map afterwards so the stale route stops being served.
+ */
+async function cleanupMainServerDomainRecord(domain: string): Promise<void> {
+    if (!domain) return;
+    try {
+        const { getDomainByName, deleteDomain } = await import('../../../kernel/domainStore.js');
+        const existing = await getDomainByName(domain);
+        if (existing && existing.owner === 'main-server') {
+            await deleteDomain(domain);
+            const { generateDomainMap } = await import('../../../runtime/domainMap.ts');
+            await generateDomainMap();
+        }
+    } catch {
+        // best-effort cleanup; not fatal if it fails
+    }
+}
+
+/**
+ * After the operator sets a real public domain as the main server name,
+ * offer to do the rest of the "go live" wiring in one step:
+ *  - register the domain in the domain store (type: server -> the panel port)
+ *  - provision a Let's Encrypt cert via certbot (HTTP-01 webroot)
+ *  - regenerate domain-map.json so OpenResty/Lua picks it up immediately
+ *
+ * This is best-effort: failures are reported but never crash the menu, and the
+ * operator can always retry later from Domains & Certificates.
+ */
+async function offerProvisionMainDomain(x: XStateData, domain: string): Promise<void> {
+    const { confirmGoLive } = await inquirer.prompt<{ confirmGoLive: boolean }>([
+        {
+            type: 'confirm',
+            name: 'confirmGoLive',
+            message: `Register ${domain} and request a Let's Encrypt certificate now? (requires its A record to already point to this server's public IP)`,
+            default: true,
+        },
+    ]);
+    if (!confirmGoLive) {
+        console.log(chalk.gray('Skipped. You can do this later from Domains & Certificates.'));
+        return;
+    }
+
+    const { email } = await inquirer.prompt<{ email: string }>([
+        {
+            type: 'input',
+            name: 'email',
+            message: "Contact email for Let's Encrypt:",
+            default: String((x as any).email || ''),
+            validate: (v: string) => v.trim() ? true : 'Required',
+        },
+    ]);
+
+    try {
+        const { getDomainByName, registerDomain } = await import('../../../kernel/domainStore.js');
+        const existing = await getDomainByName(domain);
+        const port = String((x as any).xMainOutPutPort || 3432);
+
+        if (!existing) {
+            await registerDomain(domain, domain, email, 'letsencrypt', '', '', port, 'server', '', 'main-server');
+            console.log(chalk.green(`Registered ${domain} -> 127.0.0.1:${port} (server).`));
+        } else {
+            console.log(chalk.gray(`${domain} is already registered — skipping registration.`));
+        }
+
+        const { provisionCert } = await import('../Domains/SSL/Certbot/certbotProvision.ts');
+        const result = await provisionCert(domain, email);
+        if (result.ok) {
+            console.log(chalk.green(`✓ ${result.message}`));
+        } else {
+            console.log(chalk.yellow(`✗ ${result.message}`));
+            console.log(chalk.gray('You can retry this later from Domains & Certificates -> Provision SSL.'));
+            return;
+        }
+
+        const { generateDomainMap } = await import('../../../runtime/domainMap.ts');
+        await generateDomainMap();
+        console.log(chalk.green(`✓ ${domain} is now the main server. Try: https://${domain}`));
+    } catch (error: any) {
+        console.log(chalk.yellow(`Could not finish go-live wiring: ${error.message}`));
+        console.log(chalk.gray('You can configure this later from Domains & Certificates.'));
     }
 }
 

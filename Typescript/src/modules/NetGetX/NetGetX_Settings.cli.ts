@@ -8,7 +8,7 @@ import openRestyInstallationOptions from './OpenResty/openRestyInstallationOptio
 type SettingsAction = 'main-server-name' | 'local-https' | 'gateway-engine' | 'diagnostics' | 'about' | 'back';
 
 function printSettingsHeader(x: XStateData, message?: string): void {
-    console.log(chalk.bold('📍 .Get Local > Main Server > Settings'));
+    console.log(chalk.bold('📍 .Local Main Server > Settings'));
     const name = String(x.mainServerName || '').trim();
     console.log(`Public domain/local label: ${name ? chalk.green(name) : chalk.yellow('not set')}`);
     console.log(chalk.gray('Local/NAT: optional label. Public server: real domain that points to this machine.'));
@@ -69,7 +69,7 @@ const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
 
         if (action === 'diagnostics') {
             console.clear();
-            console.log(chalk.bold('📍 .Get Local > Main Server > Settings > Diagnostics'));
+            console.log(chalk.bold('📍 .Local Main Server > Settings > Diagnostics'));
             console.log(chalk.gray('xConfig is the persisted file on disk. xState is the in-memory copy used by this CLI session.\n'));
             await displayStateAndConfig(x);
             await pause();
@@ -78,7 +78,7 @@ const netGetXSettingsMenu = async (x: XStateData): Promise<void> => {
 
         if (action === 'about') {
             console.clear();
-            console.log(chalk.bold('📍 .Get Local > Main Server > Settings > About'));
+            console.log(chalk.bold('📍 .Local Main Server > Settings > About'));
             console.log(chalk.cyan('\nMain Server is the local NetGet control plane: gateway, domains, certificates, and UI target.'));
             console.log(chalk.gray('Use NetGet ON/OFF for runtime state. Gateway engine advanced is for low-level repair and diagnostics.\n'));
             await pause();

@@ -58,7 +58,7 @@ function printHeader(x: XStateData, message?: string): void {
     const exposure = getExposure(x);
     const currentName = String(x.mainServerName || '').trim();
 
-    console.log(chalk.bold('📍 .Get Local > Main Server > Settings > Public domain'));
+    console.log(chalk.bold('📍 .Local Main Server > Settings > Public domain'));
     console.log(`Current value: ${currentName ? chalk.green(currentName) : chalk.yellow('not set')}`);
     console.log(`Network mode: ${exposure.applies ? chalk.green(exposure.label) : chalk.yellow(exposure.label)}`);
     console.log(`Local IP: ${exposure.localIP || chalk.gray('not detected')}  Public IP: ${exposure.publicIP || chalk.gray('not detected')}`);

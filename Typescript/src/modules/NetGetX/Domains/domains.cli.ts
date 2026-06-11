@@ -64,7 +64,7 @@ const getDomainsFromDB = async (): Promise<FormattedDomain[]> => {
 const domainsMenu = async (): Promise<void> => {
     try {
         console.clear();
-        console.log(chalk.bold('📍 .Get Local > Main Server > Domains & Certificates'));
+        console.log(chalk.bold('📍 .Local Main Server > Domains & Certificates'));
         console.log(chalk.gray('Domain registry: ownership, email, SSL mode, certificates, and subdomains.'));
         console.log(chalk.gray('A domain can live here without being active in the Routing table.'));
         console.log(chalk.gray('local.netget is the reserved Local gateway and is managed from Main Server, not here.\n'));

@@ -21,7 +21,7 @@ async function pause(message = 'Press Enter to return to Local gateway.'): Promi
 
 function printLocalGatewayHeader(message = ''): void {
     console.clear();
-    console.log(chalk.bold('📍 .Get Local > Main Server > Local gateway'));
+    console.log(chalk.bold('📍 .Local Main Server > Local gateway'));
     console.log(chalk.cyan('local.netget'));
     console.log(chalk.gray('Reserved hostname for this machine. It points to the Main Server UI through the NetGet gateway.'));
     console.log(chalk.gray('It is not a public routed domain, so subdomains, domain deletion, and public SSL do not apply here.'));
@@ -87,7 +87,7 @@ export default async function localGatewayDomainMenu(): Promise<void> {
 
         if (choice === 'network-ips') {
             console.clear();
-            console.log(chalk.bold('📍 .Get Local > Main Server > Local gateway > Network IPs'));
+            console.log(chalk.bold('📍 .Local Main Server > Local gateway > Network IPs'));
             await printNetworkIPs();
             await pause();
         }

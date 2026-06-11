@@ -43,7 +43,7 @@ interface InstallAnswers {
     choice: InstallChoice;
 }
 
-const BREADCRUMB = '📍 .Get Local > Main Server > Settings > Gateway engine';
+const BREADCRUMB = '📍 .Local Main Server > Settings > Gateway engine';
 
 function commandExists(command: string): boolean {
     try {

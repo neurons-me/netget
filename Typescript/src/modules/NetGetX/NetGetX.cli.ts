@@ -126,7 +126,7 @@ function printMainServerHeader(x: XStateData, service: OpenRestyServiceStatus, m
         ? chalk.green(online ? termLink(serverName, `${proto}://${serverName}`) : serverName)
         : chalk.gray('Not Set');
 
-    console.log(chalk.bold('📍 .Get Local > Main Server'));
+    console.log(chalk.bold('📍 .Local Main Server'));
     console.log(chalk.bold('Main Server X:'));
     console.log(`
      ██╗  ██╗
@@ -366,7 +366,7 @@ export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
             }
             case 'network-ips': {
                 console.clear();
-                console.log(chalk.bold('📍 .Get Local > Main Server > Network IPs'));
+                console.log(chalk.bold('📍 .Local Main Server > Network IPs'));
                 const { printNetworkIPs } = await import('../../utils/localEnvironment.cli.ts');
                 await printNetworkIPs();
                 await pause();

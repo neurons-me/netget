@@ -170,7 +170,7 @@ export async function printLocalSnapshot(): Promise<void> {
     const activeStaticRoot = getActiveStaticRoot(frontend);
     const ports = await getPortStatuses();
 
-    console.log(chalk.bold('\n📍 .Get Local'));
+    console.log(chalk.bold('\n📍 .Local Main Server'));
     console.log(chalk.bold('Local NetGet Environment'));
     console.log(chalk.gray('read-only snapshot; no hosts, certs, nginx, or config files are changed here'));
 
@@ -352,7 +352,7 @@ export async function localMenu(): Promise<void> {
             {
                 name: 'localChoice',
                 type: 'list',
-                message: '📍 .Get Local - choose an option:',
+                message: '📍 .Local Main Server - choose an option:',
                 choices: [
                     { name: 'View local environment snapshot', value: 'snapshot' },
                     { name: 'Check network IPs (LAN / WAN)', value: 'public-ip' },

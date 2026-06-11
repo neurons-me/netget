@@ -65,7 +65,7 @@ async function manageRoute(domain: DomainRecord): Promise<void> {
 
     while (true) {
         console.clear();
-        console.log(chalk.bold('📍 .Get Local > Main Server > Routing table'));
+        console.log(chalk.bold('📍 .Local Main Server > Routing table'));
         console.log(`Domain: ${chalk.green(selected.domain)}`);
         console.log(`Current route: ${selected.type && selected.target ? chalk.green(`${selected.type} -> ${displayTarget(selected.target)}`) : chalk.yellow('inactive')}`);
         console.log(chalk.gray('A route becomes active only when both type and target are set.\n'));
@@ -164,7 +164,7 @@ async function manageRoute(domain: DomainRecord): Promise<void> {
 export default async function routingTableMenu(): Promise<void> {
     while (true) {
         console.clear();
-        console.log(chalk.bold('📍 .Get Local > Main Server > Routing table'));
+        console.log(chalk.bold('📍 .Local Main Server > Routing table'));
         console.log(chalk.gray('Active routes are projected into domain-map.json and served by the NetGet gateway.'));
         console.log(chalk.gray('Domains must be registered first in Domains & Certificates.\n'));
 

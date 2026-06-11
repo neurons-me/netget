@@ -127,7 +127,7 @@ export async function mainMenu(): Promise<void> {
                 message: 'Select an option:',
                 choices: [
                     { name: '🛰  .Get Remote', value: 'remote' },
-                    { name: '📍 .Get Local', value: 'local' },
+                    { name: '📍 .Local Main Server', value: 'local' },
                     new inquirer.Separator(),
                     { name: '🔌  Port Management', value: 'ports' },
                     new inquirer.Separator(),

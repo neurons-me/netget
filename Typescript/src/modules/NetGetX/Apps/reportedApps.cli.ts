@@ -36,7 +36,7 @@ async function printLocalAppsOverview(): Promise<void> {
     for (const app of apps) names.add(app.name);
     for (const lease of leases) names.add(lease.name);
 
-    console.log(chalk.bold('📍 .Get Local > Main Server > Local Apps'));
+    console.log(chalk.bold('📍 .Local Main Server > Local Apps'));
     console.log(chalk.gray('Semantic app reports + operational port leases in one place.'));
     console.log(chalk.gray('Apps declare identity; leases prove port ownership.\n'));
 
@@ -69,7 +69,7 @@ async function printLocalAppsOverview(): Promise<void> {
 
 function printReportedApps(): void {
     const apps = readReportedApps();
-    console.log(chalk.bold('📍 .Get Local > Main Server > Local Apps > App Reports'));
+    console.log(chalk.bold('📍 .Local Main Server > Local Apps > App Reports'));
     console.log(chalk.gray('Heartbeat reports written by apps that called netget().\n'));
 
     if (apps.length === 0) {
@@ -91,7 +91,7 @@ function printReportedApps(): void {
 
 async function printPortLeases(): Promise<void> {
     const leases = await listPortLeases();
-    console.log(chalk.bold('📍 .Get Local > Main Server > Local Apps > Port Leases'));
+    console.log(chalk.bold('📍 .Local Main Server > Local Apps > Port Leases'));
     console.log(chalk.gray('Operational truth for local ports. Locks guarantee ownership; JSON describes it.\n'));
 
     if (leases.length === 0) {

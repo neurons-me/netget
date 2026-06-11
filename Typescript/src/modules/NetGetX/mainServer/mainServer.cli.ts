@@ -232,6 +232,8 @@ async function offerProvisionMainDomain(x: XStateData, domain: string): Promise<
 
         const { generateDomainMap } = await import('../../../runtime/domainMap.ts');
         await generateDomainMap();
+        const { default: includeNetgetAppConf } = await import('../OpenResty/includeNetgetAppConf.ts');
+        await includeNetgetAppConf();
         console.log(chalk.green(`✓ ${domain} is now the main server. Try: https://${domain}`));
     } catch (error: any) {
         console.log(chalk.yellow(`Could not finish go-live wiring: ${error.message}`));

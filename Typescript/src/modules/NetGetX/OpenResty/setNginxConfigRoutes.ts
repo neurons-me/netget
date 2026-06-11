@@ -121,7 +121,7 @@ ${proxyHeaders}
   const machineHostnameRegex = machineHostnameLower.replace(/\./g, '\\.');
 
   // Resolve public and local IPs from xConfig so nginx server_name covers all
-  // entry points — hostname, local IP, and public IP all route to the same monad.
+  // Main Server entry points — hostname, local IP, and public IP serve the dashboard.
   const xConfigData = (() => {
     try {
       const p = path.join(xConfig, 'xConfig.json');
@@ -131,7 +131,9 @@ ${proxyHeaders}
   })();
   const publicIP = String(xConfigData.publicIP || '').trim();
   const localIP  = String(xConfigData.localIP  || '').trim();
-  // Extra server_name tokens beyond the hostname (IPs, if known)
+  const mainServerName = String(xConfigData.mainServerName || '').trim().toLowerCase();
+
+  // Extra server_name tokens for the Main Server dashboard block (IPs, if known).
   const extraServerNames = [localIP, publicIP]
     .filter(ip => ip && ip !== '127.0.0.1' && ip !== '::1')
     .join(' ');
@@ -174,164 +176,7 @@ ${proxyHeaders}
     }
 ` : '';
 
-  // ─── Public domain server blocks (Let's Encrypt) ───────────────────────────
-  // For each registered public domain that has a real Let's Encrypt cert on disk,
-  // emit a dedicated server block on 443 with that cert. Without this, public
-  // domains fall through to the first server block (mkcert/self-signed cert).
-  const publicDomainBlocks = (() => {
-    let domains: string[] = [];
-    try {
-      const mapPath = getDomainMapPath();
-      if (fs.existsSync(mapPath)) {
-        const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
-        domains = Object.keys(map.domains || {});
-      }
-    } catch { /* ignore */ }
-
-    return domains.map(domain => {
-      const letsencryptLiveRoot = process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
-      const liveDir = path.join(letsencryptLiveRoot, domain);
-      const certPath = path.join(liveDir, 'fullchain.pem');
-      const keyPath = path.join(liveDir, 'privkey.pem');
-      if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return '';
-
-      return `
-# ─── Public Domain (Let's Encrypt) ─────────────────────────────────────────────
-# ${domain} → registered public domain with a Let's Encrypt certificate.
-server {
-    listen 80;
-    listen [::]:80;
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name ${domain};
-    client_max_body_size 500M;
-    ssl_certificate     ${certPath};
-    ssl_certificate_key ${keyPath};
-
-    set $NETGET_DATA_DIR ${xConfig};
-    access_log ${layout.logDir}/netget_access.log netget_access;
-    error_log  ${layout.logDir}/netget_error.log warn;
-${vendorLocations}
-${namespaceAssetLocations}
-    location / {
-        if ($request_method = OPTIONS) { return 204; }
-        set $surface_proxy_target "";
-        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
-        proxy_pass $surface_proxy_target;
-${proxyHeaders}
-        add_header Vary "Accept" always;
-        add_header Cache-Control "no-store" always;
-        proxy_set_header X-NetGet-Surface $host;
-        proxy_set_header X-Forwarded-Host $host;
-    }
-}
-`;
-    }).join('');
-  })();
-
-  // ─── NRP server blocks ─────────────────────────────────────────────────────
-  //
-  // NRP namespace tree for this machine:
-  //   ${machineHostnameLower}              ← the monad itself (machine substrate)
-  //   {handle}.${machineHostnameLower}     ← human identity namespace on this monad
-  //     me://handle.${machineHostnameLower}[selector]/path
-  //
-  // Two server blocks:
-  //   1. Monad root  — ${machineHostnameLower} (bare)
-  //      surface_proxy.lua → app whose namespace/hostname matches
-  //   2. NRP handles — {handle}.${machineHostnameLower}
-  //      nrp_handle.lua validates the handle, proxies to local.netget
-  //      (which serves the .me identity surface / Cleaker)
-
-  // Block 1: monad root (bare hostname)
-  const namespaceSurfaceBlock = `
-# ─── NRP Monad Root ───────────────────────────────────────────────────────────
-# ${machineHostnameLower} = the monad itself.
-# Everything goes to the monad — it decides HTML vs JSON from Accept header.
-server {
-${listenLines}
-    server_name ${machineHostnameLower}${extraServerNames ? ' ' + extraServerNames : ''};
-    client_max_body_size 500M;
-${sslDirectives}
-    set $NETGET_DATA_DIR ${xConfig};
-    access_log ${layout.logDir}/netget_access.log netget_access;
-    error_log  ${layout.logDir}/netget_error.log warn;
-${vendorLocations}
-${namespaceAssetLocations}
-    location / {
-        if ($request_method = OPTIONS) { return 204; }
-        set $surface_proxy_target "";
-        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
-        proxy_pass $surface_proxy_target;
-${proxyHeaders}
-        add_header Vary "Accept" always;
-        add_header Cache-Control "no-store" always;
-        proxy_set_header X-NetGet-Surface $host;
-        proxy_set_header X-Forwarded-Host $host;
-    }
-}
-`;
-
-  // Block 2: NRP handle surface  — {handle}.${machineHostnameLower}
-  // The regex server_name captures the handle label into $nrp_handle.
-  // nrp_handle.lua validates the handle and injects X-NRP-* headers.
-  // All traffic is proxied to local.netget (which hosts the .me identity surface).
-  const nrpHandleBlock = `
-# ─── NRP Handle Surface ───────────────────────────────────────────────────────
-# {handle}.${machineHostnameLower} → same monad, namespace resolved from Host header.
-# The monad handles HTML vs JSON from Accept. No static SPA split.
-server {
-${listenLines}
-    server_name ~^(?<nrp_handle>[^.]+)\\.${machineHostnameRegex}$;
-    client_max_body_size 500M;
-${sslDirectives}
-    set $NETGET_DATA_DIR ${xConfig};
-    access_log ${layout.logDir}/netget_access.log netget_access;
-    error_log  ${layout.logDir}/netget_error.log warn;
-${vendorLocations}
-${namespaceAssetLocations}
-
-    location / {
-        if ($request_method = OPTIONS) { return 204; }
-        set $surface_proxy_target "";
-        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
-        proxy_pass $surface_proxy_target;
-${proxyHeaders}
-        add_header Vary "Accept" always;
-        add_header Cache-Control "no-store" always;
-    }
-}
-`;
-
-  return `
-# netget_app.conf (generated)
-# -----------------------------------------------------------
-# Generated by setNginxConfigRoutes.ts - do not edit by hand in conf.d
-# NRP namespace tree:
-#   ${machineHostnameLower}              → monad root (surface_proxy.lua → registered monad)
-#   {handle}.${machineHostnameLower}     → handle identity surface (nrp_handle.lua → local.netget)
-#   ${machineHostnameLower.replace(/\.local$/, '')}.netget  → admin/control plane (LAN access)
-#   local.netget / localhost / 127.0.0.1 → admin/control plane (loopback alias)
-
-lua_shared_dict jwt_cache      10m;
-lua_shared_dict gateway_nonces  1m;
-
-log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
-${namespaceSurfaceBlock}
-${nrpHandleBlock}
-${publicDomainBlocks}
-
-server {
-${listenLines}
-    server_name local.netget ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1;
-    client_max_body_size 500M;
-${sslDirectives}
-
-    set $NETGET_DATA_DIR ${xConfig};
-    set $netget_logs_path ${layout.logDir};
-    access_log ${layout.logDir}/netget_access.log netget_access;
-    error_log  ${layout.logDir}/netget_error.log warn;
-
+  const mainServerLocations = `
 ${rootLocation}
 
     # Networks API
@@ -679,6 +524,177 @@ ${proxyHeaders}
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
+`;
+
+  // ─── Public domain server blocks (Let's Encrypt) ───────────────────────────
+  // For each registered public domain that has a real Let's Encrypt cert on disk,
+  // emit a dedicated server block on 443 with that cert. Without this, public
+  // domains fall through to the first server block (mkcert/self-signed cert).
+  const publicDomainBlocks = (() => {
+    let domains: string[] = [];
+    try {
+      const mapPath = getDomainMapPath();
+      if (fs.existsSync(mapPath)) {
+        const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+        domains = Object.keys(map.domains || {});
+      }
+    } catch { /* ignore */ }
+
+    return domains.map(domain => {
+      const letsencryptLiveRoot = process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
+      const liveDir = path.join(letsencryptLiveRoot, domain);
+      const certPath = path.join(liveDir, 'fullchain.pem');
+      const keyPath = path.join(liveDir, 'privkey.pem');
+      if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return '';
+      const isMainServerDomain = !!mainServerName && domain.toLowerCase() === mainServerName;
+      const domainLocations = isMainServerDomain
+        ? mainServerLocations
+        : `
+${vendorLocations}
+${namespaceAssetLocations}
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_proxy_target "";
+        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+        proxy_pass $surface_proxy_target;
+${proxyHeaders}
+        add_header Vary "Accept" always;
+        add_header Cache-Control "no-store" always;
+        proxy_set_header X-NetGet-Surface $host;
+        proxy_set_header X-Forwarded-Host $host;
+    }`;
+
+      const domainDescription = isMainServerDomain
+        ? 'Main Server dashboard with a public certificate.'
+        : 'registered public domain with a public certificate.';
+
+      return `
+# ─── Public Domain (Let's Encrypt) ─────────────────────────────────────────────
+# ${domain} → ${domainDescription}
+server {
+    listen 80;
+    listen [::]:80;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${domain};
+    client_max_body_size 500M;
+    ssl_certificate     ${certPath};
+    ssl_certificate_key ${keyPath};
+
+    set $NETGET_DATA_DIR ${xConfig};
+    set $netget_logs_path ${layout.logDir};
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+${domainLocations}
+}
+`;
+    }).join('');
+  })();
+
+  // ─── NRP server blocks ─────────────────────────────────────────────────────
+  //
+  // NRP namespace tree for this machine:
+  //   ${machineHostnameLower}              ← the monad itself (machine substrate)
+  //   {handle}.${machineHostnameLower}     ← human identity namespace on this monad
+  //     me://handle.${machineHostnameLower}[selector]/path
+  //
+  // Two server blocks:
+  //   1. Monad root  — ${machineHostnameLower} (bare)
+  //      surface_proxy.lua → app whose namespace/hostname matches
+  //   2. NRP handles — {handle}.${machineHostnameLower}
+  //      nrp_handle.lua validates the handle, proxies to local.netget
+  //      (which serves the .me identity surface / Cleaker)
+
+  // Block 1: monad root (bare hostname)
+  const namespaceSurfaceBlock = `
+# ─── NRP Monad Root ───────────────────────────────────────────────────────────
+# ${machineHostnameLower} = the monad itself.
+# Everything goes to the monad — it decides HTML vs JSON from Accept header.
+server {
+${listenLines}
+    server_name ${machineHostnameLower};
+    client_max_body_size 500M;
+${sslDirectives}
+    set $NETGET_DATA_DIR ${xConfig};
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+${vendorLocations}
+${namespaceAssetLocations}
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_proxy_target "";
+        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+        proxy_pass $surface_proxy_target;
+${proxyHeaders}
+        add_header Vary "Accept" always;
+        add_header Cache-Control "no-store" always;
+        proxy_set_header X-NetGet-Surface $host;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+}
+`;
+
+  // Block 2: NRP handle surface  — {handle}.${machineHostnameLower}
+  // The regex server_name captures the handle label into $nrp_handle.
+  // nrp_handle.lua validates the handle and injects X-NRP-* headers.
+  // All traffic is proxied to local.netget (which hosts the .me identity surface).
+  const nrpHandleBlock = `
+# ─── NRP Handle Surface ───────────────────────────────────────────────────────
+# {handle}.${machineHostnameLower} → same monad, namespace resolved from Host header.
+# The monad handles HTML vs JSON from Accept. No static SPA split.
+server {
+${listenLines}
+    server_name ~^(?<nrp_handle>[^.]+)\\.${machineHostnameRegex}$;
+    client_max_body_size 500M;
+${sslDirectives}
+    set $NETGET_DATA_DIR ${xConfig};
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+${vendorLocations}
+${namespaceAssetLocations}
+
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_proxy_target "";
+        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+        proxy_pass $surface_proxy_target;
+${proxyHeaders}
+        add_header Vary "Accept" always;
+        add_header Cache-Control "no-store" always;
+    }
+}
+`;
+
+  return `
+# netget_app.conf (generated)
+# -----------------------------------------------------------
+# Generated by setNginxConfigRoutes.ts - do not edit by hand in conf.d
+# NRP namespace tree:
+#   ${machineHostnameLower}              → monad root (surface_proxy.lua → registered monad)
+#   {handle}.${machineHostnameLower}     → handle identity surface (nrp_handle.lua → local.netget)
+#   ${machineHostnameLower.replace(/\.local$/, '')}.netget  → admin/control plane (LAN access)
+#   local.netget / localhost / 127.0.0.1 → admin/control plane (loopback alias)
+
+lua_shared_dict jwt_cache      10m;
+lua_shared_dict gateway_nonces  1m;
+
+log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
+${namespaceSurfaceBlock}
+${nrpHandleBlock}
+${publicDomainBlocks}
+
+server {
+${listenLines}
+    server_name local.netget ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
+    client_max_body_size 500M;
+${sslDirectives}
+
+    set $NETGET_DATA_DIR ${xConfig};
+    set $netget_logs_path ${layout.logDir};
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+
+${mainServerLocations}
 
 }
 `;

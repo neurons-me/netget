@@ -6,9 +6,9 @@
 # netget
 > **A Gateway To the Web.**
 
-`netget` is the **entry point of a node** in the neurons.me stack. It listens on ports 80 and 443, routes every incoming request to the right monad or static service, and generates OpenResty/Nginx configuration automatically — no manual config, no restarts.
+`Netget` listens on ports 80 and 443 and routes every incoming request to the right service.
 
-#### Run on your terminal: (You need npm)
+#### Run on your terminal: (You need [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm/))
 
 ```bash
 npm i -g netget

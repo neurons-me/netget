@@ -61,9 +61,11 @@ function isPrivateIPv4(ip: string): boolean {
 }
 
 function publicDomainApplies(x: XStateData): boolean {
-    const localIP = String(x?.localIP || '').trim();
+    // See mainServer.cli.ts getExposure(): a server is directly publicly
+    // reachable if its public IP is itself a non-private address, even when
+    // the local IP differs (cloud VMs behind 1:1 NAT, e.g. GCP/AWS).
     const publicIP = String(x?.publicIP || '').trim();
-    return !!localIP && !!publicIP && localIP === publicIP && !isPrivateIPv4(localIP);
+    return !!publicIP && !isPrivateIPv4(publicIP);
 }
 
 function isNetGetOnline(service: OpenRestyServiceStatus): boolean {

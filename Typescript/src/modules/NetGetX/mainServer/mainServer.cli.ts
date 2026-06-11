@@ -31,7 +31,13 @@ function getExposure(x: XStateData): {
 } {
     const localIP = normalizeIp(x.localIP) || getLocalIP() || '';
     const publicIP = normalizeIp(x.publicIP);
-    const directPublic = !!localIP && !!publicIP && localIP === publicIP && !isPrivateIPv4(localIP);
+    // A server is directly publicly reachable if it has a public IP that is
+    // not itself a private/loopback/link-local address. On cloud VMs (GCP,
+    // AWS, etc.) the local IP is typically a private NAT-internal address
+    // (e.g. 10.x.x.x) while the public IP is a separate externally-routable
+    // address with 1:1 NAT — they are never equal, but the server is still
+    // directly reachable on its public IP.
+    const directPublic = !!publicIP && !isPrivateIPv4(publicIP);
     const applies = directPublic;
 
     return {

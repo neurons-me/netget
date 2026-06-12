@@ -52,6 +52,10 @@ function getExposure(x: XStateData): {
     };
 }
 
+async function pause(message = 'Press Enter to continue.'): Promise<void> {
+    await inquirer.prompt([{ type: 'input', name: 'continue', message }]);
+}
+
 function looksLikeDomain(value: string): boolean {
     return /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(value);
 }
@@ -152,6 +156,7 @@ async function mainServerMenu(x: XStateData): Promise<void> {
             // in one go, so the panel becomes reachable as https://<domain> immediately.
             if (exposure.applies && cleanName) {
                 await offerProvisionMainDomain(x, cleanName);
+                await pause('Press Enter to continue.');
             }
         } catch (error: any) {
             lastMessage = chalk.red(`Error updating value: ${error.message}`);

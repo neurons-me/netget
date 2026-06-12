@@ -189,11 +189,32 @@ export async function registerDomain(
  * this too, but we scan it directly as a robust fallback in case it doesn't).
  */
 function collectDomainKeys(me: InstanceType<typeof ME>): Set<string> {
+  const domainFieldNames = [
+    'sslCertificateKey',
+    'sslCertificate',
+    'projectPath',
+    'rootDomain',
+    'nginxConfig',
+    'registered',
+    'subdomain',
+    'sslMode',
+    'target',
+    'owner',
+    'email',
+    'type',
+  ];
+
   const domainPartFromPath = (p: string): string | undefined => {
     if (!p.startsWith('domains.')) return undefined;
     const rest = p.slice('domains.'.length);
-    const domainPart = rest.split('.')[0];
-    return domainPart || undefined;
+    for (const field of domainFieldNames) {
+      const suffix = `.${field}`;
+      if (rest.endsWith(suffix)) {
+        const domainPart = rest.slice(0, -suffix.length);
+        return domainPart || undefined;
+      }
+    }
+    return undefined;
   };
 
   const seen = new Set<string>();

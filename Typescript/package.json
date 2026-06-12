@@ -33,7 +33,7 @@
     "scripts": {
         "prebuild": "npm test",
         "start": "node --import tsx src/netget.cli.ts",
-        "test": "tsx tests/exposure-policy.test.ts && tsx tests/monad-proxy-config.test.ts && tsx tests/gateway-claims.test.ts && tsx tests/gatewayIdentity.test.ts && tsx tests/gatewayUsageAggregator.test.ts && tsx tests/package-surface.test.ts && tsx tests/public-domain-ssl.test.ts && tsx tests/main-server-static-dashboard.test.ts && tsx tests/gateway-status.test.ts && tsx tests/no-live-monad.test.ts",
+        "test": "tsx tests/exposure-policy.test.ts && tsx tests/monad-proxy-config.test.ts && tsx tests/gateway-claims.test.ts && tsx tests/gatewayIdentity.test.ts && tsx tests/gatewayUsageAggregator.test.ts && tsx tests/domain-store-dotted-domains.test.ts && tsx tests/package-surface.test.ts && tsx tests/public-domain-ssl.test.ts && tsx tests/main-server-static-dashboard.test.ts && tsx tests/gateway-status.test.ts && tsx tests/no-live-monad.test.ts",
         "test:nrp:curl": "bash scripts/nrp-curl-tests.sh",
         "build": "tsc -p tsconfig.lib.json",
         "dev": "tsx src/netget.cli.ts",

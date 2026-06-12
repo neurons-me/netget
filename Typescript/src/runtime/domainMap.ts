@@ -107,16 +107,20 @@ export async function generateDomainMap(): Promise<string> {
     return outPath;
 }
 
-// Reclaim ownership of the runtime dir for the current user. The directory
-// can end up owned by the OpenResty worker user (e.g. www-data) because it
-// writes apps.json there first, on a fresh install, before the CLI ever
-// writes domain-map.json. Best-effort: requires passwordless-capable sudo
+// Make the runtime dir shareable between the CLI user and the OpenResty
+// worker user (e.g. www-data), which may have created it first while writing
+// apps.json on a fresh install. Rather than transferring ownership (which
+// could lock www-data out of apps.json), put the dir in the current user's
+// group, make it group-writable, and set the setgid bit so new files
+// (apps.json, domain-map.json, etc.) inherit that group regardless of which
+// process creates them. Best-effort: requires passwordless-capable sudo
 // (the same install/repair flow already needs sudo for OpenResty itself).
 function reclaimRuntimeDirOwnership(runtimeDir: string): void {
-    const uid = process.getuid?.();
     const gid = process.getgid?.();
-    if (uid == null || gid == null) return;
-    spawnSync('sudo', ['chown', '-R', `${uid}:${gid}`, runtimeDir], { stdio: 'ignore' });
+    if (gid == null) return;
+    spawnSync('sudo', ['chgrp', '-R', String(gid), runtimeDir], { stdio: 'ignore' });
+    spawnSync('sudo', ['chmod', '-R', 'g+rwX', runtimeDir], { stdio: 'ignore' });
+    spawnSync('sudo', ['chmod', 'g+s', runtimeDir], { stdio: 'ignore' });
 }
 
 // Signals OpenResty (or nginx) to gracefully reload workers.

@@ -181,19 +181,51 @@ export async function registerDomain(
   await regenerateMap();
 }
 
+/**
+ * Collect candidate domain keys ("domains.<name>") from every source that
+ * might know about them: the live in-memory index (populated by writes made
+ * in this process) AND the on-disk snapshot's raw memory log (covers domains
+ * registered in a previous process — hydrate() should rebuild `.index` from
+ * this too, but we scan it directly as a robust fallback in case it doesn't).
+ */
+function collectDomainKeys(me: InstanceType<typeof ME>): Set<string> {
+  const domainPartFromPath = (p: string): string | undefined => {
+    if (!p.startsWith('domains.')) return undefined;
+    const rest = p.slice('domains.'.length);
+    const domainPart = rest.split('.')[0];
+    return domainPart || undefined;
+  };
+
+  const seen = new Set<string>();
+
+  const index: Record<string, unknown> = (me as any).index || {};
+  for (const k of Object.keys(index)) {
+    const d = domainPartFromPath(k);
+    if (d) seen.add(d);
+  }
+
+  try {
+    const snapshotPath = path.join(getKernelStateDir(), SNAPSHOT_FILENAME);
+    if (existsSync(snapshotPath)) {
+      const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8'));
+      const memories: Array<{ path?: string }> = snapshot?.memories || [];
+      for (const m of memories) {
+        const d = m?.path ? domainPartFromPath(m.path) : undefined;
+        if (d) seen.add(d);
+      }
+    }
+  } catch {
+    // best-effort fallback only
+  }
+
+  return seen;
+}
+
 export async function getDomains(): Promise<DomainRecord[]> {
   const me = getKernel();
-  // Read all keys under domains.* from the public index
-  const index: Record<string, unknown> = (me as any).index || {};
-  const seen = new Set<string>();
   const results: DomainRecord[] = [];
 
-  for (const k of Object.keys(index)) {
-    if (!k.startsWith('domains.')) continue;
-    const rest = k.slice('domains.'.length);
-    const domainPart = rest.split('.')[0];
-    if (!domainPart || seen.has(domainPart)) continue;
-    seen.add(domainPart);
+  for (const domainPart of collectDomainKeys(me)) {
     const rec = readDomainRecord(me, domainPart);
     if (rec) results.push(rec);
   }

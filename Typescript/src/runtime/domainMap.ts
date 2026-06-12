@@ -84,16 +84,39 @@ export async function generateDomainMap(): Promise<string> {
 
     const outPath = getDomainMapPath();
     const tmpPath = outPath + '.tmp';
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    const runtimeDir = path.dirname(outPath);
+    fs.mkdirSync(runtimeDir, { recursive: true });
 
-    // Atomic write: JSON is fully in place before version file is bumped.
-    fs.writeFileSync(tmpPath, JSON.stringify(map, null, 2), 'utf8');
+    const content = JSON.stringify(map, null, 2);
+    try {
+        // Atomic write: JSON is fully in place before version file is bumped.
+        fs.writeFileSync(tmpPath, content, 'utf8');
+    } catch (error: any) {
+        if (error?.code !== 'EACCES') throw error;
+        // The runtime dir may be owned by another user (e.g. www-data, from
+        // the OpenResty worker writing apps.json there first). Self-heal by
+        // reclaiming ownership for the current user, then retry once.
+        reclaimRuntimeDirOwnership(runtimeDir);
+        fs.writeFileSync(tmpPath, content, 'utf8');
+    }
     fs.renameSync(tmpPath, outPath);
 
     // Version bump signals Lua workers to hot-reload.
     fs.writeFileSync(getDomainMapVersionPath(), String(Date.now()), 'utf8');
 
     return outPath;
+}
+
+// Reclaim ownership of the runtime dir for the current user. The directory
+// can end up owned by the OpenResty worker user (e.g. www-data) because it
+// writes apps.json there first, on a fresh install, before the CLI ever
+// writes domain-map.json. Best-effort: requires passwordless-capable sudo
+// (the same install/repair flow already needs sudo for OpenResty itself).
+function reclaimRuntimeDirOwnership(runtimeDir: string): void {
+    const uid = process.getuid?.();
+    const gid = process.getgid?.();
+    if (uid == null || gid == null) return;
+    spawnSync('sudo', ['chown', '-R', `${uid}:${gid}`, runtimeDir], { stdio: 'ignore' });
 }
 
 // Signals OpenResty (or nginx) to gracefully reload workers.

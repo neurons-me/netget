@@ -1,3 +1,7 @@
+[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)
+
+---
+
 # Multi-Domain Deployment with Shared Sources using Netget
 
 ## Concept Overview
@@ -89,3 +93,7 @@ You have a survey platform:
 ------
 
 Start thinking in **domains as entry points**, and **sources as reusable building blocks**.
+
+---
+
+[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)

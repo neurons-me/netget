@@ -31,10 +31,23 @@
       .lang-nav a { border-color: rgba(232,237,237,0.15); }
       .lang-nav a:hover { background: rgba(79,209,197,0.10); border-color: #4fd1c5; }
     }
+    .topnav { position:fixed; top:0; left:0; right:0; z-index:100; display:flex; align-items:center; gap:4px; padding:8px 20px; background:rgba(244,247,248,0.92); backdrop-filter:blur(8px); border-bottom:1px solid rgba(15,23,32,0.08); font-size:0.82rem; font-weight:600; }
+    @media (prefers-color-scheme: dark) { .topnav { background:rgba(11,17,20,0.92); border-bottom-color:rgba(232,237,237,0.08); } }
+    .topnav button { background:none; border:none; cursor:pointer; font:inherit; padding:4px 8px; border-radius:6px; color:inherit; transition:background 120ms; }
+    .topnav button:hover, .topnav a:hover { background:rgba(15,106,120,0.1); }
+    .topnav a { text-decoration:none; color:inherit; padding:4px 10px; border-radius:6px; transition:background 120ms; }
+    @media (prefers-color-scheme: dark) { .topnav button:hover, .topnav a:hover { background:rgba(79,209,197,0.1); } }
+    .topnav .spacer { flex:1; }
   </style>
   <link rel="icon" type="image/png" href="https://res.cloudinary.com/dkwnxf6gm/image/upload/v1778254832/me.docs.axioms__1_-removebg-preview_xvdqof.png">
 </head>
 <body>
+  <nav class="topnav">
+    <button onclick="history.back()" title="Back">←</button>
+    <a href="https://neurons-me.github.io">⌂ Home</a>
+    <span class="spacer"></span>
+    <a href="https://github.com/neurons-me/netget" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" style="vertical-align:middle;margin-right:4px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> GitHub</a>
+  </nav>
   <div class="page">
     <p class="kicker">netget</p>
     <h1>netget Docs</h1>

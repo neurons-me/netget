@@ -1,7 +1,13 @@
+---
+layout: readme
+title: Domain Routing Structure — netget
+---
+
 [← Back to netget Docs](https://neurons-me.github.io/netget/docs/)
 
 ---
 
+# Domain Routing Structure
 
 * Main server name: el dominio "ancla" del servidor (ej. netget.site). Se guarda en xConfig.mainServerName (parseMainServerName/changeServerName en mainServer/utils.ts).
 

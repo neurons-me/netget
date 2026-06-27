@@ -1,3 +1,8 @@
+---
+layout: readme
+title: Multi-Domain Architecture — netget
+---
+
 [← Back to netget Docs](https://neurons-me.github.io/netget/docs/)
 
 ---

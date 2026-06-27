@@ -11,7 +11,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },
-      { text: 'API', link: 'https://neurons-me.github.io/netget/Typescript/docs/api/' },
+      { text: 'API', link: 'https://neurons-me.github.io/netget/Typescript/typedocs/api/' },
     ],
     sidebar: [
       {

@@ -21,6 +21,7 @@ export default defineConfig({
           { text: 'Architecture', link: '/Architecture' },
           { text: 'Domain Map', link: '/DomainMap' },
           { text: 'Placement', link: '/Placement' },
+          { text: 'Custom Domains', link: '/custom-domains' },
         ],
       },
     ],

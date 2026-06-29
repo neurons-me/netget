@@ -6,8 +6,8 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { Theme, Layout, Monad, Cleaker } from 'this.gui';
-import { Box, Typography, Avatar } from 'this.gui/atoms';
+import { Theme, Layout, Monad, Cleaker, MonadNamespaceCard } from 'this.gui';
+import { Box, Typography } from 'this.gui/atoms';
 // Material Symbols font — must be imported explicitly so Vite emits the .woff2 asset.
 // Without this the Icon component renders icon names as literal text.
 import 'this.gui/material-symbols.css';
@@ -336,7 +336,6 @@ function AdminApp() {
   const restartAll    = useRestartAllMonads();
   const catalog       = useMonadCatalog();
   const { waking, wake } = useWakeMonad();
-  const [meshOpen, setMeshOpen] = React.useState(false);
 
   // Root namespace = the machine's os.hostname(), reported by every registered app
   const machineHostname = apps[0]?.hostname ?? window.location.hostname;
@@ -555,171 +554,20 @@ function AdminApp() {
           </Box>
 
           {/* ── namespace surface ─────────────────────────────────────────────── */}
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Typography variant="overline" sx={{ opacity: 0.4, letterSpacing: '0.1em' }}>
-              {machineHostname}
-            </Typography>
-            <Box sx={cardSx}>
+          <MonadNamespaceCard
+            namespace={machineHostname}
+            healthy={meshHealthy}
+            claimed={Boolean(gatewayClaims?.claimed)}
+            claimRows={claimRows}
+            apps={apps.map(app => ({ name: app.name, port: app.port, healthy: isHealthy(app) }))}
+            sleepingEntries={sleepingEntries}
+            waking={waking}
+            onWake={wake}
+            restartStatus={restartAll.status}
+            restartError={restartAll.error}
+            onRestartAll={restartAll.restart}
+          />
 
-              {/* monad.ai orb */}
-              <Box sx={{ height: 130 }}>
-                <Monad mode="contained" kind="monad" label="monad.ai" healthy={meshHealthy} />
-              </Box>
-
-              <Box sx={{ borderTop: '1px solid', borderColor: 'divider', px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-                {/* ── Claims ── */}
-                <Box sx={{ mb: 1.5 }}>
-                  <Typography variant="overline" sx={{ opacity: 0.3, fontSize: '9px', letterSpacing: '0.12em', display: 'block', mb: 0.75 }}>
-                    claims
-                  </Typography>
-                  {!gatewayClaims?.claimed ? (
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', opacity: 0.35 }}>
-                      {gatewayClaims ? 'unclaimed — sign up to claim this gateway' : '—'}
-                    </Typography>
-                  ) : (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                      {claimRows.map(claim => {
-                        const role = claim.role ?? (claim.isOwner ? 'owner' : claim.isAdmin ? 'admin' : 'identity');
-                        const isOwner = role === 'owner';
-                        const isAdmin = role === 'admin';
-                        return (
-                          <Box key={claim.hash} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar
-                              sx={{
-                                width: 28,
-                                height: 28,
-                                fontSize: '0.65rem',
-                                fontWeight: 800,
-                                letterSpacing: '-0.02em',
-                                bgcolor: isOwner ? 'success.main' : isAdmin ? 'divider' : 'primary.main',
-                                color: isOwner ? 'success.contrastText' : 'primary.contrastText',
-                                flexShrink: 0,
-                                border: '1px solid',
-                                borderColor: isOwner ? 'success.main' : 'divider',
-                              }}
-                            >
-                              {(claim.username ?? '??').slice(0, 2).toUpperCase()}
-                            </Avatar>
-                            <Typography
-                              variant="caption"
-                              sx={{ fontFamily: 'monospace', fontWeight: isOwner ? 700 : 400, opacity: isOwner ? 0.9 : 0.75, flex: 1 }}
-                            >
-                              {claim.username ?? claim.short + '…'}
-                            </Typography>
-                            <Box
-                              sx={{
-                                fontSize: '9px',
-                                fontFamily: 'monospace',
-                                px: 0.6,
-                                py: 0.15,
-                                border: '1px solid',
-                                borderColor: isOwner ? 'success.main' : isAdmin ? 'divider' : 'info.main',
-                                borderRadius: 0.75,
-                                color: isOwner ? 'success.main' : isAdmin ? 'inherit' : 'info.main',
-                                opacity: isOwner ? 0.8 : isAdmin ? 0.45 : 0.7,
-                                lineHeight: 1.6,
-                              }}
-                            >
-                              {role}
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  )}
-                </Box>
-
-                {/* ── Monad mesh (collapsible) — restart lives here ── */}
-                <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1.25 }}>
-                  <Box
-                    onClick={() => setMeshOpen(v => !v)}
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'pointer', mb: meshOpen ? 0.75 : 0, userSelect: 'none' }}
-                  >
-                    <Typography variant="overline" sx={{ opacity: 0.3, fontSize: '9px', letterSpacing: '0.12em', flex: 1 }}>
-                      monad mesh
-                    </Typography>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', opacity: 0.3, fontSize: '10px' }}>
-                      {apps.length + sleepingEntries.length > 0 ? `${apps.length + sleepingEntries.length}` : '0'} {meshOpen ? '▲' : '▼'}
-                    </Typography>
-                  </Box>
-
-                  {meshOpen && (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                      {apps.length === 0 && sleepingEntries.length === 0 ? (
-                        <Typography variant="caption" sx={{ opacity: 0.25, fontFamily: 'monospace', display: 'block', mb: 1 }}>
-                          no monads registered
-                        </Typography>
-                      ) : (
-                        <>
-                          {apps.map(app => (
-                            <Box key={app.name} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4 }}>
-                              <Box sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: isHealthy(app) ? '#22c55e' : 'rgba(255,255,255,0.18)' }} />
-                              <Typography variant="caption" sx={{ fontFamily: 'monospace', opacity: 0.7, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {app.name}
-                              </Typography>
-                              <Typography variant="caption" sx={{ fontFamily: 'monospace', opacity: 0.35, flexShrink: 0 }}>
-                                :{app.port}
-                              </Typography>
-                            </Box>
-                          ))}
-                          {sleepingEntries.map(entry => (
-                            <Box key={entry.name} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4 }}>
-                              <Box sx={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: 'rgba(255,255,255,0.08)', border: '1px dashed rgba(255,255,255,0.2)' }} />
-                              <Typography variant="caption" sx={{ fontFamily: 'monospace', opacity: 0.35, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {entry.name}
-                              </Typography>
-                              <Box
-                                component="button"
-                                onClick={() => wake(entry.name)}
-                                disabled={waking[entry.name]}
-                                sx={{
-                                  cursor: waking[entry.name] ? 'default' : 'pointer',
-                                  background: 'none', border: '1px solid', borderColor: 'divider',
-                                  borderRadius: 1, px: 0.75, py: 0.1,
-                                  fontSize: '9px', fontFamily: 'monospace', color: 'text.secondary',
-                                  opacity: waking[entry.name] ? 0.35 : 0.55, lineHeight: 1.6,
-                                  '&:hover': { opacity: waking[entry.name] ? 0.35 : 0.9, borderColor: 'text.secondary' },
-                                }}
-                              >
-                                {waking[entry.name] ? 'waking…' : 'wake'}
-                              </Box>
-                            </Box>
-                          ))}
-                        </>
-                      )}
-
-                      {/* Restart all — inside mesh section */}
-                      <Box sx={{ mt: 1, pt: 0.75, borderTop: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Box
-                          component="button"
-                          onClick={() => (restartAll.status === 'idle' || restartAll.status === 'error') ? restartAll.restart() : undefined}
-                          disabled={restartAll.status === 'restarting'}
-                          sx={{
-                            cursor: restartAll.status === 'restarting' ? 'default' : 'pointer',
-                            background: 'none', border: '1px solid',
-                            borderColor: restartAll.status === 'error' ? 'error.main' : 'divider',
-                            borderRadius: 1.5, px: 1.25, py: 0.4,
-                            fontSize: '10px', fontFamily: 'monospace',
-                            color: restartAll.status === 'error' ? 'error.main' : 'text.secondary',
-                            opacity: restartAll.status === 'restarting' ? 0.45 : 0.6,
-                            transition: 'opacity 0.15s, border-color 0.15s',
-                            '&:hover': { opacity: restartAll.status === 'restarting' ? 0.45 : 1, borderColor: 'text.secondary' },
-                          }}
-                        >
-                          {restartAll.status === 'restarting' ? 'restarting…' : restartAll.status === 'ok' ? 'restarted ✓' : 'restart all'}
-                        </Box>
-                        {restartAll.status === 'error' && restartAll.error ? (
-                          <Typography variant="caption" sx={{ color: 'error.main', opacity: 0.8, fontSize: '10px' }}>{restartAll.error}</Typography>
-                        ) : null}
-                      </Box>
-                    </Box>
-                  )}
-                </Box>
-
-              </Box>
-            </Box>
-          </Box>
 
         </Box>
       </Box>

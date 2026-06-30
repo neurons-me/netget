@@ -8,6 +8,9 @@ export default defineConfig({
   base,
   outDir: '../typedocs',
   appearance: 'force-dark',
+  // typedocs/api/ is committed TypeDoc output (a separate tool, not regenerated
+  // by this build) — never let VitePress empty outDir or it wipes api/ too.
+  vite: { build: { emptyOutDir: false } },
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },

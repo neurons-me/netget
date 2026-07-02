@@ -1,3 +1,8 @@
+---
+layout: readme
+title: local.netget
+---
+
 # local.netget
 
 `local.netget` is the operator surface for the local NetGet gateway. It is the management interface — where you configure routing, inspect the monad mesh, view logs, and control the gateway.

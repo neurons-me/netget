@@ -21,7 +21,6 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Overview', link: '/' },
-          { text: 'local.netget', link: '/local-netget' },
           { text: 'Architecture', link: '/Architecture' },
           { text: 'Domain Map', link: '/DomainMap' },
           { text: 'Placement', link: '/Placement' },

@@ -1,0 +1,1 @@
+import{_ as t,o as a,c as i,ae as s}from"./chunks/framework.BThPlfjz.js";const u=JSON.parse('{"title":"netget","description":"","frontmatter":{},"headers":[],"relativePath":"index.md","filePath":"index.md"}'),n={name:"index.md"};function l(r,e,o,h,c,d){return a(),i("div",null,[...e[0]||(e[0]=[s("",9)])])}const m=t(n,[["render",l]]);export{u as __pageData,m as default};

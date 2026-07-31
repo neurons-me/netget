@@ -31,8 +31,6 @@ import {
     Clear as ClearIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import NetGetAppBar from '../components/AppBar/NetGetAppBar.jsx';
-import Footer from '../components/Footer/Footer.jsx';
 
 const domains_route = "";   // same origin — nginx proxies to the Express backend
 
@@ -204,8 +202,7 @@ const Logs = () => {
 
     return (
         <>
-            <NetGetAppBar />
-            <Box sx={{ px: 2, py: 2, mt: 8 }}>
+            <Box sx={{ px: 2, py: 2 }}>
                 {/* Header */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Box>
@@ -590,7 +587,6 @@ const Logs = () => {
                     </CardContent>
                 </Card>
             </Box>
-            <Footer />
         </>
     );
 };

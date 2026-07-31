@@ -6,7 +6,7 @@
 # netget
 > **A Gateway To the Web.**
 
-`Netget` listens on ports 80 and 443 and routes every incoming request to the right service.
+`Netget` listens on **ports 80 and 443** and routes every incoming request to the right service.
 
 #### Run on your terminal: (You need [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm/))
 
@@ -30,8 +30,8 @@ netget restart # alias for reload
 
 ---
 
-# Configuring network routes and exposing services:
-Domain map — live routing table is checked every second by a **Lua** timer. 
+# Configuring Domain Routes:
+**Domain map** — live *routing table* is checked every second. 
 
 Routing changes take effect immediately — *no restart needed:*
 
@@ -53,7 +53,7 @@ Routing changes take effect immediately — *no restart needed:*
 ---
 
 ## Node landing page
-When netget starts for the first time, visiting `http://hostname.local/` shows the node identity page:
+When netget starts for the first time, visiting `http://hostname.local/` shows the node identity page **(replace hostname with actual name):**
 
 ```bash
 node
@@ -61,7 +61,7 @@ hostname.local
 ● online
 ```
 
-The page boots the `all.this` environment if available on the node. Which means this host is now listenning on HTTP and HTTPS requests. Port 80 and 443. Which is the **world wide web.**
+The page boots the `all.this` environment if available on the node. Which means this host is now listenning on HTTP and HTTPS requests. **Port 80 and 443**. Which is the **world wide web.**
 
 ---
 

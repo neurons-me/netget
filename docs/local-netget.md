@@ -86,6 +86,18 @@ It connects to the NetGet Express server (default port `3432`) for all API calls
 
 ---
 
+## Open local.netget
+
+<div style="margin:24px 0;padding:16px 20px;border-radius:10px;border:1px solid #1a2a38;background:#0f1720;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <p style="margin:0 0 10px;font-size:0.9rem;color:#98a7b3;">If NetGet is running on this machine, this link opens the dashboard:</p>
+  <a href="http://local.netget" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:6px;background:#162030;border:1px solid #1e3a52;color:#4fc3f7;text-decoration:none;font-size:0.9rem;font-weight:600;">
+    🖥️ &nbsp;http://local.netget
+  </a>
+  <p style="margin:10px 0 0;font-size:0.8rem;color:#4a5a68;">Page doesn't load? → <a href="./installing-netget.html" style="color:#4fc3f7;">Installing NetGet</a></p>
+</div>
+
+---
+
 ## See also
 
 - [Surface Access Points and Routing](https://neurons-me.github.io/NRP/Surface-Access-Points-and-Routing) — full routing map

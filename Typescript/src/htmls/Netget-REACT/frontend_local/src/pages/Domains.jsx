@@ -37,8 +37,6 @@ import {
     Delete as DeleteIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import NetGetAppBar from '../components/AppBar/NetGetAppBar.jsx';
-import Footer from '../components/Footer/Footer.jsx';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -194,8 +192,7 @@ export default function Domains() {
 
     return (
         <>
-            <NetGetAppBar />
-            <Box sx={{ px: 3, py: 2, mt: 9, maxWidth: 1100, mx: 'auto' }}>
+            <Box sx={{ px: 3, py: 2, maxWidth: 1100, mx: 'auto' }}>
 
                 {/* Header */}
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
@@ -317,8 +314,6 @@ export default function Domains() {
                     {domains.length} route{domains.length !== 1 ? 's' : ''} · routes go live after Nginx hot-reload
                 </Typography>
             </Box>
-
-            <Footer />
 
             <AddDomainDialog
                 open={addOpen}

@@ -31,11 +31,11 @@ pip install netget
 
 ## This package: `netget`
 
-`netget` is the **gateway layer** of the neurons.me stack. It sits at the edge of a node — listening on HTTP and HTTPS — and routes requests to whichever monad owns the incoming hostname.
+`netget` is the **gateway layer** of the **neurons.me** stack. It sits at the edge of a node — listening on HTTP and HTTPS — and routes requests to whichever monad owns the incoming hostname.
 
 It generates `nginx`/OpenResty configuration from a live routing table. The routing table is checked every second by a Lua timer, so changes take effect immediately without restarting the server.
 
-Monads register themselves with netget via `POST /apps/report`. When a request arrives for `suign.neurons.me`, netget looks up the registered monad for that namespace and proxies the request to it.
+**monads** register themselves with **netget** via `POST /apps/report`. When a request arrives for `suign.neurons.me`, **netget** looks up the registered monad for that namespace and proxies the request to it.
 
 ```bash
 npm i -g netget

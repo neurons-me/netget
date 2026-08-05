@@ -6,20 +6,14 @@
 # Getting Started
 Listens on **ports 80 and 443** and routes every incoming request to the right service.
 
-#### Install: (You need [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm/))
+#### Install
+Requires [npm].
 
 ```bash
 npm i -g netget
 ```
 
-#### **Start netget on your terminal by running:**
-
-```bash
-netget
-```
-
-#### Command Line:
-
+#### Basic Commands:
 ```bash
 netget # opens CLI
 netget reload  # reloads server 
@@ -30,7 +24,6 @@ netget restart # alias for reload
 
 # Configuring Domain Routes:
 **Domain map** — live *routing table* is checked every second. 
-
 Routing changes take effect immediately — *no restart needed:*
 
 ```json

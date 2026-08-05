@@ -3,12 +3,10 @@
   <img src="https://suign.github.io/assets/imgs/netget1.png" alt="netget" width="377px" style="display: block; margin: 0 auto;" />
 </picture>
 
-# netget
-> **A Gateway To the Web.**
+# Getting Started
+Listens on **ports 80 and 443** and routes every incoming request to the right service.
 
-`Netget` listens on **ports 80 and 443** and routes every incoming request to the right service.
-
-#### Run on your terminal: (You need [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm/))
+#### Install: (You need [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm/))
 
 ```bash
 npm i -g netget

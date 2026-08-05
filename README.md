@@ -4,55 +4,28 @@
 </picture>
 
 # Getting Started
-Listens on **ports 80 and 443** and routes every incoming request to the right service.
+`netget` is the entry point of a node. It listens on **ports 80 and 443**
+and routes every incoming request to the right service — a static
+folder, a port, or any HTTP service.
 
-#### Install
-Requires [npm].
+## Pick your language
 
-```bash
-npm i -g netget
-```
+| Language | Status | |
+|---|---|---|
+| **Typescript** | Working | [→ Typescript docs](https://neurons-me.github.io/netget/Typescript/) |
+| **Rust** | Not available yet | [→ Rust](https://neurons-me.github.io/netget/Rust/) |
+| **Python** | Not available yet | [→ Python](https://neurons-me.github.io/netget/Python/) |
 
-#### Basic Commands:
-```bash
-netget # opens CLI
-netget reload  # reloads server 
-netget restart # alias for reload
-```
+Typescript is the only implementation that exists today — start there
+for install instructions, the full command reference (`netget init`,
+`netget reload`, …), and the domain-map config format.
 
----
+## Docs
 
-# Configuring Domain Routes:
-**Domain map** — live *routing table* is checked every second. 
-Routing changes take effect immediately — *no restart needed:*
-
-```json
-{
-  "domains": {
-    "suis-macbook-air.local": { "type": "static", "root": "/Users/suign/.get/html" },
-    "other-service.local": { "type": "proxy",  "target": "127.0.0.1:8161" }
-  }
-}
-```
-
-| Type | Behavior |
-|---|---|
-| `static` | Serves files from `root`. `index.html` fallback. |
-| `proxy` | Forwards to `target` with standard proxy headers. |
-| `server` | Same as proxy. Alias for app servers. |
-
----
-
-## Node landing page
-When netget starts for the first time, visiting `http://hostname.local/` shows the node identity page **(replace hostname with actual name):**
-
-```bash
-node
-hostname.local
-● online
-```
-
-The page boots the `all.this` environment if available on the node. Which means this host is now listenning on HTTP and HTTPS requests. **Port 80 and 443**. Which is the **world wide web.**
+- [Installing NetGet](https://neurons-me.github.io/netget/docs/installing-netget.html)
+- [Domain Routing Structure](https://neurons-me.github.io/netget/docs/Structure.html)
+- [Multi-Domain Architecture](https://neurons-me.github.io/netget/docs/multi-domain-architecture.html)
+- [local.netget](https://neurons-me.github.io/netget/docs/local-netget.html)
 
 ---
 

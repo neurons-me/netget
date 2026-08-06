@@ -10,17 +10,15 @@ folder, a port, or any HTTP service.
 
 ## Pick your language
 
-- **[Typescript →](https://neurons-me.github.io/netget/Typescript/)** — working. Start here for install instructions, the full command reference (`netget init`, `netget reload`, …), and the domain-map config format.
-- **Rust** — not available yet.
-- **Python** — not available yet.
+🔷 **[Typescript](https://neurons-me.github.io/netget/Typescript/)** · 🦀 Rust · 🐍 Python
+
+<sub>Typescript is the only one that exists today — install, the full command reference (`netget init`, `netget reload`, …), and the domain-map format all live there.</sub>
 
 ## Local addresses
 
-| Address | Resolves to |
-|---|---|
-| ![local.netget](https://img.shields.io/badge/local.netget-83d6ec?style=flat-square) | `netget` |
-| ![localhost](https://img.shields.io/badge/localhost-EAEAE6?style=flat-square) | `netget` |
-| ![127.0.0.1](https://img.shields.io/badge/127.0.0.1-F19B9B?style=flat-square) | `netget` |
+All three resolve to `netget`:
+
+<span style="color:#0f6a78">local.netget</span> · <span style="color:#6B6B68">localhost</span> · <span style="color:#E85D26">127.0.0.1</span>
 
 ## Docs
 

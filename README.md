@@ -14,6 +14,14 @@ folder, a port, or any HTTP service.
 - **Rust** — not available yet.
 - **Python** — not available yet.
 
+## Local addresses
+
+| Address | Resolves to |
+|---|---|
+| ![local.netget](https://img.shields.io/badge/local.netget-83d6ec?style=flat-square) | `netget` |
+| ![localhost](https://img.shields.io/badge/localhost-EAEAE6?style=flat-square) | `netget` |
+| ![127.0.0.1](https://img.shields.io/badge/127.0.0.1-F19B9B?style=flat-square) | `netget` |
+
 ## Docs
 
 - [Installing NetGet](https://neurons-me.github.io/netget/docs/installing-netget.html)

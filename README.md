@@ -10,15 +10,9 @@ folder, a port, or any HTTP service.
 
 ## Pick your language
 
-| Language | Status | |
-|---|---|---|
-| **Typescript** | Working | [→ Typescript docs](https://neurons-me.github.io/netget/Typescript/) |
-| **Rust** | Not available yet | [→ Rust](https://neurons-me.github.io/netget/Rust/) |
-| **Python** | Not available yet | [→ Python](https://neurons-me.github.io/netget/Python/) |
-
-Typescript is the only implementation that exists today — start there
-for install instructions, the full command reference (`netget init`,
-`netget reload`, …), and the domain-map config format.
+- **[Typescript →](https://neurons-me.github.io/netget/Typescript/)** — working. Start here for install instructions, the full command reference (`netget init`, `netget reload`, …), and the domain-map config format.
+- **Rust** — not available yet.
+- **Python** — not available yet.
 
 ## Docs
 

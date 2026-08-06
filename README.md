@@ -16,9 +16,7 @@ folder, a port, or any HTTP service.
 
 ## Local addresses
 
-All three resolve to `netget`:
-
-<span style="color:#0f6a78">local.netget</span> · <span style="color:#6B6B68">localhost</span> · <span style="color:#E85D26">127.0.0.1</span>
+<img src="./assets/netget-pedal.svg" alt="netget local channels: local.netget, localhost, 127.0.0.1" width="560" />
 
 ## Docs
 

@@ -1,8 +1,8 @@
-# netget · Python 🐍
+# netget · Python 𓆙  
 
 **Not ready yet.** The working implementation is in [netget · Typescript](https://neurons-me.github.io/netget/Typescript/) — start there.
 
-Status: in development. `pip install netget` is the reserved package name for when this lands; there is no functional Python code here yet.
+**Status:** in development. `pip install netget` is the reserved package name for when this lands; there is no functional Python code here yet.
 
 ---
 

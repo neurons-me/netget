@@ -1,4 +1,4 @@
-# netget · Python 🐍
+# netget · Python 𓆙
 
 > **Status: In development**
 

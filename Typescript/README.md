@@ -4,8 +4,6 @@
 </picture>
 
 # netget `2.7.6`
-> **A Gateway To the Web.**
-
 `netget` is the entry point of a node. It **routes every request to the right place** — a static folder, a port, or any HTTP service. 
 
 #### Run on your terminal: (You need npm)

@@ -20,6 +20,17 @@ local function read_file_tail(path)
   return data or ""
 end
 
+local function first_existing(paths)
+  for _, path in ipairs(paths) do
+    local fh = io.open(path, "r")
+    if fh then
+      fh:close()
+      return path
+    end
+  end
+  return paths[1]
+end
+
 local function parse_qs()
   local args = ngx.req.get_uri_args()
   local t = {}
@@ -46,9 +57,15 @@ local function handle_logs()
 
   local target
   if logType == "access" then
-    target = NGINX_LOGS_PATH .. "/access.log"
+    target = first_existing({
+      NGINX_LOGS_PATH .. "/netget_access.log",
+      NGINX_LOGS_PATH .. "/access.log"
+    })
   elseif logType == "error" then
-    target = NGINX_LOGS_PATH .. "/error.log"
+    target = first_existing({
+      NGINX_LOGS_PATH .. "/netget_error.log",
+      NGINX_LOGS_PATH .. "/error.log"
+    })
   elseif logType == "server" then
     target = SERVER_LOG_PATH
   else

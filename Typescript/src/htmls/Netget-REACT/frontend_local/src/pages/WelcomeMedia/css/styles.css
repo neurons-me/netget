@@ -299,23 +299,68 @@
 .netget-console {
     position: relative;
     display: flex;
-    align-items: center;
+    /* flex-start, not center: .netget-body is this flex container's only
+       child, and centering an oversized flex item on the cross axis makes
+       it overflow equally above and below — scrollTop 0 then lands mid-
+       content instead of at the true top, same issue as .netget-body's own
+       justify-content had one level down. */
+    align-items: flex-start;
     justify-content: center;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .netget-frame.netget-frame--netget {
     width: min(720px, calc(100vw - 128px));
     height: min(500px, calc(100vh - 128px));
+    /* .netget-frame is a grid with place-items:center, which sizes its
+       child to content and centers it — so when .netget-body's content
+       (layers wrapped at narrow widths) exceeds this frame's fixed height,
+       .netget-console never actually overflows *itself*, and this frame's
+       own overflow:hidden clips it symmetrically top and bottom instead,
+       with no scroll possible. Stretching .netget-console to the frame's
+       real box lets its own overflow-y:auto do the job properly. */
+    align-items: stretch;
 }
 
 .netget-body {
     position: relative;
     display: flex;
+    flex-direction: column;
     align-items: center;
+    /* flex-start, not center: when the layers wrap at narrow widths the
+       content can exceed the frame's height, and centered overflow leaves
+       the initial scroll position stranded mid-content — the title becomes
+       unreachable. Starting from the top keeps everything scrollable into view. */
+    justify-content: flex-start;
+    gap: 26px;
+    width: 100%;
+    min-height: 100%;
+    padding: 20px 0;
+}
+
+.netget-header {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 26px;
+}
+
+/* The three request-flow layers — ports, addresses, monad.ai — as peers in
+   one row so they share a single vertical center, instead of ports centering
+   against the whole body (title + control included) while addresses/monad
+   sat lower inside a separate column. */
+.netget-layers {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
     gap: 30px;
     width: 100%;
-    height: 100%;
 }
 
 .netget-wires {
@@ -351,13 +396,13 @@
 
 .netget-wire--monad {
     stroke: #d5f3ff;
-    stroke-dasharray: 4 5;
+    stroke-width: 1.8;
     filter: drop-shadow(0 0 3px rgba(213, 243, 255, 0.28));
 }
 
 .netget-wire--monad-offline {
     stroke: #56616c;
-    stroke-dasharray: 4 5;
+    stroke-width: 1.8;
 }
 
 .netget-ports {
@@ -370,39 +415,25 @@
     gap: 8px;
 }
 
-.netget-main {
-    position: relative;
-    z-index: 2;
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 26px;
-}
-
 .netget-monad-stage {
     position: relative;
     z-index: 2;
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 42px;
-    padding: 6px 10px;
-    border: 2px solid rgba(213, 243, 255, 0.42);
-    background: rgba(8, 17, 26, 0.58);
-    box-shadow: 0 0 8px rgba(213, 243, 255, 0.1);
+    gap: 18px;
+    min-height: 90px;
+    padding: 20px 12px;
 }
 
 .netget-monad-bubble {
-    width: 30px;
-    height: 30px;
+    width: 56px;
+    height: 56px;
     flex-shrink: 0;
     display: grid;
     place-items: center;
     border-radius: 50%;
+    overflow: hidden;
 }
 
 .netget-monad-bubble--on {
@@ -657,8 +688,23 @@
     transform: translateX(-50%) translateY(0);
 }
 
-.surface-picker {
-    width: min(420px, 100%);
+.netget-addresses {
+    position: relative;
+    z-index: 2;
+    /* flex-grow:0 — this used to be 1 (grow to fill leftover row space),
+       which stretched the box far past the actual address text before the
+       gap to monad.ai even started, while ports/monad stayed content-sized.
+       That's what made ports<->addresses read as cramped and
+       addresses<->monad.ai read as a big empty gap, even though the CSS
+       gap between them was identical. Content-sized like its siblings, the
+       uniform `gap` on .netget-layers now reads as genuinely even spacing.
+       flex-shrink stays 1 with a real floor (not 0): without it, ports/monad
+       (flex-shrink:0) could squeeze this to near-nothing instead of the row
+       wrapping — the address list becomes unreadable rather than a layer
+       dropping to its own line. */
+    flex: 0 1 180px;
+    min-width: 150px;
+    max-width: 420px;
     display: grid;
     gap: 7px;
 }
@@ -670,16 +716,9 @@
     background: rgba(142, 169, 196, 0.52);
 }
 
-.surface-picker-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
 .surface-history {
     position: relative;
-    flex: 1;
-    min-width: 0;
+    width: 100%;
     max-height: 142px;
     display: grid;
     gap: 4px;
@@ -703,6 +742,20 @@
 .surface-history::-webkit-scrollbar-thumb {
     background: rgba(37, 135, 232, 0.34);
     border: 2px solid rgba(8, 17, 26, 0.48);
+}
+
+.surface-group-label {
+    padding: 6px 2px 2px;
+    color: #5f7d98;
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.surface-group-label:first-child {
+    padding-top: 2px;
 }
 
 .surface-history-item {
@@ -779,6 +832,13 @@
 
 .surface-name {
     min-width: 0;
+    /* Grid items stretch to fill their column by default — without this the
+       span's own rect (used by computeWires() to anchor the address->monad
+       wire) reports the full row width instead of where the visible text
+       actually ends, making the wire appear to start in empty space. */
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
     overflow: hidden;
     color: inherit;
     font-weight: 800;
@@ -817,13 +877,8 @@
         width: 86px;
     }
 
-    .netget-main {
+    .netget-header {
         gap: 20px;
-    }
-
-    .netget-monad-bubble {
-        width: 26px;
-        height: 26px;
     }
 
     @supports (height: 100svh) {
@@ -905,7 +960,7 @@
         width: 64px;
     }
 
-    .netget-main {
+    .netget-header {
         gap: 14px;
     }
 
@@ -946,19 +1001,9 @@
         font-size: 0.55rem;
     }
 
-    .surface-picker-row {
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-
     .netget-monad-stage {
         padding: 4px 8px;
         gap: 6px;
-    }
-
-    .netget-monad-bubble {
-        width: 22px;
-        height: 22px;
     }
 
     .netget-monad-label {

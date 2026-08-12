@@ -216,6 +216,13 @@ local nowMs     = ngx.now() * 1000
 local rootspace = rootspace_of(host)
 local host_is_ip = is_ip(host)
 
+-- Trust tiers, materialized once per app at ingest time by apps.lua's
+-- report_app()/derive_trust() (checked against gateway-claims.json's
+-- owner/admins) and stored as app.trust. Unranked/missing trust (older
+-- entries, or apps that predate this field) is treated as guest-level so
+-- reduction stays backward compatible.
+local TRUST_RANK = { owner = 4, admin = 3, peer = 2, guest = 1 }
+
 -- Collect all live candidates.
 -- Matching rules:
 --   hostname request → match by namespace == rootspace or namespace == host
@@ -245,7 +252,13 @@ for _, app in pairs(registry.apps) do
         end
 
         if matches then
-          table.insert(candidates, { ep = ep, lastSeen = lastSeen, ns = ns })
+          table.insert(candidates, {
+            ep = ep,
+            lastSeen = lastSeen,
+            ns = ns,
+            trust = app.trust,
+            identity = meta.identity_hash or meta.identityHash,
+          })
         end
       end
     end
@@ -256,15 +269,35 @@ if #candidates == 0 then
   return send_no_monad_page("no live monad for: " .. host, true)
 end
 
--- Reduce: pick the most recently seen monad (highest lastSeenMs).
--- This is the local approximation of NRP scoring — full scoring happens
--- inside the monad itself for cross-monad mesh requests.
+-- Reduce: pick the highest-trust candidate first (owner > admin > peer >
+-- guest), most-recently-seen as a tiebreaker only within the same trust
+-- tier. This replaces pure-recency reduction, which could not distinguish
+-- two different monad identities claiming the same hostname string.
 local best = candidates[1]
+local bestRank = TRUST_RANK[best.trust] or TRUST_RANK.guest
 for i = 2, #candidates do
-  if candidates[i].lastSeen > best.lastSeen then
-    best = candidates[i]
+  local c = candidates[i]
+  local cRank = TRUST_RANK[c.trust] or TRUST_RANK.guest
+  if cRank > bestRank or (cRank == bestRank and c.lastSeen > best.lastSeen) then
+    best = c
+    bestRank = cRank
+  end
+end
+
+-- Ambiguous claim: another live candidate at the same top trust tier
+-- claims this host under a different identity. Previously silent —
+-- surfacing it here doesn't change routing, just makes it observable.
+for i = 1, #candidates do
+  local c = candidates[i]
+  if c ~= best and (TRUST_RANK[c.trust] or TRUST_RANK.guest) == bestRank
+     and c.identity ~= best.identity then
+    ngx.log(ngx.WARN, "surface_proxy: ambiguous claim for host '", host,
+      "' — identities '", tostring(best.identity), "' and '", tostring(c.identity),
+      "' both claim it at trust tier '", best.trust or "guest", "'")
+    break
   end
 end
 
 local target = best.ep:match("^(.-)/*$") or best.ep
 ngx.var.surface_proxy_target = target
+ngx.var.surface_proxy_identity = best.identity or ""

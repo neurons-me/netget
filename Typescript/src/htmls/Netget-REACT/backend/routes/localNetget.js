@@ -12,6 +12,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { execFile, execFileSync } from "child_process";
 import { parseLogLine } from "../proxy.js";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
@@ -32,7 +33,70 @@ function readJson(filePath) {
     }
 }
 
+function firstExistingPath(paths) {
+    return paths.find(filePath => fs.existsSync(filePath)) ?? paths[0];
+}
+
+// Same resolution order as resolve_netget_bin() in domains.lua: prefer a
+// `netget` on PATH, fall back to `npx netget` (works from this monorepo).
+function resolveNetgetBin() {
+    try {
+        const out = execFileSync("which", ["netget"], { encoding: "utf8" }).trim();
+        if (out) return out;
+    } catch {
+        // not on PATH — fall through
+    }
+    return null;
+}
+
+// Runs `netget <args...>`, parses the last non-empty stdout line as JSON
+// (the CLI's status/reload --json/stop commands each print exactly one JSON
+// line). Rejects with a normalized { ok:false, message } shape on failure so
+// callers never have to distinguish "spawn failed" from "command failed".
+function runNetgetCommand(args) {
+    return new Promise((resolve) => {
+        const bin = resolveNetgetBin();
+        const [cmd, cmdArgs] = bin ? [bin, args] : ["npx", ["netget", ...args]];
+        execFile(cmd, cmdArgs, { timeout: 30000 }, (error, stdout) => {
+            const lines = (stdout || "").split("\n").map(l => l.trim()).filter(Boolean);
+            const lastLine = lines[lines.length - 1];
+            try {
+                const parsed = JSON.parse(lastLine);
+                resolve(parsed);
+            } catch {
+                resolve({
+                    ok: false,
+                    message: error ? error.message : "netget command produced no parseable output",
+                    raw: stdout,
+                });
+            }
+        });
+    });
+}
+
 const router = express.Router();
+
+// ─── OpenResty gateway control ────────────────────────────────────────────────
+// Status is read-only (port checks + launchctl/systemctl queries) — no sudo,
+// safe to poll. Restart/stop shell out through `netget`'s own sudo path
+// (openRestyService.ts runSudoShell) and will fail cleanly with a JSON error
+// if this backend process has no passwordless sudo rule for the OpenResty
+// binary/launchctl/systemctl commands — same constraint the interactive CLI
+// menu already has, not something new introduced by this endpoint.
+router.get("/openresty-status", async (req, res) => {
+    const result = await runNetgetCommand(["status"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
+
+router.post("/openresty-restart", async (req, res) => {
+    const result = await runNetgetCommand(["reload", "--json"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
+
+router.post("/openresty-stop", async (req, res) => {
+    const result = await runNetgetCommand(["stop"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
 
 // ─── Gateway identity ────────────────────────────────────────────────────────
 // Reads the materialized claims snapshot — never calls .me at runtime.
@@ -96,10 +160,16 @@ router.get("/logs", (req, res) => {
 
         let targetLogPath, logStructure;
         if (logType === 'access') {
-            targetLogPath = path.join(NGINX_LOGS_PATH, 'access.log');
+            targetLogPath = firstExistingPath([
+                path.join(NGINX_LOGS_PATH, 'netget_access.log'),
+                path.join(NGINX_LOGS_PATH, 'access.log'),
+            ]);
             logStructure = 'nginx_access';
         } else if (logType === 'error') {
-            targetLogPath = path.join(NGINX_LOGS_PATH, 'error.log');
+            targetLogPath = firstExistingPath([
+                path.join(NGINX_LOGS_PATH, 'netget_error.log'),
+                path.join(NGINX_LOGS_PATH, 'error.log'),
+            ]);
             logStructure = 'nginx_error';
         } else {
             return res.status(400).json({ error: "Invalid log type. Use 'access' or 'error'." });

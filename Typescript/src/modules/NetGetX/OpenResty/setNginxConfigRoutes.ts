@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { detectOpenRestyLayout } from './platformDetect.ts';
@@ -19,8 +20,26 @@ import { getDomainMapPath } from '../../../runtime/domainMap.ts';
  * only listens on port 80 so OpenResty starts cleanly even before certs are generated.
  * Once certs exist (self-signed or mkcert), refresh the config and port 443 activates.
  */
+// OpenResty worker processes run under launchd with a stripped-down PATH (no
+// nvm/homebrew bin dirs) and nginx clears inherited env vars entirely except
+// what's explicitly declared via `env` directives (HOME is not declared) —
+// so Lua handlers that shell out to the netget CLI (domains.lua, openresty.lua)
+// can't reliably rediscover it at request time via `which`/PATH lookups. This
+// Node process, running the actual netget CLI, still has a real PATH, so
+// resolve the absolute bin path once here and bake it into the generated
+// config as $NETGET_CLI_BIN — the same pattern already used for
+// $NETGET_DATA_DIR.
+function resolveNetgetCliBinPath(): string {
+  try {
+    const out = execFileSync('which', ['netget'], { encoding: 'utf8' }).trim();
+    if (out) return out;
+  } catch { /* fall through — Lua handlers fall back to their own candidate scan */ }
+  return '';
+}
+
 export function getNetgetAppConfContent(): string {
   const xConfig = getNetgetDataDir();
+  const netgetCliBin = resolveNetgetCliBinPath();
   const layout = detectOpenRestyLayout();
   const frontend = resolveMainServerFrontendConfig();
   const isDevFrontend = frontend.mode === 'dev';
@@ -50,6 +69,76 @@ export function getNetgetAppConfContent(): string {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;`;
 
+  // Shared troubleshooting page for proxy_pass failures where the target was picked
+  // from a live-looking registry entry but the connection itself failed — either
+  // surface_proxy.lua's mesh reduction (apps.json) or monad_proxy.lua's /monads/:name
+  // proxy, e.g. the target heartbeated recently but has since crashed. Without this,
+  // nginx returns a bare, unbranded 502 straight from OpenResty. Reuses the exact same
+  // _G.render_gateway_status(4, host, target) template (GatewayStatus.html "State 4:
+  // SERVICE_UNAVAILABLE") that the main domain-map routing path already renders for the
+  // same class of failure — see setNginxConfigFile.ts's @gateway_service_unavailable —
+  // so both routing paths present one consistent troubleshooting page, not two.
+  // _G.render_gateway_status is set once per worker in nginx.conf's
+  // init_worker_by_lua_block and is available here because OpenResty shares one Lua VM
+  // per worker across every included server block.
+  const meshGatewayErrorLocation = `
+    location @mesh_gateway_error {
+        internal;
+        default_type 'text/html; charset=utf-8';
+        content_by_lua_block {
+            local host = string.lower(ngx.var.host or ""):gsub(":%d+$", "")
+            local target = ngx.var.surface_proxy_target
+            if not target or target == "" then target = ngx.var.monad_proxy_target or "" end
+            local body = _G.render_gateway_status and _G.render_gateway_status(4, host, target)
+            if body then
+                ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
+                ngx.say(body)
+            else
+                ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
+            end
+        }
+    }`;
+  const meshProxyErrorHandling = `
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @mesh_gateway_error;`;
+
+  // The local.netget/127.0.0.1/localhost control-plane block proxies its own
+  // panel to the Vite dev server (devProxyTarget). When that dev server isn't
+  // running — e.g. after a reboot/sleep, before `npm run dev` has been
+  // started again — nginx would otherwise return a bare, unbranded 502.
+  // Reuses the same State 4 (SERVICE_UNAVAILABLE) GatewayStatus.html template
+  // as @mesh_gateway_error / @gateway_service_unavailable, so every routing
+  // path in netget shows one consistent, editable troubleshooting page
+  // instead of raw OpenResty output. Only wired into rootLocation (the
+  // document the browser actually navigates to) — the branded page is
+  // self-contained (no external assets), so asset requests failing the same
+  // way is a non-issue in that failure state.
+  const netgetPanelErrorLocation = `
+    location @netget_panel_unavailable {
+        internal;
+        default_type 'text/html; charset=utf-8';
+        content_by_lua_block {
+            local host = string.lower(ngx.var.host or ""):gsub(":%d+$", "")
+            local body = _G.render_gateway_status and _G.render_gateway_status(4, host, "${devProxyTarget}")
+            if body then
+                ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
+                ngx.say(body)
+            else
+                ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
+            end
+        }
+    }`;
+  const netgetPanelErrorHandling = `
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @netget_panel_unavailable;`;
+
+  // Declares the nginx var surface_proxy.lua fills with the winning candidate's
+  // identity_hash (trust-tier-aware reduction — see surface_proxy.lua's
+  // TRUST_RANK). Exposed as a response header so callers can observe which
+  // monad identity actually answered, instead of that being silent.
+  const meshIdentityVar = `set $surface_proxy_identity "";`;
+  const meshIdentityHeader = `add_header X-NetGet-Identity $surface_proxy_identity always;`;
+
   const rootLocation = isDevFrontend
     ? `
     # Root SPA proxied to React/Vite dev server
@@ -57,6 +146,7 @@ export function getNetgetAppConfContent(): string {
         if ($request_method = OPTIONS) { return 204; }
         proxy_pass ${devProxyTarget};
 ${proxyHeaders}
+${netgetPanelErrorHandling}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -178,6 +268,7 @@ ${proxyHeaders}
 
   const mainServerLocations = `
 ${rootLocation}
+${isDevFrontend ? netgetPanelErrorLocation : ''}
 
     # Networks API
     location /networks {
@@ -314,7 +405,6 @@ ${viteAssetLocation}
     location /logs {
         if ($request_method = OPTIONS) { return 204; }
         content_by_lua_file lua/handlers/logs.lua;
-        try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -329,6 +419,41 @@ ${viteAssetLocation}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+    }
+
+    # OpenResty gateway control — status/restart/stop. status is read-only
+    # (no sudo); restart/stop shell out through sudo (see openresty.lua).
+    location = /openresty-status {
+        if ($request_method = OPTIONS) { return 204; }
+        set $openresty_action status;
+        content_by_lua_file lua/handlers/openresty.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /openresty-restart {
+        if ($request_method = OPTIONS) { return 204; }
+        set $openresty_action restart;
+        content_by_lua_file lua/handlers/openresty.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /openresty-stop {
+        if ($request_method = OPTIONS) { return 204; }
+        set $openresty_action stop;
+        content_by_lua_file lua/handlers/openresty.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     # Local app registry
@@ -431,7 +556,29 @@ ${viteAssetLocation}
         proxy_pass $monad_proxy_target;
 ${proxyHeaders}
         proxy_set_header X-NetGet-App-Kind monad;
-        proxy_set_header X-NetGet-Monad $monad_proxy_name;
+        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
+    }
+${meshGatewayErrorLocation}
+
+    # Slice 2 — read-only network entrypoints / semantic surfaces report.
+    # See src/types/SurfaceResolution.ts for the contract. No writes here;
+    # /add-domain etc. below remain the only way to change what's registered.
+    location = /entrypoints {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_resolution_action entrypoints;
+        content_by_lua_file lua/handlers/surface_resolution.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+    }
+
+    location = /surfaces {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_resolution_action surfaces;
+        content_by_lua_file lua/handlers/surface_resolution.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
     }
 
     # Domains
@@ -473,6 +620,20 @@ ${proxyHeaders}
     location /update-domain {
         if ($request_method = OPTIONS) { return 204; }
         set $domain_action update_domain;
+        content_by_lua_file lua/handlers/domains.lua;
+        try_files $uri $uri/ /index.html;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+    # Issues a real Let's Encrypt cert for an already-registered domain via
+    # netget provision-cert (netget.cli.ts -> certbotProvision.ts). Slow --
+    # a real certbot round-trip, expect tens of seconds, not milliseconds.
+    location /provision-cert {
+        if ($request_method = OPTIONS) { return 204; }
+        set $domain_action provision_cert;
         content_by_lua_file lua/handlers/domains.lua;
         try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
@@ -555,14 +716,17 @@ ${namespaceAssetLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";
+        ${meshIdentityVar}
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;
         proxy_pass $surface_proxy_target;
 ${proxyHeaders}
         add_header Vary "Accept" always;
         add_header Cache-Control "no-store" always;
+        ${meshIdentityHeader}
         proxy_set_header X-NetGet-Surface $host;
-        proxy_set_header X-Forwarded-Host $host;
-    }`;
+        proxy_set_header X-Forwarded-Host $host;${meshProxyErrorHandling}
+    }
+${meshGatewayErrorLocation}`;
 
       const domainDescription = isMainServerDomain
         ? 'Main Server dashboard with a public certificate.'
@@ -582,6 +746,7 @@ server {
     ssl_certificate_key ${keyPath};
 
     set $NETGET_DATA_DIR ${xConfig};
+    set $NETGET_CLI_BIN "${netgetCliBin}";
     set $netget_logs_path ${layout.logDir};
     access_log ${layout.logDir}/netget_access.log netget_access;
     error_log  ${layout.logDir}/netget_error.log warn;
@@ -616,6 +781,7 @@ ${listenLines}
     client_max_body_size 500M;
 ${sslDirectives}
     set $NETGET_DATA_DIR ${xConfig};
+    set $NETGET_CLI_BIN "${netgetCliBin}";
     access_log ${layout.logDir}/netget_access.log netget_access;
     error_log  ${layout.logDir}/netget_error.log warn;
 ${vendorLocations}
@@ -623,14 +789,17 @@ ${namespaceAssetLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";
+        ${meshIdentityVar}
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;
         proxy_pass $surface_proxy_target;
 ${proxyHeaders}
         add_header Vary "Accept" always;
         add_header Cache-Control "no-store" always;
+        ${meshIdentityHeader}
         proxy_set_header X-NetGet-Surface $host;
-        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Host $host;${meshProxyErrorHandling}
     }
+${meshGatewayErrorLocation}
 }
 `;
 
@@ -648,6 +817,7 @@ ${listenLines}
     client_max_body_size 500M;
 ${sslDirectives}
     set $NETGET_DATA_DIR ${xConfig};
+    set $NETGET_CLI_BIN "${netgetCliBin}";
     access_log ${layout.logDir}/netget_access.log netget_access;
     error_log  ${layout.logDir}/netget_error.log warn;
 ${vendorLocations}
@@ -656,12 +826,15 @@ ${namespaceAssetLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";
+        ${meshIdentityVar}
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;
         proxy_pass $surface_proxy_target;
 ${proxyHeaders}
         add_header Vary "Accept" always;
         add_header Cache-Control "no-store" always;
+        ${meshIdentityHeader}${meshProxyErrorHandling}
     }
+${meshGatewayErrorLocation}
 }
 `;
 
@@ -690,6 +863,7 @@ ${listenLines}
 ${sslDirectives}
 
     set $NETGET_DATA_DIR ${xConfig};
+    set $NETGET_CLI_BIN "${netgetCliBin}";
     set $netget_logs_path ${layout.logDir};
     access_log ${layout.logDir}/netget_access.log netget_access;
     error_log  ${layout.logDir}/netget_error.log warn;

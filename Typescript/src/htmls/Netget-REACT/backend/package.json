@@ -1,0 +1,14 @@
+{
+  "name": "netget-local-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Standalone Express backend for local.netget's GUI (proxy.js). Not part of the pnpm workspace — has its own node_modules.",
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "chalk": "^4.1.2",
+    "cors": "^2.8.5",
+    "dotenv-flow": "^4.1.0",
+    "express": "^4.21.2"
+  }
+}

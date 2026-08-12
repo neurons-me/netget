@@ -101,6 +101,17 @@
         background-color: #1565c0;
       }
 
+      .button-secondary {
+        background-color: transparent;
+        color: #1976d2;
+        border: 1px solid #1976d2;
+        margin-left: 8px;
+      }
+
+      .button-secondary:hover {
+        background-color: rgba(25, 118, 210, 0.08);
+      }
+
       /* ─── State sections ──────────────────────────────────────────────────
          Each .state-* block is hidden by default. The Lua renderer sets
          body class to "state-N" (N = 1..4); CSS below shows only the
@@ -171,11 +182,47 @@
           <p><code>{{HOST}}</code> is registered, but the service at <code>{{TARGET}}</code> isn't responding.</p>
           <p>
             The gateway routing is correct, but the backend application
-            appears to be offline. Check that the service at
-            <code>{{TARGET}}</code> is running, then refresh this page.
+            appears to be offline or crashed. If it was recently live, check
+            whether its process is still running and restart it.
           </p>
+          <p class="meta" id="retry-meta"></p>
+          <div>
+            <a class="button" href="#" id="retry-button">Retry now</a>
+            <a class="button button-secondary" href="http://local.netget/" id="panel-link">Open gateway control panel</a>
+          </div>
         </div>
       </div>
     </div>
+    <script>
+      (function () {
+        var state = document.body.className.match(/state-(\d+)/);
+        if (!state || state[1] !== '4') return;
+
+        var retryButton = document.getElementById('retry-button');
+        var meta = document.getElementById('retry-meta');
+        if (retryButton) {
+          retryButton.addEventListener('click', function (event) {
+            event.preventDefault();
+            window.location.reload();
+          });
+        }
+
+        // Auto-retry: the backend may come back on its own (crash-restart,
+        // deploy finishing) — poll by reloading rather than making the
+        // operator remember to come back.
+        var secondsLeft = 15;
+        function tick() {
+          if (!meta) return;
+          if (secondsLeft <= 0) {
+            window.location.reload();
+            return;
+          }
+          meta.textContent = 'Auto-retrying in ' + secondsLeft + 's…';
+          secondsLeft -= 1;
+          window.setTimeout(tick, 1000);
+        }
+        tick();
+      })();
+    </script>
   </body>
 </html>

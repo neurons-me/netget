@@ -4,7 +4,7 @@ import { RemoteDeployer } from '../../NetGet-Deploy/lib/remoteDeployer.ts';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenvFlow from 'dotenv-flow';
-import chalk from 'chalk/index.js';
+import chalk from 'chalk';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);

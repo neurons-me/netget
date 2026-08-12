@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import dotenvFlow from 'dotenv-flow';
-import chalk from 'chalk/index.js';
+import chalk from 'chalk';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import localNetgetRoutes from './routes/localNetget.js';

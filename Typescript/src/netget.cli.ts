@@ -271,10 +271,15 @@ program
   .command('reload')
   .alias('restart')
   .description('Reload (or start) the OpenResty/NetGet gateway — equivalent to nginx -s reload without needing nginx in PATH')
-  .action(async () => {
+  .option('--json', 'Print a single JSON line instead of colored text (for scripted/HTTP callers)')
+  .action(async (opts: { json?: boolean }) => {
     try {
       const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
       const ok = await startOpenRestyOnce(true);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok, message: ok ? 'NetGet gateway reloaded.' : 'Reload failed. Check OpenResty logs.' }));
+        process.exit(ok ? 0 : 1);
+      }
       if (ok) {
         console.log(chalk.green('NetGet gateway reloaded.'));
       } else {
@@ -282,7 +287,71 @@ program
         process.exit(1);
       }
     } catch (err: any) {
-      console.error(chalk.red(`Reload failed: ${err.message}`));
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: false, message }));
+        process.exit(1);
+      }
+      console.error(chalk.red(`Reload failed: ${message}`));
+      process.exit(1);
+    }
+  });
+
+// Read-only status — no sudo required (port checks + launchctl/systemctl
+// `is-active`/`print`, both read-only). Safe to call from an unattended HTTP
+// caller, unlike stop/start/reload which shell out through sudo below.
+program
+  .command('status')
+  .description('Report OpenResty/NetGet gateway status as one JSON line: { platform, bin, mode, serviceActive, httpListening, httpsListening, detail }')
+  .action(async () => {
+    try {
+      const { getOpenRestyServiceStatus } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+      const status = await getOpenRestyServiceStatus();
+      console.log(JSON.stringify({ ok: true, ...status }));
+      process.exit(0);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
+// Stops the gateway and removes the launchd/systemd service, same as the
+// interactive "NetGet OFF" option in openRestyInstallationOptions.cli.ts.
+// Shells out through sudo (stopOpenRestyGateway -> runSudoShell) — requires
+// either an interactive terminal or a passwordless sudo rule for this
+// command when called from a non-interactive caller (e.g. the HTTP endpoint).
+program
+  .command('stop')
+  .description('Stop the OpenResty/NetGet gateway and remove its service. Prints one JSON line: { ok, message }.')
+  .action(async () => {
+    try {
+      const { stopOpenRestyGateway } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+      const ok = await stopOpenRestyGateway();
+      console.log(JSON.stringify({ ok, message: ok ? 'NetGet gateway stopped.' : 'Stop failed. Check OpenResty logs.' }));
+      process.exit(ok ? 0 : 1);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
+// Non-interactive cert provisioning — the piece the interactive Domains menu
+// (domainsOptions.ts addNewDomain) previously had exclusively. Exists so the
+// /provision-cert HTTP endpoint (lua/handlers/domains.lua) can trigger real
+// Let's Encrypt issuance without SSH, by shelling out to this subcommand.
+// Output is a single JSON line so callers (Lua, scripts) can parse it directly.
+program
+  .command('provision-cert <domain>')
+  .description('Provision (or renew) a Let\'s Encrypt cert for a registered public domain via certbot webroot. Prints one JSON line: { ok, message, certPath?, keyPath? }.')
+  .requiredOption('--email <email>', 'Contact email for the Let\'s Encrypt account')
+  .action(async (domain: string, opts: { email: string }) => {
+    try {
+      const { provisionCert } = await import('./modules/NetGetX/Domains/SSL/Certbot/certbotProvision.ts');
+      const result = await provisionCert(domain, opts.email);
+      console.log(JSON.stringify(result));
+      process.exit(result.ok ? 0 : 1);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
       process.exit(1);
     }
   });

@@ -24,3 +24,6 @@ export type {
   NetGetVisibility,
 } from './runtime/exposurePolicy.js';
 export type { PortLease, PortLeaseMode, PortLeaseStatus } from './runtime/portLeases.js';
+export type { Surface, SurfaceKind, SurfaceTrust } from './types/Surface.js';
+export { createMeNetgetClient } from './client/meNetgetClient.js';
+export type { MeNetgetClient } from './client/meNetgetClient.js';

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Monad } from 'this.gui';
 import './css/styles.css';
 
-const BASE_SURFACES = ['localhost', '127.0.0.1', 'local.netget'];
+// Network entrypoints — doors into this same netget resolver, not apps.
+// Distinct from SEMANTIC SURFACES (real registered domains, below): an
+// entrypoint doesn't resolve to a monad-served app by itself, it's just a
+// way to reach this netget's own control plane. See entrypointRows/surfaceRows below.
+const BASE_SURFACES = ['localhost', '127.0.0.1', 'local.netget', 'netget.site'];
 const HOSTNAME_PLACEHOLDER = 'hostname.local';
 const REQUEST_LIMIT = 18;
 const SEEN_LOG_LIMIT = 80;
@@ -194,25 +198,28 @@ const WelcomeNetget = () => {
         if (item.id === '443') return { ...item, active: hostnameLoaded || currentPort === '443' || gatewayPort === 443 };
         return { ...item, active: true };
     }), [ports, currentPort, gatewayPort, hostnameLoaded]);
-    // The real "which addresses does netget resolve" list. Two sources, both
-    // genuinely netget (not the monad mesh, not this dev session's own Vite
-    // surfaces):
-    //  - BASE_SURFACES: netget's own reverse-proxy control-plane addresses —
-    //    always valid discovery/recovery entry points into netget itself,
-    //    independent of whatever customer domains happen to be configured.
-    //  - domains (GET /domains): the customer domains netget is actually
-    //    routing for right now.
-    // This is what the port wires patch to.
-    const domainRows = useMemo(() => {
-        const controlRows = BASE_SURFACES.map((surface) => ({
-            surface,
-            selected: surface === currentHost,
-            online: true,
-            disabled: false,
-            httpsCapable: true,
-        }));
-        const controlSurfaces = new Set(controlRows.map((row) => row.surface));
-        const realDomainRows = domains
+    // Two genuinely different layers, not one flat "domains" list:
+    //  - entrypointRows (Network Entrypoints): BASE_SURFACES — doors into
+    //    this same netget resolver. Always valid discovery/recovery entry
+    //    points, independent of whatever customer domains are configured.
+    //    Ports wire to these.
+    //  - surfaceRows (Semantic Surfaces): domains (GET /domains) — the real
+    //    customer domains netget is actually routing for right now, each one
+    //    a monad-resolved app. These wire to monad.ai, not the entrypoints.
+    // An entrypoint (e.g. local.netget) reaches this netget's own control
+    // plane, not a monad-served app by itself — that distinction is why the
+    // two groups don't share a wire target.
+    const entrypointRows = useMemo(() => BASE_SURFACES.map((surface) => ({
+        surface,
+        selected: surface === currentHost,
+        online: true,
+        disabled: false,
+        httpsCapable: true,
+    })), [currentHost]);
+
+    const surfaceRows = useMemo(() => {
+        const entrypointSurfaces = new Set(BASE_SURFACES);
+        return domains
             .map((d) => {
                 const label = d.subdomain && d.subdomain !== d.domain ? `${d.subdomain}.${d.domain}` : d.domain;
                 const sslMode = String(d.sslMode || '').trim().toLowerCase();
@@ -225,8 +232,7 @@ const WelcomeNetget = () => {
                     httpsCapable,
                 };
             })
-            .filter((row) => !controlSurfaces.has(row.surface));
-        return [...controlRows, ...realDomainRows];
+            .filter((row) => !entrypointSurfaces.has(row.surface));
     }, [domains, currentHost]);
     // Count of >=400/error lines currently visible in the terminal — the same
     // 'warn' tone already used for offline wires and warn terminal lines, so
@@ -339,8 +345,17 @@ const WelcomeNetget = () => {
     useEffect(() => {
         if (mainView !== 'netget') return;
         const selectedSurface = surfaceRefs.current[currentHost];
-        selectedSurface?.scrollIntoView({ block: 'center' });
-    }, [currentHost, mainView, domainRows.length]);
+        if (!selectedSurface) return;
+        // Scroll only the small address list itself into position, not
+        // scrollIntoView() — that walks every scrollable ancestor, and now
+        // that .netget-console can scroll too (layers wrap at narrow
+        // widths), it would also re-center the whole console around this
+        // row, dragging the title out of view.
+        const historyEl = selectedSurface.closest('.surface-history');
+        if (!historyEl) return;
+        historyEl.scrollTop =
+            selectedSurface.offsetTop - historyEl.clientHeight / 2 + selectedSurface.clientHeight / 2;
+    }, [currentHost, mainView, entrypointRows.length, surfaceRows.length]);
 
     useEffect(() => {
         writeWindowState({ mainView });
@@ -437,6 +452,21 @@ const WelcomeNetget = () => {
             const historyRect = historyEl ? historyEl.getBoundingClientRect() : null;
             const nextPaths = [];
 
+            // Shared clearance point, past every port chip's right edge — not
+            // just the one a given wire starts from. Ports stack vertically,
+            // so a wire from the top port (80) to a row below the bottom
+            // port (443) has to pass 443's own Y-range on the way down;
+            // bulging out only as far as its own port's edge still cuts
+            // straight through that other chip's box. Same fix as the
+            // address->monad wires below.
+            const portsClearX =
+                Math.max(
+                    ...portsWithStatus
+                        .map((port) => portRefs.current[port.id])
+                        .filter(Boolean)
+                        .map((el) => el.getBoundingClientRect().right - containerRect.left),
+                ) + 24;
+
             portsWithStatus.forEach((port) => {
                 const portEl = portRefs.current[port.id];
                 if (!portEl) return;
@@ -444,7 +474,7 @@ const WelcomeNetget = () => {
                 const startX = portRect.right - containerRect.left;
                 const startY = portRect.top - containerRect.top + portRect.height / 2;
 
-                domainRows.forEach((row) => {
+                entrypointRows.forEach((row) => {
                     if (row.disabled) return;
 
                     // Every netget domain answers on 80; it only answers on 443 if
@@ -476,12 +506,11 @@ const WelcomeNetget = () => {
 
                     const endX = rowRect.left - containerRect.left;
                     const endY = rowRect.top - containerRect.top + rowRect.height / 2;
-                    const midX = startX + (endX - startX) * 0.5;
                     const tone = !port.active || !row.online ? 'offline' : port.label === 'HTTPS' ? 'https' : 'http';
 
                     nextPaths.push({
                         key: `${port.id}:${row.surface}`,
-                        d: `M${startX},${startY} C${midX},${startY} ${midX},${endY} ${endX},${endY}`,
+                        d: `M${startX},${startY} C${portsClearX},${startY} ${portsClearX},${endY} ${endX},${endY}`,
                         tone,
                         fade,
                     });
@@ -491,10 +520,19 @@ const WelcomeNetget = () => {
             const monadEl = monadRef.current;
             if (monadEl) {
                 const monadRect = monadEl.getBoundingClientRect();
-                const endX = monadRect.left - containerRect.left;
+                // Extend slightly past the box's border into its padding so the
+                // wire visibly enters the chip instead of just grazing the edge.
+                const endX = monadRect.left - containerRect.left + 16;
                 const endY = monadRect.top - containerRect.top + monadRect.height / 2;
 
-                domainRows.forEach((row) => {
+                // Build every row's start point first so the curves can share
+                // one clearance point (clearX) past the *longest* label —
+                // routing each wire off its own label width bulges shorter
+                // labels' wires right through longer labels sitting below them
+                // (visible once addresses stack above monad.ai instead of
+                // sitting beside it, e.g. wrapped at narrow widths).
+                const monadRowData = [];
+                surfaceRows.forEach((row) => {
                     if (row.disabled) return;
 
                     const rowEl = surfaceRefs.current[row.surface];
@@ -513,13 +551,23 @@ const WelcomeNetget = () => {
                         if (fade <= 0.02) return;
                     }
 
-                    const startX = rowRect.right - containerRect.left;
+                    // Anchor to the visible label text, not the row button's
+                    // full (grid-stretched) width — otherwise the wire starts
+                    // in empty space past the end of the address name.
+                    const labelEl = rowEl.querySelector('.surface-name');
+                    const labelRect = labelEl ? labelEl.getBoundingClientRect() : rowRect;
+                    const startX = labelRect.right - containerRect.left + 6;
                     const startY = rowRect.top - containerRect.top + rowRect.height / 2;
-                    const midX = startX + (endX - startX) * 0.55;
 
+                    monadRowData.push({ row, startX, startY, fade });
+                });
+
+                const clearX = Math.max(endX, ...monadRowData.map((r) => r.startX)) + 20;
+
+                monadRowData.forEach(({ row, startX, startY, fade }) => {
                     nextPaths.push({
                         key: `surface:${row.surface}:monad`,
-                        d: `M${startX},${startY} C${midX},${startY} ${midX},${endY} ${endX},${endY}`,
+                        d: `M${startX},${startY} C${clearX},${startY} ${clearX},${endY} ${endX},${endY}`,
                         tone: row.online && openrestyOnline ? 'monad' : 'monad-offline',
                         fade,
                     });
@@ -542,7 +590,7 @@ const WelcomeNetget = () => {
             resizeObserver.disconnect();
             historyEl?.removeEventListener('scroll', computeWires);
         };
-    }, [portsWithStatus, domainRows, mainView, openrestyOnline]);
+    }, [portsWithStatus, entrypointRows, surfaceRows, mainView, openrestyOnline]);
 
     const handlePaneKeyDown = (view) => (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -635,6 +683,27 @@ const WelcomeNetget = () => {
         );
     };
 
+    const renderSurfaceRow = (row) => (
+        <button
+            key={row.surface}
+            ref={(node) => {
+                if (node) surfaceRefs.current[row.surface] = node;
+            }}
+            type="button"
+            className={[
+                'surface-history-item',
+                row.selected ? 'surface-history-item--selected' : '',
+                row.online ? 'surface-history-item--online' : 'surface-history-item--offline',
+            ].filter(Boolean).join(' ')}
+            disabled={row.disabled || !row.online}
+            onClick={() => navigateToSurface(row.surface)}
+            aria-current={row.selected ? 'true' : undefined}
+        >
+            <span className="surface-status-led" aria-hidden="true"><span className="surface-status-dot" /></span>
+            <span className="surface-name">{row.surface}</span>
+        </button>
+    );
+
     const renderNetgetConsole = () => (
         <section className="netget-console" aria-label="NetGet console">
             <div className="netget-body" ref={wireBodyRef}>
@@ -649,71 +718,59 @@ const WelcomeNetget = () => {
                     ))}
                 </svg>
 
-                <div className="netget-ports" aria-label="Listening ports">
-                    {portsWithStatus.map((item) => (
-                        <div
-                            key={item.id}
-                            ref={(node) => {
-                                if (node) portRefs.current[item.id] = node;
-                            }}
-                            className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}
-                        >
-                            <span>{item.port}</span>
-                            <small>{item.label}</small>
-                        </div>
-                    ))}
-                    <button type="button" className="port-chip port-chip--add" onClick={handleAddPort} aria-label="Add a listening port">
-                        <span>+</span>
-                    </button>
+                <div className="netget-header">
+                    <div className="netget-word" aria-hidden="true">NETGET</div>
+                    {renderOpenRestyControl()}
                 </div>
 
-                <div className="netget-main">
-                    <div className="netget-word" aria-hidden="true">NETGET</div>
+                <div className="netget-layers" aria-label="NetGet request flow">
+                    <div className="netget-ports" aria-label="Listening ports">
+                        {portsWithStatus.map((item) => (
+                            <div
+                                key={item.id}
+                                ref={(node) => {
+                                    if (node) portRefs.current[item.id] = node;
+                                }}
+                                className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}
+                            >
+                                <span>{item.port}</span>
+                                <small>{item.label}</small>
+                            </div>
+                        ))}
+                        <button type="button" className="port-chip port-chip--add" onClick={handleAddPort} aria-label="Add a listening port">
+                            <span>+</span>
+                        </button>
+                    </div>
 
-                    {renderOpenRestyControl()}
-
-                    <div className="surface-picker">
+                    <div className="netget-addresses">
                         <div className="surface-position-marker" title={currentHost} aria-label={`Current URL: ${currentHost}`}></div>
 
-                        <div className="surface-picker-row">
-                            <div className="surface-history" aria-label="Domains netget resolves">
-                                {domainRows.map((row) => (
-                                    <button
-                                        key={row.surface}
-                                        ref={(node) => {
-                                            if (node) surfaceRefs.current[row.surface] = node;
-                                        }}
-                                        type="button"
-                                        className={[
-                                            'surface-history-item',
-                                            row.selected ? 'surface-history-item--selected' : '',
-                                            row.online ? 'surface-history-item--online' : 'surface-history-item--offline',
-                                        ].filter(Boolean).join(' ')}
-                                        disabled={row.disabled || !row.online}
-                                        onClick={() => navigateToSurface(row.surface)}
-                                        aria-current={row.selected ? 'true' : undefined}
-                                    >
-                                        <span className="surface-status-led" aria-hidden="true"><span className="surface-status-dot" /></span>
-                                        <span className="surface-name">{row.surface}</span>
-                                    </button>
-                                ))}
-                            </div>
+                        <div className="surface-history" aria-label="Netget entrypoints and semantic surfaces">
+                            <div className="surface-group-label" aria-hidden="true">Network Entrypoints</div>
+                            {entrypointRows.map((row) => renderSurfaceRow(row))}
 
-                            <div className="netget-monad-stage" aria-label="Monad entrypoint" ref={monadRef}>
-                                <div className={`netget-monad-bubble ${openrestyOnline ? 'netget-monad-bubble--on' : 'netget-monad-bubble--off'}`}>
-                                    <Monad
-                                        variant="identity"
-                                        mode="contained"
-                                        kind="monad"
-                                        seed={gatewayHost || currentHost || 'local.netget'}
-                                        label="monad.ai"
-                                        healthy={openrestyOnline}
-                                        size={26}
-                                    />
-                                </div>
-                                <span className="netget-monad-label" aria-hidden="true">monad.ai</span>
-                            </div>
+                            {surfaceRows.length > 0 ? (
+                                <>
+                                    <div className="surface-group-label" aria-hidden="true">Semantic Surfaces</div>
+                                    {surfaceRows.map((row) => renderSurfaceRow(row))}
+                                </>
+                            ) : null}
                         </div>
+                    </div>
+
+                    <div className="netget-monad-stage" aria-label="Monad entrypoint" ref={monadRef}>
+                        <div className={`netget-monad-bubble ${openrestyOnline ? 'netget-monad-bubble--on' : 'netget-monad-bubble--off'}`}>
+                            <Monad
+                                variant="identity"
+                                mode="contained"
+                                kind="monad"
+                                seed={gatewayHost || currentHost || 'local.netget'}
+                                label="monad.ai"
+                                healthy={openrestyOnline}
+                                size={32}
+                            />
+                        </div>
+                        <span className="netget-monad-label" aria-hidden="true">monad.ai</span>
                     </div>
                 </div>
             </div>

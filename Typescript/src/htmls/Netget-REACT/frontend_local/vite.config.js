@@ -35,6 +35,13 @@ export default defineConfig({
   // (same-origin) works without nginx.
   server: {
     port: 5173,
+    // Explicit IPv4 loopback: nginx's proxy_pass target for this dev server
+    // (mainServerFrontend.ts DEFAULT_DEV_URL) is the IPv4 literal
+    // http://127.0.0.1:5173. Without this, vite's default host resolution
+    // can bind IPv6-only ([::1]:5173) on machines that prefer IPv6 for
+    // "localhost", leaving 127.0.0.1 unreachable and nginx's proxy_pass 502ing.
+    host: '127.0.0.1',
+    allowedHosts: ['local.netget', 'suis-macbook-air.local', 'suis-macbook-air.netget'],
     proxy: {
       '/gateway-identity': 'http://127.0.0.1:3000',
       '/apps':             'http://127.0.0.1:3000',
@@ -42,6 +49,9 @@ export default defineConfig({
       '/ip-info':          'http://127.0.0.1:3000',
       '/port-info':        'http://127.0.0.1:3000',
       '/healthcheck':      'http://127.0.0.1:3000',
+      '/openresty-status':  'http://127.0.0.1:3000',
+      '/openresty-restart': 'http://127.0.0.1:3000',
+      '/openresty-stop':    'http://127.0.0.1:3000',
     },
   },
 });

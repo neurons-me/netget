@@ -514,10 +514,11 @@ export async function updateSSLCertificatePaths(domain: string, certPath: string
     try {
         await db.run(
             `UPDATE domains SET
+                sslMode = ?,
                 sslCertificate = ?,
                 sslCertificateKey = ?
              WHERE domain = ?`,
-            [certPath, keyPath, domain]
+            ['letsencrypt', certPath, keyPath, domain]
         );
         await db.close();
         await regenerateMap();

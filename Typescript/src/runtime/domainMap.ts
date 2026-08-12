@@ -51,7 +51,7 @@ export async function generateDomainMap(): Promise<string> {
 
         const key = row.domain.toLowerCase();
         if (isReservedLocalDomain(key)) continue;
-        if (!row.type || !row.target) continue;
+        if (!row.type) continue;
 
         const type: DomainRoute['type'] =
             row.type === 'static' ? 'static'
@@ -66,9 +66,14 @@ export async function generateDomainMap(): Promise<string> {
         const route: DomainRoute = { type, ssl };
 
         if (type === 'static') {
+            if (!row.target) continue;
             route.root = row.target ?? undefined;
-        } else {
+        } else if (type === 'server') {
+            if (!row.target) continue;
             route.target = row.target ?? undefined;
+            route.protocol = 'http';
+        } else {
+            if (row.target) route.target = row.target;
             route.protocol = 'http';
         }
 

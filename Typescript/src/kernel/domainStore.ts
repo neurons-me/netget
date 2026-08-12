@@ -364,6 +364,7 @@ export async function updateSSLCertificatePaths(
 ): Promise<void> {
   const me = getKernel();
   const d = (me as any).domains[domainKey(domain)];
+  d.sslMode('letsencrypt');
   d.sslCertificate(certPath);
   d.sslCertificateKey(keyPath);
   saveKernel();

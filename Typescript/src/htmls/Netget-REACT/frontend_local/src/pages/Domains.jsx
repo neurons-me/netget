@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 // Domains.jsx — local.netget domain routing table
 // Shows all registered domain → target routes.
 // Allows adding and deleting entries.
@@ -35,6 +36,7 @@ import {
 import {
     Add as AddIcon,
     Delete as DeleteIcon,
+    Https as HttpsIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
 
@@ -47,14 +49,25 @@ async function fetchDomains() {
     return Array.isArray(data.domains) ? data.domains : [];
 }
 
-async function addDomain({ domain, target, type }) {
+async function addDomain({ domain, target, type, email }) {
     const res = await fetch('/add-domain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain, target, type }),
+        body: JSON.stringify({ domain, target, type, email }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
+    return data;
+}
+
+async function provisionCert({ domain, email }) {
+    const res = await fetch('/provision-cert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, email }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? data.message ?? `${res.status}`);
     return data;
 }
 
@@ -71,7 +84,7 @@ async function deleteDomain(domain) {
 
 // ─── Add Domain Dialog ────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { domain: '', target: '', type: 'proxy' };
+const EMPTY_FORM = { domain: '', target: '', type: 'proxy', email: '' };
 
 function AddDomainDialog({ open, onClose, onSuccess }) {
     const [form, setForm] = useState(EMPTY_FORM);
@@ -85,8 +98,12 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
     };
 
     const handleSubmit = async () => {
-        if (!form.domain.trim() || !form.target.trim()) {
-            setError('Domain and Target are required.');
+        if (!form.domain.trim()) {
+            setError('Domain is required.');
+            return;
+        }
+        if ((form.type === 'server' || form.type === 'static') && !form.target.trim()) {
+            setError('Target is required for server and static routes.');
             return;
         }
         setSaving(true);
@@ -119,9 +136,17 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
                 <TextField
                     label="Target"
                     placeholder="http://127.0.0.1:3001"
-                    helperText="Upstream URL — must be loopback for local monads."
+                    helperText="Optional for monad-resolved semantic surfaces; required for server/static routes."
                     value={form.target}
                     onChange={(e) => setForm(f => ({ ...f, target: e.target.value }))}
+                    fullWidth
+                />
+                <TextField
+                    label="Let's Encrypt Email"
+                    placeholder="admin@example.com"
+                    helperText="Optional now; required later when issuing a public certificate."
+                    value={form.email}
+                    onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
                     fullWidth
                 />
                 <FormControl fullWidth size="small">
@@ -153,6 +178,86 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
     );
 }
 
+// ─── Provision Certificate Dialog ─────────────────────────────────────────────
+
+function hasPublicCert(row) {
+    const mode = String(row?.sslMode || '').trim().toLowerCase();
+    return !!mode && mode !== 'none' && mode !== 'off';
+}
+
+function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
+    const [email, setEmail] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (open) {
+            setEmail(String(row?.email || '').trim());
+            setError(null);
+        }
+    }, [open, row]);
+
+    const handleClose = () => {
+        if (saving) return;
+        setError(null);
+        onClose();
+    };
+
+    const handleSubmit = async () => {
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+            setError('Email is required for Let’s Encrypt.');
+            return;
+        }
+
+        setSaving(true);
+        setError(null);
+        try {
+            await provisionCert({ domain: row.domain, email: trimmedEmail });
+            await onSuccess(row.domain);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+            <DialogTitle>
+                {hasPublicCert(row) ? 'Renew Certificate' : 'Provision Certificate'}
+            </DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.65 }}>
+                    {row?.domain}
+                </Typography>
+                <TextField
+                    label="Let's Encrypt Email"
+                    placeholder="admin@example.com"
+                    helperText="Used by Let’s Encrypt for expiry and account notices."
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoFocus
+                    fullWidth
+                />
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleClose} disabled={saving}>Cancel</Button>
+                <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={saving}
+                    startIcon={saving ? <CircularProgress size={14} /> : <HttpsIcon />}
+                >
+                    {saving ? 'Provisioning…' : hasPublicCert(row) ? 'Renew Cert' : 'Provision Cert'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
 // ─── Domains page ─────────────────────────────────────────────────────────────
 
 export default function Domains() {
@@ -161,6 +266,9 @@ export default function Domains() {
     const [error, setError] = useState(null);
     const [addOpen, setAddOpen] = useState(false);
     const [deleting, setDeleting] = useState(null);   // domain string currently being deleted
+    const [provisioning, setProvisioning] = useState(null);
+    const [provisionOpen, setProvisionOpen] = useState(null);
+    const [certNotice, setCertNotice] = useState(null);
     const [deleteError, setDeleteError] = useState(null);
 
     const load = useCallback(async () => {
@@ -187,6 +295,17 @@ export default function Domains() {
             setDeleteError(err.message);
         } finally {
             setDeleting(null);
+        }
+    };
+
+    const handleCertProvisioned = async (domain) => {
+        setProvisioning(domain);
+        setCertNotice(null);
+        try {
+            await load();
+            setCertNotice(`Certificate updated for ${domain}.`);
+        } finally {
+            setProvisioning(null);
         }
     };
 
@@ -221,6 +340,12 @@ export default function Domains() {
                 {deleteError && (
                     <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDeleteError(null)}>
                         {deleteError}
+                    </Alert>
+                )}
+
+                {certNotice && (
+                    <Alert severity="success" sx={{ mb: 2 }} onClose={() => setCertNotice(null)}>
+                        {certNotice}
                     </Alert>
                 )}
 
@@ -286,6 +411,20 @@ export default function Domains() {
                                                     />
                                                 </TableCell>
                                                 <TableCell align="right">
+                                                    <Tooltip title={`${hasPublicCert(row) ? 'Renew' : 'Provision'} Let's Encrypt certificate`}>
+                                                        <span>
+                                                            <IconButton
+                                                                size="small"
+                                                                color="primary"
+                                                                onClick={() => setProvisionOpen(row)}
+                                                                disabled={provisioning === row.domain || deleting === row.domain}
+                                                            >
+                                                                {provisioning === row.domain
+                                                                    ? <CircularProgress size={16} />
+                                                                    : <HttpsIcon fontSize="small" />}
+                                                            </IconButton>
+                                                        </span>
+                                                    </Tooltip>
                                                     <Tooltip title={`Delete ${row.domain}`}>
                                                         <span>
                                                             <IconButton
@@ -319,6 +458,12 @@ export default function Domains() {
                 open={addOpen}
                 onClose={() => setAddOpen(false)}
                 onSuccess={load}
+            />
+            <ProvisionCertDialog
+                row={provisionOpen}
+                open={!!provisionOpen}
+                onClose={() => setProvisionOpen(null)}
+                onSuccess={handleCertProvisioned}
             />
         </>
     );

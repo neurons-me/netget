@@ -38,6 +38,18 @@ local function exec_sql(query)
   return out
 end
 
+local function optional_string(value)
+  if type(value) == "string" then return value end
+  return ""
+end
+
+local function is_control_entrypoint(host)
+  if host == "" then return true end
+  if host == "localhost" or host == "127.0.0.1" or host == "local.netget" then return true end
+  if _G.MAIN_SERVER_NAME and host == _G.MAIN_SERVER_NAME then return true end
+  return false
+end
+
 local function list_entrypoints()
   set_json()
   local entrypoints = {
@@ -69,12 +81,12 @@ end
 --   sslMode set, cert paths on record   -> active
 --   sslMode set, no cert paths yet      -> pending_cert
 local function surface_status(row)
-  local sslMode = string.lower(row.sslMode or "")
+  local sslMode = string.lower(optional_string(row.sslMode))
   if sslMode == "" or sslMode == "off" or sslMode == "none" then
     return "active"
   end
-  local hasCert = (row.sslCertificate and row.sslCertificate ~= "")
-    and (row.sslCertificateKey and row.sslCertificateKey ~= "")
+  local hasCert = optional_string(row.sslCertificate) ~= ""
+    and optional_string(row.sslCertificateKey) ~= ""
   if hasCert then return "active" end
   return "pending_cert"
 end
@@ -88,19 +100,24 @@ local function list_surfaces()
 
   local surfaces = {}
   for _, row in ipairs(rows) do
-    local publicHost = row.domain
-    if row.subdomain and row.subdomain ~= "" and row.subdomain ~= row.domain then
-      publicHost = row.subdomain .. "." .. row.domain
+    local domain = optional_string(row.domain)
+    local subdomain = optional_string(row.subdomain)
+    local publicHost = domain
+    if subdomain ~= "" and subdomain ~= domain then
+      publicHost = subdomain .. "." .. domain
     end
-    local sslMode = string.lower(row.sslMode or "")
-    local httpsCapable = sslMode ~= "" and sslMode ~= "off" and sslMode ~= "none"
-    table.insert(surfaces, {
-      id = "domain." .. publicHost,
-      kind = "domain",
-      publicHost = publicHost,
-      status = surface_status(row),
-      httpsCapable = httpsCapable,
-    })
+
+    if not is_control_entrypoint(publicHost) then
+      local sslMode = string.lower(optional_string(row.sslMode))
+      local httpsCapable = sslMode ~= "" and sslMode ~= "off" and sslMode ~= "none"
+      table.insert(surfaces, {
+        id = "domain." .. publicHost,
+        kind = "domain",
+        publicHost = publicHost,
+        status = surface_status(row),
+        httpsCapable = httpsCapable,
+      })
+    end
   end
   if #surfaces == 0 then surfaces = cjson.empty_array end
 

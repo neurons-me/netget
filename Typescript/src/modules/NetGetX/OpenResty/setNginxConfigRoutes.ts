@@ -425,6 +425,7 @@ ${viteAssetLocation}
     # (no sudo); restart/stop shell out through sudo (see openresty.lua).
     location = /openresty-status {
         if ($request_method = OPTIONS) { return 204; }
+        set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action status;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
@@ -436,6 +437,7 @@ ${viteAssetLocation}
 
     location = /openresty-restart {
         if ($request_method = OPTIONS) { return 204; }
+        set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action restart;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
@@ -447,6 +449,7 @@ ${viteAssetLocation}
 
     location = /openresty-stop {
         if ($request_method = OPTIONS) { return 204; }
+        set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action stop;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;

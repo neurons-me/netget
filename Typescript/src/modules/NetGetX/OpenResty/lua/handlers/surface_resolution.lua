@@ -92,11 +92,14 @@ local function list_surfaces()
     if row.subdomain and row.subdomain ~= "" and row.subdomain ~= row.domain then
       publicHost = row.subdomain .. "." .. row.domain
     end
+    local sslMode = string.lower(row.sslMode or "")
+    local httpsCapable = sslMode ~= "" and sslMode ~= "off" and sslMode ~= "none"
     table.insert(surfaces, {
       id = "domain." .. publicHost,
       kind = "domain",
       publicHost = publicHost,
       status = surface_status(row),
+      httpsCapable = httpsCapable,
     })
   end
   if #surfaces == 0 then surfaces = cjson.empty_array end

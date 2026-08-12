@@ -29,6 +29,10 @@ export interface SemanticSurface {
   kind: 'domain';
   publicHost: string;
   status: SurfaceStatus;
+  // Whether SSL is configured for this domain at all — independent of
+  // `status`: a domain can be status="active" over plain HTTP (sslMode
+  // off/none) just as validly as status="active" with a cert on record.
+  httpsCapable: boolean;
 }
 
 export interface EntrypointsResponse {

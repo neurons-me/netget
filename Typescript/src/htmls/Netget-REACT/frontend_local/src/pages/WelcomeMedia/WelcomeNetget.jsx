@@ -173,7 +173,12 @@ const WelcomeNetget = () => {
     const wireBodyRef = useRef(null);
     const [wirePaths, setWirePaths] = useState([]);
     const [ports, setPorts] = useState(DEFAULT_PORTS);
-    const [domains, setDomains] = useState([]);
+    // Slice 2: fetched directly from netget's own GET /entrypoints and
+    // GET /surfaces (src/types/SurfaceResolution.ts is the documented
+    // contract) — the UI no longer infers these from a local BASE_SURFACES
+    // constant plus GET /domains. See entrypointRows/surfaceRows below.
+    const [entrypoints, setEntrypoints] = useState([]);
+    const [surfaces, setSurfaces] = useState([]);
     const [gatewayHost, setGatewayHost] = useState('');
     const [hostnameLoaded, setHostnameLoaded] = useState(false);
     const [gatewayPort, setGatewayPort] = useState(null);
@@ -198,42 +203,33 @@ const WelcomeNetget = () => {
         if (item.id === '443') return { ...item, active: hostnameLoaded || currentPort === '443' || gatewayPort === 443 };
         return { ...item, active: true };
     }), [ports, currentPort, gatewayPort, hostnameLoaded]);
-    // Two genuinely different layers, not one flat "domains" list:
-    //  - entrypointRows (Network Entrypoints): BASE_SURFACES — doors into
-    //    this same netget resolver. Always valid discovery/recovery entry
-    //    points, independent of whatever customer domains are configured.
-    //    Ports wire to these.
-    //  - surfaceRows (Semantic Surfaces): domains (GET /domains) — the real
-    //    customer domains netget is actually routing for right now, each one
-    //    a monad-resolved app. These wire to monad.ai, not the entrypoints.
+    // Two genuinely different layers, not one flat "domains" list — fetched
+    // directly from netget's own GET /entrypoints and GET /surfaces (Slice
+    // 2), not inferred from a local BASE_SURFACES constant plus GET /domains:
+    //  - entrypointRows (Network Entrypoints): doors into this same netget
+    //    resolver. Always valid discovery/recovery entry points, independent
+    //    of whatever customer domains are configured. Ports wire to these.
+    //  - surfaceRows (Semantic Surfaces): the real customer domains netget is
+    //    actually routing for right now, each one a monad-resolved app.
+    //    These wire to monad.ai, not the entrypoints.
     // An entrypoint (e.g. local.netget) reaches this netget's own control
     // plane, not a monad-served app by itself — that distinction is why the
     // two groups don't share a wire target.
-    const entrypointRows = useMemo(() => BASE_SURFACES.map((surface) => ({
-        surface,
-        selected: surface === currentHost,
+    const entrypointRows = useMemo(() => entrypoints.map((e) => ({
+        surface: e.host,
+        selected: e.host === currentHost,
         online: true,
         disabled: false,
         httpsCapable: true,
-    })), [currentHost]);
+    })), [entrypoints, currentHost]);
 
-    const surfaceRows = useMemo(() => {
-        const entrypointSurfaces = new Set(BASE_SURFACES);
-        return domains
-            .map((d) => {
-                const label = d.subdomain && d.subdomain !== d.domain ? `${d.subdomain}.${d.domain}` : d.domain;
-                const sslMode = String(d.sslMode || '').trim().toLowerCase();
-                const httpsCapable = !!sslMode && sslMode !== 'off' && sslMode !== 'none';
-                return {
-                    surface: label,
-                    selected: label === currentHost,
-                    online: true,
-                    disabled: false,
-                    httpsCapable,
-                };
-            })
-            .filter((row) => !entrypointSurfaces.has(row.surface));
-    }, [domains, currentHost]);
+    const surfaceRows = useMemo(() => surfaces.map((s) => ({
+        surface: s.publicHost,
+        selected: s.publicHost === currentHost,
+        online: true,
+        disabled: false,
+        httpsCapable: !!s.httpsCapable,
+    })), [surfaces, currentHost]);
     // Count of >=400/error lines currently visible in the terminal — the same
     // 'warn' tone already used for offline wires and warn terminal lines, so
     // this reuses one signal instead of introducing a second error taxonomy.
@@ -309,9 +305,14 @@ const WelcomeNetget = () => {
                 addRequestEntry('MESH', '/apps', `${apps.count ?? 0} live`, apps.updatedAt || 'registry snapshot', 'ok');
             }
 
-            const domainsResponse = await requestJson('/domains');
+            const entrypointsResponse = await requestJson('/entrypoints');
             if (!cancelled) {
-                setDomains(Array.isArray(domainsResponse?.domains) ? domainsResponse.domains : []);
+                setEntrypoints(Array.isArray(entrypointsResponse?.entrypoints) ? entrypointsResponse.entrypoints : []);
+            }
+
+            const surfacesResponse = await requestJson('/surfaces');
+            if (!cancelled) {
+                setSurfaces(Array.isArray(surfacesResponse?.surfaces) ? surfacesResponse.surfaces : []);
             }
 
             await requestJson('/healthcheck');

@@ -16,6 +16,15 @@ const { getNetgetAppConfContent } = await import('../src/modules/NetGetX/OpenRes
 
 const conf = getNetgetAppConfContent();
 
+function locationBlock(marker: string): string {
+  const start = conf.indexOf(marker);
+  assert.notEqual(start, -1, `missing location marker: ${marker}`);
+  const rest = conf.slice(start);
+  const end = rest.indexOf('\n    }\n');
+  assert.notEqual(end, -1, `missing location end for: ${marker}`);
+  return rest.slice(0, end + '\n    }\n'.length);
+}
+
 // Both routes exist, dispatch through the dedicated handler with the
 // expected $surface_resolution_action, and are read-only (GET/OPTIONS only,
 // no write verbs allowed like /domains' CRUD locations get).
@@ -40,6 +49,23 @@ for (const route of ['openresty-status', 'openresty-restart', 'openresty-stop'])
 // Both sit alongside the existing /domains block, not inside it — the
 // existing domain CRUD locations must be untouched by this slice.
 assert.match(conf, /location = \/entrypoints[\s\S]*location = \/surfaces[\s\S]*location \/domains \{/);
+
+// Domain/cert routes are API endpoints. They must return domains.lua JSON and
+// must never fall back to the React SPA, otherwise callers get `<!DOCTYPE...`
+// and JSON parsing fails in the dashboard.
+for (const [marker, action] of [
+  ['location /domains {', 'list_domains'],
+  ['location ~ ^/domains/([^/]+)/subdomains$ {', 'list_subdomains'],
+  ['location /add-domain {', 'add_domain'],
+  ['location /update-domain {', 'update_domain'],
+  ['location /delete-domain {', 'delete_domain'],
+  ['location /provision-cert {', 'provision_cert'],
+] as const) {
+  const block = locationBlock(marker);
+  assert.match(block, new RegExp(`set \\$domain_action ${action};`));
+  assert.match(block, /content_by_lua_file lua\/handlers\/domains\.lua;/);
+  assert.doesNotMatch(block, /try_files/);
+}
 
 const handler = fs.readFileSync(
   path.join(process.cwd(), 'src/modules/NetGetX/OpenResty/lua/handlers/surface_resolution.lua'),

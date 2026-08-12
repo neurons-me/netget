@@ -588,7 +588,6 @@ ${meshGatewayErrorLocation}
     location /domains {
         if ($request_method = OPTIONS) { return 204; }
         set $domain_action list_domains;
-        try_files $uri $uri/ /index.html;
         content_by_lua_file lua/handlers/domains.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
@@ -602,7 +601,6 @@ ${meshGatewayErrorLocation}
         set $parent_domain $1;
         set $domain_action list_subdomains;
         content_by_lua_file lua/handlers/domains.lua;
-        try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -613,7 +611,6 @@ ${meshGatewayErrorLocation}
         if ($request_method = OPTIONS) { return 204; }
         set $domain_action add_domain;
         content_by_lua_file lua/handlers/domains.lua;
-        try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -624,7 +621,16 @@ ${meshGatewayErrorLocation}
         if ($request_method = OPTIONS) { return 204; }
         set $domain_action update_domain;
         content_by_lua_file lua/handlers/domains.lua;
-        try_files $uri $uri/ /index.html;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+    location /delete-domain {
+        if ($request_method = OPTIONS) { return 204; }
+        set $domain_action delete_domain;
+        content_by_lua_file lua/handlers/domains.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -638,7 +644,6 @@ ${meshGatewayErrorLocation}
         if ($request_method = OPTIONS) { return 204; }
         set $domain_action provision_cert;
         content_by_lua_file lua/handlers/domains.lua;
-        try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;

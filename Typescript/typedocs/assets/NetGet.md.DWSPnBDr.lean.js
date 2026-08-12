@@ -1,0 +1,1 @@
+import{_ as t,o as i,c as a,a0 as s}from"./chunks/framework.B4x6lK7E.js";const g=JSON.parse('{"title":"The Gateway","description":"","frontmatter":{},"headers":[],"relativePath":"NetGet.md","filePath":"NetGet.md"}'),n={name:"NetGet.md"};function l(r,e,h,o,d,p){return i(),a("div",null,[...e[0]||(e[0]=[s("",23)])])}const k=t(n,[["render",l]]);export{g as __pageData,k as default};

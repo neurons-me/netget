@@ -6,9 +6,28 @@
 # Getting Started
 `netget` listens on **ports 80 and 443** and routes every incoming request.
 
-🔷 [Typescript](https://neurons-me.github.io/netget/Typescript/) · 🦀 [Rust](https://neurons-me.github.io/netget/Rust/) · 🐍 [Python](https://neurons-me.github.io/netget/Python/)
+```bash
+git clone https://github.com/neurons-me/netget.git
+cd netget
+```
 
-[Install](https://neurons-me.github.io/netget/docs/installing-netget.html) · [local.netget](http://local.netget) · [localhost](http://localhost) · [127.0.0.1](http://127.0.0.1)
+## Choose
+
+🔷 [Typescript](https://neurons-me.github.io/netget/Typescript/)
+
+```bash
+cd Typescript
+npm install
+npm run build
+```
+
+🦀 [Rust](https://neurons-me.github.io/netget/Rust/) — Not Available Yet.
+🐍 [Python](https://neurons-me.github.io/netget/Python/) — Not Available Yet.
+
+[Install](https://neurons-me.github.io/netget/docs/installing-netget.html) 
+· [local.netget](http://local.netget) 
+· [localhost](http://localhost) 
+· [127.0.0.1](http://127.0.0.1)
 
 ## Docs
 
@@ -22,4 +41,3 @@
 ## License
 
 **MIT** — [neurons.me](https://www.neurons.me)
-

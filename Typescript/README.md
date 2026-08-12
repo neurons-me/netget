@@ -3,7 +3,7 @@
   <img src="https://suign.github.io/assets/imgs/netget1.png" alt="netget" width="377px" style="display: block; margin: 0 auto;" />
 </picture>
 
-# netget `2.7.6`
+# NETGET
 `netget` is the entry point of a node. It **routes every request to the right place** — a static folder, a port, or any HTTP service. 
 
 #### Run on your terminal: (You need npm)

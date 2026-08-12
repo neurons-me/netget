@@ -260,7 +260,7 @@ async function startOpenRestyIfNeeded(restart = false): Promise<void> {
     }
 
     console.log(chalk.blue('Validating OpenResty configuration...'));
-    const validation = validateOpenRestyConfig(bin);
+    const validation = validateOpenRestyConfig(bin, layout.configFilePath);
     if (!validation.ok && !canContinueAfterValidationFailure(validation.output)) {
         console.log(chalk.red('OpenResty config validation failed. Not starting the gateway.'));
         console.log(chalk.gray(validation.output || '(no output)'));
@@ -274,7 +274,9 @@ async function startOpenRestyIfNeeded(restart = false): Promise<void> {
         console.log(chalk.green('OpenResty configuration is valid.'));
     }
 
-    const args = running && restart ? [bin, '-s', 'reload'] : [bin];
+    const args = running && restart
+        ? [bin, '-c', layout.configFilePath, '-s', 'reload']
+        : [bin, '-c', layout.configFilePath];
     console.log(chalk.blue(`${running && restart ? 'Reloading' : 'Starting'} OpenResty (${bin})...`));
     console.log(chalk.gray('Ports 80/443 require root - you may be prompted for your password.'));
     const r = spawnSync('sudo', args, { stdio: 'inherit' });
@@ -286,7 +288,9 @@ async function startOpenRestyIfNeeded(restart = false): Promise<void> {
             : chalk.yellow('OpenResty command finished, but port 80 is still closed.')
         );
     } else {
-        const command = running && restart ? `sudo ${bin} -s reload` : `sudo ${bin}`;
+        const command = running && restart
+            ? `sudo ${bin} -c ${layout.configFilePath} -s reload`
+            : `sudo ${bin} -c ${layout.configFilePath}`;
         console.log(chalk.yellow(`Could not ${running && restart ? 'reload' : 'start'} OpenResty automatically.`));
         console.log(chalk.gray(`Run manually: ${command}`));
     }

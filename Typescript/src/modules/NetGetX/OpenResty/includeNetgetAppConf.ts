@@ -49,6 +49,10 @@ async function copyLuaWithFallback(srcLuaDir: string, luaTargetDir: string): Pro
   console.log(chalk.green(`Lua scripts copied to ${luaTargetDir}.`));
 }
 
+function shellQuote(value: string): string {
+  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
 /**
  * Installs netget_app.conf into the detected gateway conf.d directory.
  */
@@ -102,23 +106,23 @@ async function includeNetgetAppConf(): Promise<void> {
       return;
     }
 
-    const validation = validateOpenRestyConfig(bin);
+    const validation = validateOpenRestyConfig(bin, layout.configFilePath);
     if (!validation.ok) {
       console.log(chalk.yellow('NetGet gateway config validation did not pass without sudo:'));
       console.log(chalk.gray(validation.output || '(no output)'));
-      console.log(chalk.gray(`Manual validation: sudo ${bin} -t`));
+      console.log(chalk.gray(`Manual validation: sudo ${bin} -t -c ${layout.configFilePath}`));
     } else {
       console.log(chalk.green('NetGet gateway configuration is valid.'));
     }
 
     const reloadCmd = process.platform === 'linux'
-      ? `sh -c 'systemctl reload openresty || "${bin}" -s reload'`
-      : `sh -c '"${bin}" -s reload'`;
+      ? `sh -c 'systemctl reload com.netget.openresty || systemctl reload openresty || ${shellQuote(bin)} -c ${shellQuote(layout.configFilePath)} -s reload'`
+      : `sh -c '${shellQuote(bin)} -c ${shellQuote(layout.configFilePath)} -s reload'`;
 
     await handlePermission(
       'reload NetGet gateway',
       reloadCmd,
-      `Run manually:\nsudo ${bin} -t\nsudo ${bin} -s reload`
+      `Run manually:\nsudo ${bin} -t -c ${layout.configFilePath}\nsudo ${bin} -c ${layout.configFilePath} -s reload`
     );
   }
 

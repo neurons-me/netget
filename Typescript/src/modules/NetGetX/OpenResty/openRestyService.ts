@@ -37,6 +37,10 @@ function runSudoShell(command: string): boolean {
     return !r.error && r.status === 0;
 }
 
+function shellQuote(value: string): string {
+    return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
 function canUseSystemd(): boolean {
     return fs.existsSync('/bin/systemctl') || fs.existsSync('/usr/bin/systemctl');
 }
@@ -82,7 +86,7 @@ export async function waitForOpenRestyGateway(timeoutMs = 4000): Promise<OpenRes
     return status;
 }
 
-function buildMacOSPlist(bin: string): string {
+function buildMacOSPlist(bin: string, configFilePath: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -92,6 +96,8 @@ function buildMacOSPlist(bin: string): string {
   <key>ProgramArguments</key>
   <array>
     <string>${bin}</string>
+    <string>-c</string>
+    <string>${configFilePath}</string>
     <string>-g</string>
     <string>daemon off;</string>
   </array>
@@ -108,16 +114,16 @@ function buildMacOSPlist(bin: string): string {
 `;
 }
 
-function buildLinuxUnit(bin: string): string {
+function buildLinuxUnit(bin: string, configFilePath: string): string {
     return `[Unit]
 Description=NetGet OpenResty Gateway
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${bin} -g 'daemon off;'
-ExecReload=${bin} -s reload
-ExecStop=${bin} -s quit
+ExecStart=${bin} -c ${configFilePath} -g 'daemon off;'
+ExecReload=${bin} -c ${configFilePath} -s reload
+ExecStop=${bin} -c ${configFilePath} -s quit
 Restart=always
 RestartSec=2
 
@@ -221,15 +227,17 @@ export async function startOpenRestyOnce(reloadIfRunning = false): Promise<boole
     const layout = detectOpenRestyLayout();
     if (!layout.isSupported) throw new Error(layout.installNote || 'OpenResty is not supported on this platform.');
 
-    const validation = validateOpenRestyConfig(bin);
+    const validation = validateOpenRestyConfig(bin, layout.configFilePath);
     if (!validation.ok && !canContinueAfterValidationFailure(validation.output)) {
         throw new Error(`OpenResty config validation failed:\n${validation.output || '(no output)'}`);
     }
 
     const status = await getOpenRestyServiceStatus();
+    const binArg = shellQuote(bin);
+    const configArg = shellQuote(layout.configFilePath);
     const command = (status.httpListening || status.httpsListening) && reloadIfRunning
-        ? `"${bin}" -s reload`
-        : `"${bin}"`;
+        ? `${binArg} -c ${configArg} -s reload`
+        : `${binArg} -c ${configArg}`;
     return runSudoShell(command);
 }
 
@@ -237,7 +245,10 @@ export async function installOpenRestyService(): Promise<boolean> {
     const bin = findOpenRestyBin();
     if (!bin) throw new Error('OpenResty binary not found.');
 
-    const validation = validateOpenRestyConfig(bin);
+    const layout = detectOpenRestyLayout();
+    if (!layout.isSupported) throw new Error(layout.installNote || 'OpenResty is not supported on this platform.');
+
+    const validation = validateOpenRestyConfig(bin, layout.configFilePath);
     if (!validation.ok && !canContinueAfterValidationFailure(validation.output)) {
         throw new Error(`OpenResty config validation failed:\n${validation.output || '(no output)'}`);
     }
@@ -246,7 +257,7 @@ export async function installOpenRestyService(): Promise<boolean> {
 
     if (process.platform === 'darwin') {
         const tmpPlist = path.join(tmpDir, `${SERVICE_NAME}.plist`);
-        fs.writeFileSync(tmpPlist, buildMacOSPlist(bin), 'utf8');
+        fs.writeFileSync(tmpPlist, buildMacOSPlist(bin, layout.configFilePath), 'utf8');
         return runSudoShell([
             `cp "${tmpPlist}" "${MACOS_PLIST_PATH}"`,
             `chown root:wheel "${MACOS_PLIST_PATH}"`,
@@ -261,7 +272,7 @@ export async function installOpenRestyService(): Promise<boolean> {
     if (process.platform === 'linux') {
         if (!canUseSystemd()) throw new Error('systemd was not found on this Linux system.');
         const tmpUnit = path.join(tmpDir, `${SERVICE_NAME}.service`);
-        fs.writeFileSync(tmpUnit, buildLinuxUnit(bin), 'utf8');
+        fs.writeFileSync(tmpUnit, buildLinuxUnit(bin, layout.configFilePath), 'utf8');
         return runSudoShell([
             `cp "${tmpUnit}" "${LINUX_UNIT_PATH}"`,
             'systemctl daemon-reload',
@@ -294,7 +305,10 @@ export async function removeOpenRestyService(): Promise<boolean> {
 
 export async function stopOpenRestyGateway(): Promise<boolean> {
     const bin = findOpenRestyBin();
-    const stopRuntime = bin ? `"${bin}" -s quit >/dev/null 2>&1 || true` : 'true';
+    const layout = bin ? detectOpenRestyLayout() : null;
+    const stopRuntime = bin && layout?.isSupported
+        ? `${shellQuote(bin)} -c ${shellQuote(layout.configFilePath)} -s quit >/dev/null 2>&1 || true`
+        : 'true';
 
     if (process.platform === 'darwin') {
         return runSudoShell([

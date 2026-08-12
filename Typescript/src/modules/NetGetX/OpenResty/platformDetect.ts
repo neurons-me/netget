@@ -55,8 +55,9 @@ export function getOpenRestyStatus(): OpenRestyStatus {
     return { installed: true, bin, version: version || undefined };
 }
 
-export function validateOpenRestyConfig(bin: string): { ok: boolean; output: string } {
-    const r = spawnSync(bin, ['-t'], { encoding: 'utf8' });
+export function validateOpenRestyConfig(bin: string, configFilePath?: string): { ok: boolean; output: string } {
+    const args = configFilePath ? ['-t', '-c', configFilePath] : ['-t'];
+    const r = spawnSync(bin, args, { encoding: 'utf8' });
     const output = `${r.stdout || ''}${r.stderr || ''}`.trim();
     return { ok: !r.error && r.status === 0, output };
 }

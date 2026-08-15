@@ -28,7 +28,7 @@ const conf = buildNginxConfigContent();
 // GatewayStatus.html template is loaded once at init and a render helper is defined.
 assert.match(conf, /GATEWAY_STATUS_TEMPLATE_PATH = ".*GatewayStatus\.html"/);
 assert.match(conf, /_G\.GATEWAY_STATUS_TEMPLATE = read_file\(GATEWAY_STATUS_TEMPLATE_PATH\)/);
-assert.match(conf, /function _G\.render_gateway_status\(state, host, target\)/);
+assert.match(conf, /function _G\.render_gateway_status\(state, host, target, show_dev_server_button\)/);
 
 // Public IP is fetched/cached once per worker.
 assert.match(conf, /_G\.GATEWAY_PUBLIC_IP/);

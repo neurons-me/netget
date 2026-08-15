@@ -335,6 +335,52 @@ program
     }
   });
 
+// Lifecycle for the GUI package's Vite dev server ("dev" main-server-frontend
+// mode proxies the local panel to this). Read-only, safe to poll.
+program
+  .command('dev-server-status')
+  .description('Report the local GUI dev server status as one JSON line: { ok, running, pid, url, message }.')
+  .action(async () => {
+    try {
+      const { getDevServerStatus } = await import('./modules/NetGetX/OpenResty/devServer.ts');
+      console.log(JSON.stringify(await getDevServerStatus()));
+      process.exit(0);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('dev-server-start')
+  .description('Start the local GUI dev server (npm run dev) if not already running. Prints one JSON line: { ok, running, pid, url, message }.')
+  .action(async () => {
+    try {
+      const { startDevServer } = await import('./modules/NetGetX/OpenResty/devServer.ts');
+      const result = await startDevServer();
+      console.log(JSON.stringify(result));
+      process.exit(result.ok ? 0 : 1);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('dev-server-stop')
+  .description('Stop the local GUI dev server. Prints one JSON line: { ok, message }.')
+  .action(async () => {
+    try {
+      const { stopDevServer } = await import('./modules/NetGetX/OpenResty/devServer.ts');
+      const result = await stopDevServer();
+      console.log(JSON.stringify(result));
+      process.exit(result.ok ? 0 : 1);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
 // Non-interactive cert provisioning — the piece the interactive Domains menu
 // (domainsOptions.ts addNewDomain) previously had exclusively. Exists so the
 // /provision-cert HTTP endpoint (lua/handlers/domains.lua) can trigger real

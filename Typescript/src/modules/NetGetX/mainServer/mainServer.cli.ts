@@ -6,6 +6,17 @@ import { getLocalIP } from '../../utils/ipUtils.ts';
 
 type MainServerNameAction = 'edit' | 'clear' | 'back';
 
+/**
+ * Builds the `host:port` route target for the auto-registered main-server
+ * domain record. The gateway's Lua proxy only expands "app:" prefixed
+ * targets to host:port (via the app registry) — any other target is used
+ * as-is in `proxy_pass http://<target>`, so a bare port number here silently
+ * breaks the proxy for the panel's own domain.
+ */
+export function formatMainServerTarget(port: number | string | undefined): string {
+    return `127.0.0.1:${String(port || 3432)}`;
+}
+
 function normalizeIp(value: unknown): string {
     return String(value || '').trim();
 }
@@ -222,11 +233,11 @@ async function offerProvisionMainDomain(x: XStateData, domain: string): Promise<
     try {
         const { getDomainByName, registerDomain } = await import('../../../kernel/domainStore.js');
         const existing = await getDomainByName(domain);
-        const port = String((x as any).xMainOutPutPort || 3432);
+        const target = formatMainServerTarget((x as any).xMainOutPutPort);
 
         if (!existing) {
-            await registerDomain(domain, domain, email, 'letsencrypt', '', '', port, 'server', '', 'main-server');
-            console.log(chalk.green(`Registered ${domain} -> 127.0.0.1:${port} (server).`));
+            await registerDomain(domain, domain, email, 'letsencrypt', '', '', target, 'server', '', 'main-server');
+            console.log(chalk.green(`Registered ${domain} -> ${target} (server).`));
         } else {
             console.log(chalk.gray(`${domain} is already registered — skipping registration.`));
         }

@@ -173,7 +173,7 @@ async function issueCertificateForDomain(domain: string, domainConfig: DomainCon
                 await verifySSLCertificate(domain);
                 break;
             case 'renewCertificate':
-                await renewSSLCertificate(domain);
+                await renewSSLCertificate(domain, domainConfig.email);
                 break;
             case 'viewLogs':
                 await printCertbotLogs();

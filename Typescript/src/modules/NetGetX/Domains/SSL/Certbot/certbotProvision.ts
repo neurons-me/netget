@@ -22,11 +22,26 @@ import chalk from 'chalk';
 import { getNetgetDataDir } from '../../../../../utils/netgetPaths.js';
 import { updateSSLCertificatePaths, getDomainByName } from '../../../../../kernel/domainStore.js';
 import { generateDomainMap, reloadNginx } from '../../../../../runtime/domainMap.js';
+import { detectOpenRestyLayout, getWorkerUsername } from '../../../OpenResty/platformDetect.ts';
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
+// Overridable for tests; matches the env var setNginxConfigRoutes.ts already
+// reads for the same purpose.
+function getLetsEncryptLiveRoot(): string {
+    return process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
+}
+
+function getLetsEncryptArchiveRoot(): string {
+    return process.env.NETGET_LETSENCRYPT_ARCHIVE_DIR || '/etc/letsencrypt/archive';
+}
+
 export function getLetsEncryptLiveDir(domain: string): string {
-    return `/etc/letsencrypt/live/${domain}`;
+    return path.join(getLetsEncryptLiveRoot(), domain);
+}
+
+export function getLetsEncryptArchiveDir(domain: string): string {
+    return path.join(getLetsEncryptArchiveRoot(), domain);
 }
 
 export function getLetsEncryptCertPath(domain: string): string {
@@ -66,6 +81,54 @@ export function certExists(domain: string): boolean {
         encoding: 'utf8',
     });
     return !r.error && r.status === 0;
+}
+
+/**
+ * Grants the OpenResty gateway worker (e.g. www-data) read access to a
+ * domain's Let's Encrypt cert files. Certbot writes them root:root mode 600
+ * by default, which the non-root gateway worker cannot read — the Lua
+ * ssl_certificate_by_lua_block then silently falls back to the default
+ * (mkcert) cert with no visible error. Uses a POSIX default ACL on the
+ * archive dir so every future renewal (which writes new numbered files
+ * there) inherits read access automatically. Best-effort: never throws.
+ */
+export function ensureCertReadableByGatewayWorker(
+    domain: string,
+    opts: { platform?: NodeJS.Platform; workerUser?: string | null } = {},
+): ProvisionResult {
+    const platform = opts.platform ?? process.platform;
+    if (platform !== 'linux') {
+        return { ok: true, message: 'Not Linux — gateway worker ACL fix skipped.' };
+    }
+
+    const user = opts.workerUser !== undefined ? opts.workerUser : getWorkerUsername(detectOpenRestyLayout());
+    if (!user) {
+        return { ok: false, message: 'Could not determine the gateway worker user — skipped ACL fix.' };
+    }
+
+    const liveDir = getLetsEncryptLiveDir(domain);
+    const archiveDir = getLetsEncryptArchiveDir(domain);
+    const acl = `u:${user}:rX`;
+
+    const grant = spawnSync('sudo', ['setfacl', '-R', '-m', acl, liveDir, archiveDir], { encoding: 'utf8' });
+    if (grant.error || grant.status !== 0) {
+        return {
+            ok: false,
+            message: `setfacl failed for ${domain} (is the 'acl' package installed?): ${grant.stderr || grant.error?.message || 'unknown error'}`,
+        };
+    }
+
+    // Default ACL on the archive dir: future renewals write new numbered
+    // files there (privkey7.pem, etc.) that must inherit the same access.
+    const inherit = spawnSync('sudo', ['setfacl', '-d', '-m', acl, archiveDir], { encoding: 'utf8' });
+    if (inherit.error || inherit.status !== 0) {
+        return {
+            ok: false,
+            message: `setfacl (default ACL) failed for ${domain}: ${inherit.stderr || inherit.error?.message || 'unknown error'}`,
+        };
+    }
+
+    return { ok: true, message: `Gateway worker (${user}) granted read access to ${domain} certs.` };
 }
 
 /**
@@ -118,6 +181,14 @@ export async function provisionCert(domain: string, email: string): Promise<Prov
     await updateSSLCertificatePaths(domain, certPath, keyPath);
     console.log(chalk.green(`✓ Cert provisioned and domain-map updated for ${domain}`));
 
+    const aclResult = ensureCertReadableByGatewayWorker(domain);
+    if (aclResult.ok) {
+        console.log(chalk.green(`✓ ${aclResult.message}`));
+    } else {
+        console.log(chalk.yellow(`⚠ ${aclResult.message}`));
+        console.log(chalk.gray(`  The gateway worker may not be able to read this cert until fixed manually.`));
+    }
+
     // Install deploy hook for auto-renewal.
     await installRenewalHook(domain);
 
@@ -142,6 +213,13 @@ export async function syncCertsFromLetsEncrypt(): Promise<void> {
                 await updateSSLCertificatePaths(rec.domain, certPath, keyPath);
                 console.log(chalk.green(`  synced: ${rec.domain}`));
                 synced++;
+            }
+            // Idempotent safety net: re-applies even if the original grant
+            // (or its default ACL) never landed, e.g. an older cert issued
+            // before this fix existed.
+            const aclResult = ensureCertReadableByGatewayWorker(rec.domain);
+            if (!aclResult.ok) {
+                console.log(chalk.yellow(`  ⚠ ${rec.domain}: ${aclResult.message}`));
             }
         }
     }

@@ -95,6 +95,17 @@ function macosUserDirective(): string {
     return user ? `user ${user} staff;` : '';
 }
 
+/**
+ * Extracts the OS username the gateway worker process runs as, from a
+ * layout's `userDirective` (e.g. "user www-data;" -> "www-data"). Used to
+ * grant that user read access to Let's Encrypt certs, which are root-only
+ * by default.
+ */
+export function getWorkerUsername(layout: OpenRestyLayout): string | null {
+    const match = layout.userDirective.match(/^user\s+([^\s;]+)/);
+    return match ? match[1] : null;
+}
+
 function layoutFromInstalledBinary(bin: string): OpenRestyLayout | null {
     const build = getOpenRestyBuildOutput(bin);
     const confPath = readBuildFlag(build, '--conf-path');

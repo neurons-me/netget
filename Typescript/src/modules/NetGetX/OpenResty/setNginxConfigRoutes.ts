@@ -119,7 +119,7 @@ export function getNetgetAppConfContent(): string {
         default_type 'text/html; charset=utf-8';
         content_by_lua_block {
             local host = string.lower(ngx.var.host or ""):gsub(":%d+$", "")
-            local body = _G.render_gateway_status and _G.render_gateway_status(4, host, "${devProxyTarget}")
+            local body = _G.render_gateway_status and _G.render_gateway_status(4, host, "${devProxyTarget}", true)
             if body then
                 ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
                 ngx.say(body)
@@ -452,6 +452,47 @@ ${viteAssetLocation}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action stop;
         content_by_lua_file lua/handlers/openresty.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # Local GUI dev server control — status/start/stop. status is read-only
+    # (no sudo, safe to poll); start/stop just manage a plain child process
+    # (no sudo needed, unlike openresty-restart/stop). Powers the "Start dev
+    # server" button GatewayStatus.html shows for State 4 on this panel's
+    # own domain when isDevFrontend and the dev server isn't responding.
+    location = /dev-server-status {
+        if ($request_method = OPTIONS) { return 204; }
+        set $NETGET_CLI_BIN "${netgetCliBin}";
+        set $dev_server_action status;
+        content_by_lua_file lua/handlers/dev_server.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /dev-server-start {
+        if ($request_method = OPTIONS) { return 204; }
+        set $NETGET_CLI_BIN "${netgetCliBin}";
+        set $dev_server_action start;
+        content_by_lua_file lua/handlers/dev_server.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /dev-server-stop {
+        if ($request_method = OPTIONS) { return 204; }
+        set $NETGET_CLI_BIN "${netgetCliBin}";
+        set $dev_server_action stop;
+        content_by_lua_file lua/handlers/dev_server.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;

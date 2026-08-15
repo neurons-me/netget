@@ -28,11 +28,28 @@
         100% { background-position: 0% 50%; }
       }
 
-      .container {
-        min-height: 100vh;
+      .bg-video {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        filter: brightness(0.65);
+        z-index: -2;
+      }
+
+      .bg-gradient {
+        position: fixed;
+        inset: 0;
         background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
         background-size: 400% 400%;
         animation: gradient 15s ease infinite;
+        opacity: 0.55;
+        z-index: -1;
+      }
+
+      .container {
+        min-height: 100vh;
         color: #333;
         display: flex;
         flex-direction: column;
@@ -50,12 +67,21 @@
         text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
 
+      .status-code {
+        font-size: 56px;
+        font-weight: 700;
+        line-height: 1;
+        color: #d32f2f;
+      }
+
       .paper {
         width: 100%;
         max-width: 640px;
         padding: 32px;
         border-radius: 12px;
-        background: #fff;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
         box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16);
         display: flex;
         flex-direction: column;
@@ -135,6 +161,10 @@
     </style>
   </head>
   <body class="state-{{STATE}}">
+    <video class="bg-video" autoplay muted loop playsinline>
+      <source src="https://suign.github.io/assets/neurons.me.netget.mp4" type="video/mp4" />
+    </video>
+    <div class="bg-gradient"></div>
     <div class="container">
       <div class="title">Netget Gateway</div>
 
@@ -179,16 +209,13 @@
 
         <!-- State 4: SERVICE_UNAVAILABLE -->
         <div class="state-content state-4-content">
-          <p><code>{{HOST}}</code> is registered, but the service at <code>{{TARGET}}</code> isn't responding.</p>
-          <p>
-            The gateway routing is correct, but the backend application
-            appears to be offline or crashed. If it was recently live, check
-            whether its process is still running and restart it.
-          </p>
+          <div class="status-code">503</div>
+          <p><code>{{HOST}}</code> → <code>{{TARGET}}</code> not responding.</p>
           <p class="meta" id="retry-meta"></p>
           <div>
             <a class="button" href="#" id="retry-button">Retry now</a>
             <a class="button button-secondary" href="http://local.netget/" id="panel-link">Open gateway control panel</a>
+            {{DEV_SERVER_BUTTON}}
           </div>
         </div>
       </div>
@@ -205,6 +232,59 @@
             event.preventDefault();
             window.location.reload();
           });
+        }
+
+        // Present only when the Lua renderer passed show_dev_server_button
+        // (this panel's own dev-proxy target, not an arbitrary app/monad).
+        var devServerButton = document.getElementById('start-dev-server-button');
+        if (devServerButton) {
+          devServerButton.addEventListener('click', function (event) {
+            event.preventDefault();
+            devServerButton.textContent = 'Starting…';
+            devServerButton.style.pointerEvents = 'none';
+
+            fetch('/dev-server-start', { method: 'POST' })
+              .then(function (res) { return res.json(); })
+              .then(function (result) {
+                if (!result.ok) {
+                  devServerButton.textContent = 'Start failed — see console';
+                  console.error('dev-server-start failed:', result.message);
+                  return;
+                }
+                devServerButton.textContent = 'Starting…';
+                pollUntilResponding();
+              })
+              .catch(function (err) {
+                devServerButton.textContent = 'Start failed — see console';
+                console.error('dev-server-start request failed:', err);
+              });
+          });
+        }
+
+        function pollUntilResponding() {
+          var attemptsLeft = 20; // ~20s at 1s intervals — vite is usually ready well before this
+          function poll() {
+            attemptsLeft -= 1;
+            fetch('/dev-server-status')
+              .then(function (res) { return res.json(); })
+              .then(function (result) {
+                if (result.running) {
+                  window.location.reload();
+                  return;
+                }
+                if (attemptsLeft <= 0) {
+                  if (devServerButton) devServerButton.textContent = 'Still not responding — try again';
+                  if (devServerButton) devServerButton.style.pointerEvents = '';
+                  return;
+                }
+                window.setTimeout(poll, 1000);
+              })
+              .catch(function () {
+                if (attemptsLeft <= 0) return;
+                window.setTimeout(poll, 1000);
+              });
+          }
+          poll();
         }
 
         // Auto-retry: the backend may come back on its own (crash-restart,

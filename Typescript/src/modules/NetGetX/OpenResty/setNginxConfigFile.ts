@@ -150,7 +150,12 @@ http {
 
         -- Renders GatewayStatus.html for the given state (1-4) with placeholders
         -- substituted via gsub. HOST/TARGET default to "" when not applicable.
-        function _G.render_gateway_status(state, host, target)
+        -- show_dev_server_button is only ever passed true from
+        -- setNginxConfigRoutes.ts's @netget_panel_unavailable location (this
+        -- panel's own dev-proxy failure) -- not from @gateway_service_unavailable
+        -- or @mesh_gateway_error, where the failing target is some arbitrary
+        -- registered app/monad, not this repo's Vite dev server.
+        function _G.render_gateway_status(state, host, target, show_dev_server_button)
             local tpl = _G.GATEWAY_STATUS_TEMPLATE
             if not tpl then return nil end
             local out = tpl
@@ -159,6 +164,11 @@ http {
             out = out:gsub("{{TARGET}}", target or "")
             out = out:gsub("{{PUBLIC_IP}}", _G.GATEWAY_PUBLIC_IP or "")
             out = out:gsub("{{MAIN_SERVER}}", _G.MAIN_SERVER_NAME or "")
+            local devServerButton = ""
+            if show_dev_server_button then
+                devServerButton = [[<a class="button button-secondary" href="#" id="start-dev-server-button">Start dev server</a>]]
+            end
+            out = out:gsub("{{DEV_SERVER_BUTTON}}", devServerButton)
             return out
         end
 
@@ -371,13 +381,27 @@ http {
 
         location / {
             content_by_lua_block {
+                local host = string.lower(ngx.var.host):gsub(":%d+$", "")
+
+                -- The main-server domain (whatever an operator sets via
+                -- Main Server -> Set public domain) is netget's own
+                -- loopback/panel surface: always served from netget's own
+                -- static build (${xConfig}/html), the same as
+                -- local.netget/localhost/127.0.0.1 — entirely independent
+                -- of domain-map routing or whatever a monad behind it would
+                -- otherwise decide to serve at "/". It is never proxied.
+                if _G.MAIN_SERVER_NAME ~= "" and host == _G.MAIN_SERVER_NAME then
+                    ngx.var.root = "${xConfig}/html"
+                    ngx.exec("@dynamic_root")
+                    return
+                end
+
                 local map = _G.DOMAIN_MAP
                 if not map then
                     ngx.exit(ngx.HTTP_SERVICE_UNAVAILABLE)
                     return
                 end
 
-                local host = string.lower(ngx.var.host):gsub(":%d+$", "")
                 local route = map.domains[host]
 
                 if not route then

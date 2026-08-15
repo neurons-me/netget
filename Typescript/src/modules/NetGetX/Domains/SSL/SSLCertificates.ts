@@ -220,22 +220,29 @@ const verifySSLCertificate = async (domain: string): Promise<boolean> => {
 
 /**
  * Renews the SSL certificate for the domain.
- * @memberof module:NetGetX.SSL 
+ *
+ * Delegates to certbotProvision's `provisionCert`, which runs
+ * `certbot certonly --webroot --expand` — the correct way to renew (or
+ * extend) a single named domain's cert. (`certbot renew` does not accept
+ * `-d`; it only renews all certs due for renewal or one selected by
+ * `--cert-name`, so a hand-rolled `renew --nginx -d <domain>` invocation
+ * always fails.) Reusing `provisionCert` also means a renewal here updates
+ * the domain store and re-grants the gateway worker read access to the
+ * cert, same as first-time provisioning.
+ * @memberof module:NetGetX.SSL
  * @param domain - The domain to renew SSL certificate for.
+ * @param email - Contact email for Let's Encrypt.
  * @returns Promise resolving to true if SSL certificate is renewed successfully, false otherwise.
  */
-const renewSSLCertificate = async (domain: string): Promise<boolean> => {
-    try {
-        const command = `sudo certbot renew --nginx -d ${domain} --non-interactive --agree-tos`;
-        const { stdout } = await execAsync(command);
-        
-        console.log(chalk.green(`SSL certificate renewed successfully for ${domain}.`));
-        console.log(stdout);
-        return true;
-    } catch (error: any) {
-        console.error(chalk.red(`Failed to renew SSL certificate for ${domain}: ${error.message}`));
-        throw error;
+const renewSSLCertificate = async (domain: string, email: string): Promise<boolean> => {
+    const { provisionCert } = await import('./Certbot/certbotProvision.ts');
+    const result = await provisionCert(domain, email);
+    if (!result.ok) {
+        console.error(chalk.red(`Failed to renew SSL certificate for ${domain}: ${result.message}`));
+        throw new Error(result.message);
     }
+    console.log(chalk.green(`SSL certificate renewed successfully for ${domain}.`));
+    return true;
 };
 
 export { 

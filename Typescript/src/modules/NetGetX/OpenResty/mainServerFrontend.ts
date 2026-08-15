@@ -105,3 +105,51 @@ export function copyPackageMainServerUiToLocalDist(): { copied: boolean; from: s
     fs.cpSync(from, to, { recursive: true, force: true });
     return { copied: true, from, to };
 }
+
+export interface SyncHtmlRootResult {
+    copied: boolean;
+    to: string;
+    from?: string;
+    reason?: string;
+}
+
+/**
+ * Mirrors the active Main Server UI build into `${xConfig}/html` — the
+ * directory nginx.conf's plain-HTTP `location /` Lua handler serves
+ * `index.html` from directly (see setNginxConfigFile.ts) for
+ * local.netget/localhost/127.0.0.1 and as the last-resort fallback once a
+ * public main domain is set. Without this, that path is a 404: nothing else
+ * writes an index.html there, so netget's own entry point depends entirely
+ * on whichever domain-map route happens to also be registered for those
+ * hosts. This makes it a real, netget-owned index independent of that.
+ *
+ * No-op in `dev` mode: there's nothing to copy, the panel is proxied live
+ * from the Vite dev server instead.
+ */
+export function syncMainServerFrontendToHtmlRoot(): SyncHtmlRootResult {
+    const to = path.join(getNetgetDataDir(), 'html');
+    const frontend = resolveMainServerFrontendConfig();
+
+    if (frontend.mode === 'dev') {
+        return { copied: false, to, reason: `dev mode proxies to ${frontend.devUrl} — nothing to copy` };
+    }
+
+    const from = getActiveStaticRoot(frontend);
+    if (!hasIndexHtml(from)) {
+        return { copied: false, to, from, reason: `no built index.html found at ${from}` };
+    }
+
+    const destIndex = path.join(to, 'index.html');
+    const srcIndex = path.join(from, 'index.html');
+    if (fs.existsSync(destIndex)) {
+        const srcStat = fs.statSync(srcIndex);
+        const destStat = fs.statSync(destIndex);
+        if (srcStat.mtimeMs <= destStat.mtimeMs && srcStat.size === destStat.size) {
+            return { copied: false, to, from, reason: 'already up to date' };
+        }
+    }
+
+    fs.mkdirSync(to, { recursive: true });
+    fs.cpSync(from, to, { recursive: true, force: true });
+    return { copied: true, to, from };
+}

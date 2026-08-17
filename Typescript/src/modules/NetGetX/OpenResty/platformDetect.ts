@@ -117,6 +117,13 @@ function layoutFromInstalledBinary(bin: string): OpenRestyLayout | null {
     const logDir = httpLogPath ? path.dirname(httpLogPath) : path.join(prefix, 'logs');
     const luaDir = path.join(prefix, 'lua');
     const lualibDir = path.join(path.dirname(prefix), 'lualib');
+    // Homebrew's openresty formula installs LuaRocks-managed modules
+    // (lua-resty-cookie, lua-resty-jwt) under a separate `site/lualib` tree,
+    // sibling to `lualib` — not merged into it. Handlers that `require
+    // "resty.cookie"`/`"resty.jwt"` fail with an uncaught Lua error (nginx
+    // surfaces this as a bare 500, not the handler's own error response)
+    // without this on the search path.
+    const siteLualibDir = path.join(path.dirname(prefix), 'site', 'lualib');
 
     let layoutKey: OpenRestyLayout['layoutKey'] = 'linux-source';
     if (confPath.startsWith('/opt/homebrew/')) layoutKey = 'homebrew-arm';
@@ -131,6 +138,8 @@ function layoutFromInstalledBinary(bin: string): OpenRestyLayout | null {
         configFilePath: confPath,
         luaDir,
         luaPackagePath: [
+            `${siteLualibDir}/?.lua`,
+            `${siteLualibDir}/?/init.lua`,
             `${lualibDir}/?.lua`,
             `${lualibDir}/?/init.lua`,
             `${luaDir}/?.lua`,
@@ -178,7 +187,7 @@ export function detectOpenRestyLayout(): OpenRestyLayout {
                 logDir:         '/opt/homebrew/var/log/nginx',
                 configFilePath: '/opt/homebrew/etc/openresty/nginx.conf',
                 luaDir:         '/opt/homebrew/opt/openresty/nginx/lua',
-                luaPackagePath: '/opt/homebrew/opt/openresty/lualib/?.lua;/opt/homebrew/opt/openresty/lualib/?/init.lua;/opt/homebrew/opt/openresty/nginx/lua/?.lua;/opt/homebrew/opt/openresty/nginx/lua/?/init.lua;;',
+                luaPackagePath: '/opt/homebrew/opt/openresty/site/lualib/?.lua;/opt/homebrew/opt/openresty/site/lualib/?/init.lua;/opt/homebrew/opt/openresty/lualib/?.lua;/opt/homebrew/opt/openresty/lualib/?/init.lua;/opt/homebrew/opt/openresty/nginx/lua/?.lua;/opt/homebrew/opt/openresty/nginx/lua/?/init.lua;;',
                 userDirective:  '',
                 isSupported:    true,
             };
@@ -192,7 +201,7 @@ export function detectOpenRestyLayout(): OpenRestyLayout {
                 logDir:         '/usr/local/var/log/nginx',
                 configFilePath: '/usr/local/etc/openresty/nginx.conf',
                 luaDir:         '/usr/local/opt/openresty/nginx/lua',
-                luaPackagePath: '/usr/local/opt/openresty/lualib/?.lua;/usr/local/opt/openresty/lualib/?/init.lua;/usr/local/opt/openresty/nginx/lua/?.lua;/usr/local/opt/openresty/nginx/lua/?/init.lua;;',
+                luaPackagePath: '/usr/local/opt/openresty/site/lualib/?.lua;/usr/local/opt/openresty/site/lualib/?/init.lua;/usr/local/opt/openresty/lualib/?.lua;/usr/local/opt/openresty/lualib/?/init.lua;/usr/local/opt/openresty/nginx/lua/?.lua;/usr/local/opt/openresty/nginx/lua/?/init.lua;;',
                 userDirective:  '',
                 isSupported:    true,
             };
@@ -205,7 +214,7 @@ export function detectOpenRestyLayout(): OpenRestyLayout {
             logDir:         `${brewPrefix}/var/log/nginx`,
             configFilePath: `${brewPrefix}/etc/openresty/nginx.conf`,
             luaDir:         `${brewPrefix}/opt/openresty/nginx/lua`,
-            luaPackagePath: `${brewPrefix}/opt/openresty/lualib/?.lua;${brewPrefix}/opt/openresty/lualib/?/init.lua;${brewPrefix}/opt/openresty/nginx/lua/?.lua;${brewPrefix}/opt/openresty/nginx/lua/?/init.lua;;`,
+            luaPackagePath: `${brewPrefix}/opt/openresty/site/lualib/?.lua;${brewPrefix}/opt/openresty/site/lualib/?/init.lua;${brewPrefix}/opt/openresty/lualib/?.lua;${brewPrefix}/opt/openresty/lualib/?/init.lua;${brewPrefix}/opt/openresty/nginx/lua/?.lua;${brewPrefix}/opt/openresty/nginx/lua/?/init.lua;;`,
             userDirective:  '',
             isSupported:    true,
         };

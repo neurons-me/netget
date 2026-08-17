@@ -27,6 +27,13 @@ export default defineConfig({
           { text: 'Custom Domains', link: '/custom-domains' },
         ],
       },
+      {
+        text: 'Signed Gateway Capabilities',
+        items: [
+          { text: 'Gateway Capability Model', link: '/GatewayCapabilityModel' },
+          { text: 'Capability Test Suite', link: '/EncryptedAudienceCapabilityTests' },
+        ],
+      },
     ],
     socialLinks: [{ icon: 'github', link: 'https://github.com/neurons-me/netget' }],
   },

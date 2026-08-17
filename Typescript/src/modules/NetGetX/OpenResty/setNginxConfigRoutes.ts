@@ -678,6 +678,51 @@ ${meshGatewayErrorLocation}
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
+    # Gateway capability model (Phase 1 prototype) — see
+    # docs/GatewayCapabilityModel.md. me_sig.lua verifies the request's
+    # Ed25519 proof (payload-bound: method+path+bodyHash+nonce+timestamp)
+    # and sets ngx.ctx.me_identity/me_scopes; the block below bridges those
+    # into nginx variables so proxy_set_header can forward them. The write
+    # itself, and the capability check ("does me_scopes include
+    # gateway:write:domain-metadata"), happen downstream in the daemon
+    # (backend/routes/localNetget.js) — never decided here. Unlike every
+    # other /domains* location above, this one has no Lua-side business
+    # logic to duplicate; Lua's job stops at verify-and-forward.
+    location = /domains/metadata {
+        if ($request_method = OPTIONS) { return 204; }
+        set $me_identity "";
+        set $me_scopes "[]";
+        # access_by_lua_file and access_by_lua_block are the same directive
+        # slot in nginx (can't declare both in one location), so this block
+        # loads me_sig.lua itself instead. Must use loadfile()() here, NOT
+        # dofile(): dofile() executes the chunk while still inside dofile's
+        # own C call frame, and me_sig.lua's deny() path calls ngx.exit(),
+        # which needs to yield — yielding across that C boundary aborts the
+        # request with a reset connection ("attempt to yield across C-call
+        # boundary", only ever hit when a proof is actually rejected here).
+        # loadfile() only compiles and returns a function; calling that
+        # function afterward is a plain Lua call with no C frame in between,
+        # so ngx.exit() can yield normally — same verification behavior as
+        # access_by_lua_file (used as-is by /check-auth), just invoked in a
+        # way that also lets this block continue past it.
+        access_by_lua_block {
+            local me_sig_chunk = loadfile("${layout.luaDir}/middleware/me_sig.lua")
+            me_sig_chunk()
+            ngx.var.me_identity = ngx.ctx.me_identity or ""
+            local cjson = require "cjson.safe"
+            ngx.var.me_scopes = cjson.encode(ngx.ctx.me_scopes or {})
+        }
+        proxy_pass http://127.0.0.1:3000/domains/metadata;
+${proxyHeaders}
+        proxy_set_header X-Netget-Identity $me_identity;
+        proxy_set_header X-Netget-Scopes $me_scopes;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
     # Issues a real Let's Encrypt cert for an already-registered domain via
     # netget provision-cert (netget.cli.ts -> certbotProvision.ts). Slow --
     # a real certbot round-trip, expect tens of seconds, not milliseconds.

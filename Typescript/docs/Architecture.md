@@ -29,6 +29,37 @@ When you visit `hostname.local`, you reach the node's gateway. NetGet reads `~/.
 
 ---
 
+## Frontends
+
+Two separate React apps can answer `local.netget` — never both at once. Which one is live is a config
+switch (`mainServerFrontendMode` in `xConfig.json`), not a matter of which files are newest.
+
+| | Main Server UI | Local Dev Admin |
+|---|---|---|
+| Source | `gui/app.tsx` | `src/htmls/Netget-REACT/frontend_local/` |
+| Stack | `this.gui` `Theme`/`Layout`, `Cleaker`, `Monad` — no router, one screen | `this.gui` `Theme`/`Layout`/`LeftBar` + React Router, full nav |
+| Views | `.me` identity orb (expands into Cleaker) + `MonadNamespaceCard` (mesh/claims) | `/` welcome, `/home` (`GatewayDashboard`), `/domains` (CRUD), `/logs` |
+| Built by | `gui/vite.app.config.ts` → `assets/main-server-ui/dist/` | `npm run dev` (Vite dev server, default `:5173`) |
+
+`mainServerFrontendMode` (`src/modules/NetGetX/OpenResty/mainServerFrontend.ts`) has three values, generated
+into the nginx `location /` block by `setNginxConfigRoutes.ts`:
+
+- **`package-dist`** (default) — nginx serves the built Main Server UI directly: `root $distRoot; try_files $uri /index.html;`.
+- **`local-dist`** — same, but from a locally-built copy at `~/.get/dist` instead of the packaged one.
+- **`dev`** — nginx instead `proxy_pass`es `/` to a live Vite dev server (`mainServerFrontendDevUrl`, default `http://127.0.0.1:5173`) — i.e. Local Dev Admin, reached live through the gateway instead of a build.
+
+`syncMainServerFrontendToHtmlRoot()` mirrors whichever build is active into `~/.get/html/` — the directory
+this doc's node diagram calls "landing page" above — so netget always has its own `index.html` there,
+independent of whatever else is registered in the domain map for `local.netget`/`localhost`/`127.0.0.1`.
+
+Both apps share netget's own compound library (`gui/src/{atoms,molecules,compounds}` — `GatewayDashboard`,
+`MonadMesh`, `GatewayCard`, etc.), so they're different shells around overlapping parts, not unrelated
+codebases. A third app, `frontend_remote`, existed alongside these but was never wired into the mode switch
+above or any build/deploy path — confirmed unreferenced anywhere except a stale `tsconfig.json` exclude
+entry pointing at a path that no longer existed — and was removed (2026-08-16).
+
+---
+
 ## Hot-reload architecture
 
 ```

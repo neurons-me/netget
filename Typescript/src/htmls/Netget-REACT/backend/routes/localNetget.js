@@ -227,4 +227,82 @@ router.get('/healthcheck', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString(), service: 'NetGet Local GUI' });
 });
 
+// ─── Gateway capability model (Phase 1 prototype) ──────────────────────────────
+// See docs/GatewayCapabilityModel.md. This route is the narrow daemon surface
+// decision 4 requires: nginx's me_sig.lua verifies the request's Ed25519
+// proof (identity + payload-bound signature) and forwards the *result* —
+// verified identity hash and granted scopes — as internal headers. This
+// route is where the capability *decision* is made and audited; nginx/Lua
+// never decides it. Deliberately narrow: only a domain's `description`, in a
+// sidecar file separate from domains.db, so nothing this endpoint writes can
+// change what a request to that domain actually resolves to.
+
+function domainMetadataPath() {
+    return runtimePath('domain-metadata.json');
+}
+
+function auditLogPath() {
+    return runtimePath('audit.log');
+}
+
+function writeJson(filePath, data) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+}
+
+// Append-only, one JSON object per line — never overwritten, matching the
+// "record the audit event" half of the capability decision.
+function appendAuditLog(entry) {
+    try {
+        const line = JSON.stringify({ ...entry, at: new Date().toISOString() }) + '\n';
+        fs.mkdirSync(path.dirname(auditLogPath()), { recursive: true });
+        fs.appendFileSync(auditLogPath(), line, 'utf8');
+    } catch {
+        // Audit logging must never block the actual request outcome.
+    }
+}
+
+router.post('/domains/metadata', (req, res) => {
+    const identity = String(req.header('X-Netget-Identity') || '').trim();
+    let scopes;
+    try {
+        scopes = JSON.parse(req.header('X-Netget-Scopes') || '[]');
+    } catch {
+        scopes = [];
+    }
+    if (!Array.isArray(scopes)) scopes = [];
+
+    const body = req.body || {};
+    const domain = typeof body.domain === 'string' ? body.domain.trim() : '';
+    const description = typeof body.description === 'string' ? body.description : '';
+    const auditBase = { action: 'gateway:write:domain-metadata', identity, domain };
+
+    // Identity absent means nginx didn't verify a proof for this request at
+    // all (e.g. hit directly, bypassing the /domains/metadata location) —
+    // reject rather than silently treat as anonymous-but-capable.
+    if (!identity) {
+        appendAuditLog({ ...auditBase, outcome: 'denied', reason: 'no verified identity forwarded' });
+        return res.status(401).json({ ok: false, error: 'IDENTITY_REQUIRED' });
+    }
+    if (!domain) {
+        return res.status(400).json({ ok: false, error: 'domain is required' });
+    }
+
+    // The capability decision: being a verified identity (A — can decrypt/
+    // authenticate) is not being granted this write (C). Two different
+    // checks, on purpose — this is the boundary the whole model exists to
+    // keep from collapsing.
+    if (!scopes.includes('gateway:write:domain-metadata')) {
+        appendAuditLog({ ...auditBase, outcome: 'denied', reason: 'missing gateway:write:domain-metadata scope', scopes });
+        return res.status(403).json({ ok: false, error: 'CAPABILITY_DENIED', required: 'gateway:write:domain-metadata' });
+    }
+
+    const metadata = readJson(domainMetadataPath()) || {};
+    metadata[domain] = { description, updatedBy: identity, updatedAt: new Date().toISOString() };
+    writeJson(domainMetadataPath(), metadata);
+
+    appendAuditLog({ ...auditBase, outcome: 'allowed', description });
+    return res.json({ ok: true, domain, description });
+});
+
 export default router;

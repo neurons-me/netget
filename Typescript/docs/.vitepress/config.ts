@@ -23,6 +23,7 @@ export default defineConfig({
           { text: 'Overview', link: '/' },
           { text: 'Architecture', link: '/Architecture' },
           { text: 'Domain Map', link: '/DomainMap' },
+          { text: 'Domain Store Split-Brain', link: '/DomainStoreSplitBrain' },
           { text: 'Placement', link: '/Placement' },
           { text: 'Custom Domains', link: '/custom-domains' },
         ],

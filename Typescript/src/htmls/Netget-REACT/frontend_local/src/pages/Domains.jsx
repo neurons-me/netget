@@ -36,9 +36,13 @@ import {
 import {
     Add as AddIcon,
     Delete as DeleteIcon,
+    Edit as EditIcon,
     Https as HttpsIcon,
+    Lock as LockIcon,
+    LockOpen as LockOpenIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
+import { deriveCleakerNode, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -79,6 +83,23 @@ async function deleteDomain(domain) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
+    return data;
+}
+
+// Capability-gated — requires an unlocked .me signing session. Whatever the
+// server answers (200, 403 CAPABILITY_DENIED, 401, ...) is surfaced verbatim;
+// this function does not interpret grants or decide anything on its own.
+async function editDomainMetadata(session, domain, description) {
+    const res = await signedRequest(session.node, session.hostname, '/domains/metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, description }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const detail = data.error ?? `${res.status}`;
+        throw new Error(data.required ? `${detail} — required: ${data.required}` : detail);
+    }
     return data;
 }
 
@@ -258,6 +279,167 @@ function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
     );
 }
 
+// ─── Unlock .me proof ─────────────────────────────────────────────────────────
+// Not a login. No cookie, no JWT, nothing persisted. This only loads signing
+// key material into memory (a Cleaker node bound to this gateway's hostname)
+// so this page can produce a real X-Me-Proof. It decides nothing about what
+// that identity is allowed to do — the server does, on every request.
+
+function UnlockDialog({ open, onClose, onUnlocked }) {
+    const [username, setUsername] = useState('');
+    const [secret, setSecret] = useState('');
+    const [unlocking, setUnlocking] = useState(false);
+    const [error, setError] = useState(null);
+
+    const handleClose = () => {
+        if (unlocking) return;
+        setSecret('');
+        setError(null);
+        onClose();
+    };
+
+    const handleSubmit = async () => {
+        if (!username.trim() || !secret) {
+            setError('Username and secret are both required.');
+            return;
+        }
+        setUnlocking(true);
+        setError(null);
+        try {
+            const hostname = await fetchGatewayHostname();
+            if (!hostname) throw new Error('Could not reach gateway. Is nginx running?');
+
+            const node = deriveCleakerNode(username.trim(), secret, hostname);
+            const res = await signedRequest(node, hostname, '/check-auth');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.authenticated) {
+                throw new Error(data.error ?? 'Proof did not verify against this gateway.');
+            }
+
+            onUnlocked({ node, hostname, identityHash: data.identityHash ?? '' });
+            setUsername('');
+            setSecret('');
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setUnlocking(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+            <DialogTitle>Unlock .me Proof</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.65 }}>
+                    Loads signing key material into memory for this tab only — not a login,
+                    nothing persisted. Lets this page produce a signed X-Me-Proof; the gateway
+                    still decides everything it&apos;s allowed to do.
+                </Typography>
+                <TextField
+                    label="Username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoFocus
+                    fullWidth
+                />
+                <TextField
+                    label="Secret"
+                    type="password"
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    fullWidth
+                />
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleClose} disabled={unlocking}>Cancel</Button>
+                <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={unlocking}
+                    startIcon={unlocking ? <CircularProgress size={14} /> : <LockOpenIcon />}
+                >
+                    {unlocking ? 'Unlocking…' : 'Unlock'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Edit Description Dialog ──────────────────────────────────────────────────
+// Calls the one capability-gated write this page knows about. Whatever the
+// server answers is shown as-is — no local guess at whether it'll succeed.
+
+function EditDescriptionDialog({ row, open, onClose, onSuccess, session }) {
+    const [description, setDescription] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (open) {
+            setDescription('');
+            setError(null);
+        }
+    }, [open]);
+
+    const handleClose = () => {
+        if (saving) return;
+        setError(null);
+        onClose();
+    };
+
+    const handleSubmit = async () => {
+        setSaving(true);
+        setError(null);
+        try {
+            const data = await editDomainMetadata(session, row.domain, description);
+            await onSuccess(data.description);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+            <DialogTitle>Edit Description</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.65 }}>
+                    {row?.domain}
+                </Typography>
+                <Typography variant="caption" sx={{ opacity: 0.5 }}>
+                    Not shown in the table below yet — this writes to a separate metadata record,
+                    read-back display is a follow-up.
+                </Typography>
+                <TextField
+                    label="Description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    autoFocus
+                    fullWidth
+                    multiline
+                    minRows={2}
+                />
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={handleClose} disabled={saving}>Cancel</Button>
+                <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={saving}
+                    startIcon={saving ? <CircularProgress size={14} /> : <EditIcon />}
+                >
+                    {saving ? 'Saving…' : 'Save'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
 // ─── Domains page ─────────────────────────────────────────────────────────────
 
 export default function Domains() {
@@ -270,6 +452,10 @@ export default function Domains() {
     const [provisionOpen, setProvisionOpen] = useState(null);
     const [certNotice, setCertNotice] = useState(null);
     const [deleteError, setDeleteError] = useState(null);
+    const [session, setSession] = useState(null);          // { node, hostname, identityHash } | null — never persisted
+    const [unlockOpen, setUnlockOpen] = useState(false);
+    const [editOpen, setEditOpen] = useState(null);         // row currently being edited
+    const [descriptionNotice, setDescriptionNotice] = useState(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -309,6 +495,10 @@ export default function Domains() {
         }
     };
 
+    const handleDescriptionSaved = async (description) => {
+        setDescriptionNotice(`Description saved: "${description}"`);
+    };
+
     return (
         <>
             <Box sx={{ px: 3, py: 2, maxWidth: 1100, mx: 'auto' }}>
@@ -321,7 +511,29 @@ export default function Domains() {
                             Registered domain → upstream routes. Changes hot-reload Nginx.
                         </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {session ? (
+                            <Tooltip title={`Unlocked — ${session.identityHash ? session.identityHash.slice(0, 12) : 'identity'}… Signing key stays in memory for this tab only.`}>
+                                <Chip
+                                    size="small"
+                                    icon={<LockOpenIcon fontSize="small" />}
+                                    label="Unlocked"
+                                    variant="outlined"
+                                    color="success"
+                                    onDelete={() => setSession(null)}
+                                    deleteIcon={<LockIcon fontSize="small" />}
+                                />
+                            </Tooltip>
+                        ) : (
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<LockOpenIcon />}
+                                onClick={() => setUnlockOpen(true)}
+                            >
+                                Unlock .me Proof
+                            </Button>
+                        )}
                         <Tooltip title="Refresh">
                             <IconButton onClick={load} disabled={loading}>
                                 <RefreshIcon />
@@ -336,6 +548,12 @@ export default function Domains() {
                         </Button>
                     </Box>
                 </Box>
+
+                {descriptionNotice && (
+                    <Alert severity="success" sx={{ mb: 2 }} onClose={() => setDescriptionNotice(null)}>
+                        {descriptionNotice}
+                    </Alert>
+                )}
 
                 {deleteError && (
                     <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDeleteError(null)}>
@@ -411,6 +629,17 @@ export default function Domains() {
                                                     />
                                                 </TableCell>
                                                 <TableCell align="right">
+                                                    <Tooltip title={session ? 'Edit description' : 'Unlock .me proof to attempt this'}>
+                                                        <span>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setEditOpen(row)}
+                                                                disabled={!session}
+                                                            >
+                                                                <EditIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </span>
+                                                    </Tooltip>
                                                     <Tooltip title={`${hasPublicCert(row) ? 'Renew' : 'Provision'} Let's Encrypt certificate`}>
                                                         <span>
                                                             <IconButton
@@ -464,6 +693,18 @@ export default function Domains() {
                 open={!!provisionOpen}
                 onClose={() => setProvisionOpen(null)}
                 onSuccess={handleCertProvisioned}
+            />
+            <UnlockDialog
+                open={unlockOpen}
+                onClose={() => setUnlockOpen(false)}
+                onUnlocked={setSession}
+            />
+            <EditDescriptionDialog
+                row={editOpen}
+                open={!!editOpen}
+                onClose={() => setEditOpen(null)}
+                onSuccess={handleDescriptionSaved}
+                session={session}
             />
         </>
     );

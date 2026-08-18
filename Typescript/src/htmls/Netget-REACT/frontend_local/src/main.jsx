@@ -29,5 +29,5 @@ mount(spec, '#root', {
   gui: {},
   React,
   ReactDOM,
-  devtools: { inspector: true, inspectorToggleVisible: true },
+  devtools: { inspector: false, inspectorToggleVisible: true },
 });

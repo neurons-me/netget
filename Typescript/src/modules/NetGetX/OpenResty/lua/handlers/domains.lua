@@ -145,9 +145,14 @@ local function list_domains()
   local sql = "SELECT domain, subdomain, email, sslMode, target, type, projectPath, owner FROM domains"
   local out = exec_sql(sql)
   if not out or out == "" then out = "[]" end
-  local domains = cjson.decode(out) or {}
-  if #domains == 0 then domains = cjson.empty_array end
-  ngx.say(cjson.encode({ success = true, domains = domains, count = #domains }))
+  local decoded = cjson.decode(out) or {}
+  -- cjson.decode("[]") returns the special cjson.empty_array sentinel, a
+  -- userdata value, NOT a plain table — #decoded would throw on it. Only
+  -- take the length of an actual Lua table; anything else (empty_array or
+  -- any other non-table decode result) means zero rows.
+  local count = (type(decoded) == "table") and #decoded or 0
+  local domains = (count == 0) and cjson.empty_array or decoded
+  ngx.say(cjson.encode({ success = true, domains = domains, count = count }))
 end
 
 local function list_subdomains(parent)

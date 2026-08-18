@@ -14,7 +14,15 @@ export default defineConfig({
 
   resolve: {
     // Force single copies of shared deps regardless of where the symlinked source resolves them.
-    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'this.gui', '@mui/material', '@emotion/react', '@emotion/styled'],
+    // react-router/react-router-dom included: without dedupe, this.gui's own
+    // copy and this app's own copy resolve to two separate module instances
+    // in a production (rollup) build — router hooks from one can't see the
+    // <BrowserRouter> context from the other, throwing "Cannot destructure
+    // property 'basename' of ... useContext(...) as it is null" at runtime.
+    // Vite's dev server doesn't hit this (its module resolution naturally
+    // converges duplicates), which is why this only surfaced after switching
+    // to a static production build.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-router', 'react-router-dom', 'this.gui', '@mui/material', '@emotion/react', '@emotion/styled'],
     alias: [
       { find: 'netget.gui/compounds', replacement: path.join(NETGET_GUI, 'compounds/index.ts') },
       { find: 'netget.gui/molecules', replacement: path.join(NETGET_GUI, 'molecules/index.ts') },

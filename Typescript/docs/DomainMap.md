@@ -2,6 +2,10 @@
 
 `~/.get/runtime/domain-map.json` is the live routing table for the node. OpenResty reads it every second via a Lua timer — no nginx reload required for routing changes.
 
+Generated exclusively from `kernel/domainStore.ts` (`.me`-kernel-backed). The separate, legacy
+SQLite-backed admin API (`/add-domain`, `/delete-domain`, etc.) does **not** feed into this file —
+see [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md) for the gap and its consequences.
+
 ---
 
 ## Format

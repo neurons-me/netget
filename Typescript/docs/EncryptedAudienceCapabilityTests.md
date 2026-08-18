@@ -51,6 +51,17 @@ and `C` are two different, separately-granted things. If this test alone regress
 collapsed back into "authenticated ⇒ can write," which is exactly the failure mode the algebra
 exists to rule out.
 
+**Proven twice, two different ways:**
+
+1. **Automated** — category 2, table below, row "No capability (the jewel)". Runs on every
+   `npm run test:capability-model` invocation, against a disposable, self-cleaning test identity.
+2. **UI** — netget's local admin panel (`Domains.jsx`), the same invariant with a real browser in
+   the loop instead of a Node test runner. See "UI-level confirmation" below.
+
+Both exercise the exact same server-side code path (`me_sig.lua` → `localNetget.js`'s
+`/domains/metadata` handler) — the UI proof isn't a separate implementation being separately
+trusted, it's the same one, reached a different way.
+
 ---
 
 ## Every test, and what it expects
@@ -109,6 +120,26 @@ more. Both directions of that boundary are tested.
 |---|---|---|
 | Lua rejects before the daemon sees it | `POST /domains/metadata` with no `X-Me-Proof` header at all | `401 ME_PROOF_REQUIRED`, in Lua's `deny()` response shape (`{error, message}` — no `required` field, distinguishing it from the daemon's own denial shape) |
 | Daemon refuses independently | The daemon (`localNetget.js`) hit directly on its own port, bypassing nginx/Lua entirely — no identity header present | `401 IDENTITY_REQUIRED` — the daemon does not trust an absent identity as license to proceed; defense in depth, not reliance on Lua alone |
+
+---
+
+## UI-level confirmation (manual)
+
+Not part of `npm run test:capability-model` — this is the same jewel invariant, confirmed by hand
+through a real browser, against the live gateway, so the claim isn't just "the API proves it" but
+"the thing an operator actually clicks proves it too." Client: `Domains.jsx`'s **Unlock .me Proof**
+control (`src/htmls/Netget-REACT/frontend_local/src/pages/Domains.jsx` —
+see its README for how the signing identity is derived).
+
+| Test | Setup | Expects | Confirmed |
+|---|---|---|---|
+| UI jewel test | Real browser, `local.netget`/`127.0.0.1`. **Unlock .me Proof** with a disposable, non-admin, no-grant identity. Edit-description on a real domain row, Save. | Dialog shows the server's own `CAPABILITY_DENIED — required: gateway:write:domain-metadata` verbatim — not a generic error, not a client-side guess, not a crash. | 2026-08-17 |
+
+What this rules out that the automated suite alone can't: any bug specific to the browser-side
+signing path (`this.gui/cleaker`'s `signedRequest`/`deriveCleakerNode`, extracted from
+`useCleakerAuth.ts`), and any temptation to gate the UI's edit control on displayed scopes instead
+of on whether a signing identity is loaded at all — confirmed the control disables only for the
+latter, and always lets a real attempt through to get the server's real answer.
 
 ---
 

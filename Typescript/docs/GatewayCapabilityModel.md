@@ -180,3 +180,23 @@ this suite exercise a rejected proof on `/domains/metadata`, which is exactly wh
 (always used a valid proof for both the negative-by-scope and positive cases) never caught it.
 Fixed by `loadfile()()` instead of `dofile()` — `loadfile` only compiles and returns a function,
 so invoking it is a plain Lua call with no C frame in between.
+
+---
+
+## Phase 2 — thin UI client (built)
+
+`Domains.jsx` (netget's local dev admin UI,
+`src/htmls/Netget-REACT/frontend_local/src/pages/Domains.jsx`) is a real client of this model, not
+a design sketch — **Unlock .me Proof** derives a `.me`/Cleaker identity from a username+secret
+(page-local React state, never persisted, cleared on reload) via a new pure, shared signing module
+(`signedRequest.ts`, exported as `this.gui/cleaker` — extracted from `useCleakerAuth.ts` so there's
+one implementation of the protocol, not two), then an edit-description action calls
+`POST /domains/metadata` with a real signed proof and renders the server's response verbatim — no
+capability logic, no scope interpretation, anywhere in React. The edit control disables only when
+no signing identity is loaded; it never gates on displayed scopes. Confirmed manually, end to end,
+through the live gateway (`local.netget`/`127.0.0.1`): an unlocked, real, non-admin, no-grant
+identity attempting the write got `403 CAPABILITY_DENIED` back from the server, shown as-is in the
+dialog — the UI-level instance of the same central invariant the automated suite proves.
+
+See `src/htmls/Netget-REACT/frontend_local/README.md` for exactly how that identity is derived and
+where in the page it lives.

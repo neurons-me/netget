@@ -39,7 +39,7 @@ switch (`mainServerFrontendMode` in `xConfig.json`), not a matter of which files
 | Source | `gui/app.tsx` | `src/htmls/Netget-REACT/frontend_local/` |
 | Stack | `this.gui` `Theme`/`Layout`, `Cleaker`, `Monad` — no router, one screen | `this.gui` `Theme`/`Layout`/`LeftBar` + React Router, full nav |
 | Views | `.me` identity orb (expands into Cleaker) + `MonadNamespaceCard` (mesh/claims) | `/` welcome, `/home` (`GatewayDashboard`), `/domains` (CRUD), `/logs` |
-| Built by | `gui/vite.app.config.ts` → `assets/main-server-ui/dist/` | `npm run dev` (Vite dev server, default `:5173`) |
+| Built by | `gui/vite.app.config.ts` → `assets/main-server-ui/dist/` | `npm run dev` (`:5173`, for `dev` mode) or `npm run build` → copy to `~/.get/dist` (for `local-dist` mode) |
 
 `mainServerFrontendMode` (`src/modules/NetGetX/OpenResty/mainServerFrontend.ts`) has three values, generated
 into the nginx `location /` block by `setNginxConfigRoutes.ts`:

@@ -43,7 +43,9 @@ This is live for one narrow, low-stakes action today: writing a domain's descrip
 (`gateway:write:domain-metadata`). Not routing, not restart, not certificate provisioning — those
 still run on the gateway's existing session-based auth, unchanged. Proven by a permanent,
 automated test suite that runs against the real gateway, using real signed requests — not a design
-sketch.
+sketch. It also has a real, thin UI client: an **Unlock .me Proof** control in netget's local admin
+panel loads a signing identity into memory (never persisted) and lets that page attempt the same
+signed write — with the server's actual decision, capability granted or not, always the one shown.
 
 This is also the first operational piece of a broader model netget is built on top of: `.me`'s
 theory of separating *encrypted audience* (who can decrypt/see a scope) from *capability* (what a

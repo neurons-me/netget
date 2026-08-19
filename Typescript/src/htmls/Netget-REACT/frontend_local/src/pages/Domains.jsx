@@ -307,8 +307,6 @@ function UnlockDialog({ open, onClose, onUnlocked }) {
         setError(null);
         try {
             const hostname = await fetchGatewayHostname();
-            if (!hostname) throw new Error('Could not reach gateway. Is nginx running?');
-
             const node = deriveCleakerNode(username.trim(), secret, hostname);
             const res = await signedRequest(node, hostname, '/check-auth');
             const data = await res.json().catch(() => ({}));

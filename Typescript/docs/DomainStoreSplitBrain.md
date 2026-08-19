@@ -1,16 +1,15 @@
 # Domain Store Split-Brain
 
-Architecture debt note, written while the shape is fresh (2026-08-17). Not fixed here — this is a
-record of a real gap found while wiring the [Gateway Capability Model](./GatewayCapabilityModel.md)'s
-UI, kept deliberately separate from that work. The capability model governs *who can write*; this
-note is about a different problem — *what "write" even means* for the admin `/domains` surface,
-because today it doesn't reliably mean anything to real routing.
+**Status: Fixed (2026-08-17).** Originally written as an architecture debt note the same day it was
+found, while wiring the [Gateway Capability Model](./GatewayCapabilityModel.md)'s UI, kept
+deliberately separate from that work. Migrated the same day, as its own separate change — the
+sections below describe the gap as it was, kept for the record, plus what actually closed it.
 
 ---
 
-## The gap
+## The gap (as it was)
 
-There are two independent, disconnected places domain data can live:
+There were two independent, disconnected places domain data could live:
 
 1. **`kernel/domainStore.ts`** — the intended source of truth. Genuinely `.me`-kernel-backed: domains
    are stored as kernel paths (`me.domains.<hostname>.target`, etc.), in `~/.get/kernel/snapshot.json`.
@@ -58,17 +57,33 @@ This predates and is unrelated to the Gateway Capability Model work. It's the sa
 kernel-backed rewrite and was never migrated, on either its auth or its storage. Both are legacy
 holdovers from before `domainStore.ts` existed, not deliberate design choices to keep two stores.
 
-## Future fix (not attempted here)
+## How it was fixed
 
-Migrate `/domains`, `/add-domain`, `/update-domain`, `/delete-domain`, and the cert/provision flows
-off `domains.lua`'s direct SQLite access, onto the same TypeScript/kernel-backed daemon path
-`domainStore.ts` already provides — the same direction of migration already underway for capability
-enforcement (Lua verifies and forwards, a narrow daemon surface decides and persists). Once both
-migrations land, `domains.lua` stops being a second, independent write path entirely.
+`domains.lua` deleted entirely (`lua/handlers/domains.lua`, source and the live installed copy).
+`/domains`, `GET /domains/:parent/subdomains`, `/add-domain`, `/update-domain`, `/delete-domain`,
+and `/provision-cert` are now nginx `location` blocks that `proxy_pass` to the daemon
+(`localNetget.js`), exactly the same shape as `location = /domains/metadata` — no Lua business
+logic left in any of them, verify-and-forward only (here, that's just "loopback-only," enforced by
+nginx itself, same trust model the daemon already used everywhere else).
 
-Until then: **do not trust `POST /add-domain` (or `/delete-domain`, `/update-domain`) to reflect real
-routing.** Verify with `netget generate-domain-map` or by inspecting `~/.get/runtime/domain-map.json`
-directly.
+The daemon's new routes call `kernel/domainStore.ts` directly — `getDomains`, `registerDomain`,
+`updateDomain`, `deleteDomain`, `getDomainByName` — the same kernel-backed store the `netget` CLI
+already used. One real wrinkle: `localNetget.js` is a standalone Express project outside the pnpm
+workspace, with zero TypeScript tooling, so it had no way to import a `.ts` file before this. Fixed
+by adding `tsx` and a `this.me` `file:` dependency to its own `package.json` (mirroring
+`frontend_local`'s `this.gui` dependency) and running it under `tsx` via PM2
+(`ecosystem.config.cjs`'s `interpreter` field) instead of plain `node` — no separate compile step to
+keep in sync, no subprocess-per-request cost.
+
+Because every mutating `domainStore.ts` function already calls `regenerateMap()` internally, this
+wasn't just relocating the split — `domain-map.json` now updates automatically on every write,
+closing the actual gap (`bump_domain_map_version()` used to bump a version file nothing then
+regenerated from). Verified directly: `POST /add-domain` through `local.netget`, and the new domain
+appeared in `~/.get/runtime/domain-map.json` immediately, with no manual
+`netget generate-domain-map` step — the regression test this doc exists to have.
+
+`GET /domain-target` (`domains.lua`'s `get_domain_target` action) was already dead — no nginx
+`location` referenced it — so it wasn't migrated, just dropped along with the rest of the file.
 
 ## Related
 

@@ -94,6 +94,7 @@ function NetGetShell() {
       }}
     >
       <Routes>
+        <Route path="/" element={<WelcomeNetget />} />
         <Route
           path="/home"
           element={<SpecBoundary registry={PAGE_WRAPPER_REGISTRY} spec={HOME_SPEC} />}
@@ -116,7 +117,6 @@ function NetGetShell() {
 const App = () => (
   <Router>
     <Routes>
-      <Route path="/" element={<WelcomeNetget />} />
       <Route path="/*" element={<NetGetShell />} />
     </Routes>
   </Router>

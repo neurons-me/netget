@@ -9,6 +9,10 @@
     "chalk": "^4.1.2",
     "cors": "^2.8.5",
     "dotenv-flow": "^4.1.0",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "this.me": "file:../../../../../../../me/Typescript"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
   }
 }

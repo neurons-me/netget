@@ -7,6 +7,12 @@ import 'this.gui/style.css';
 import './styles.css';
 import App from './App.jsx';
 
+// Tab title reflects whichever hostname actually loaded this page
+// (127.0.0.1, localhost, local.netget, ...) instead of a fixed
+// "local.netget" regardless of origin — index.html's static <title> was a
+// placeholder only, this is what actually wins once the app boots.
+document.title = window.location.hostname;
+
 // Bootstraps through mount() (instead of a plain createRoot().render()) so
 // this app's chrome participates in the Semantic Inspector graph — see
 // packages/GUI/Typescript/npx/template/src/runtime.tsx for the same pattern

@@ -14,6 +14,13 @@ import fs from "fs";
 import os from "os";
 import { execFile, execFileSync } from "child_process";
 import { parseLogLine } from "../proxy.js";
+import {
+    getDomains,
+    getDomainByName,
+    registerDomain,
+    updateDomain,
+    deleteDomain,
+} from "../../../../kernel/domainStore.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -303,6 +310,96 @@ router.post('/domains/metadata', (req, res) => {
 
     appendAuditLog({ ...auditBase, outcome: 'allowed', description });
     return res.json({ ok: true, domain, description });
+});
+
+// ─── Domain routing CRUD (kernel-backed) ───────────────────────────────────
+// Replaces the legacy SQLite-backed admin API that used to live entirely in
+// lua/handlers/domains.lua. Every mutating domainStore.ts function already
+// calls regenerateMap() internally, so domain-map.json — what OpenResty's
+// routing hot path actually reads — stays in sync automatically on every
+// write. Before this, a "successful" /add-domain could be completely
+// invisible to real routing: SQLite and the kernel were two independent
+// stores, and nothing regenerated domain-map.json from SQLite. See
+// docs/DomainStoreSplitBrain.md. Response shapes here are copied verbatim
+// from domains.lua's, so Domains.jsx needed zero changes for this migration.
+
+router.get('/domains', async (req, res) => {
+    const domains = await getDomains();
+    res.json({ success: true, domains, count: domains.length });
+});
+
+router.get('/domains/:parent/subdomains', async (req, res) => {
+    const parent = req.params.parent;
+    const domains = await getDomains();
+    const subdomains = domains.filter((d) => d.subdomain === parent && d.domain !== parent);
+    res.json({ subdomains });
+});
+
+router.post('/add-domain', async (req, res) => {
+    const body = req.body || {};
+    if (!body.domain) {
+        return res.status(400).json({ error: 'domain is required' });
+    }
+    try {
+        await registerDomain(
+            body.domain, body.subdomain, body.email, body.sslMode,
+            body.sslCertificate, body.sslCertificateKey, body.target,
+            body.type, body.projectPath, body.owner,
+        );
+    } catch {
+        return res.status(409).json({ error: 'Domain already exists' });
+    }
+    res.json({ success: true, domain: body.domain });
+});
+
+router.post('/update-domain', async (req, res) => {
+    const body = req.body || {};
+    if (!body.domain || !body.updatedFields) {
+        return res.status(400).json({ error: 'domain and updatedFields are required' });
+    }
+    const f = body.updatedFields;
+    await updateDomain(
+        body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
+        f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
+    );
+    res.json({ success: true, domain: body.domain });
+});
+
+router.post('/delete-domain', async (req, res) => {
+    const body = req.body || {};
+    const domain = body.domain;
+    if (!domain) {
+        return res.status(400).json({ error: 'domain is required' });
+    }
+    const existing = await getDomainByName(domain);
+    if (!existing) {
+        return res.status(404).json({ error: 'Domain not found' });
+    }
+    await deleteDomain(domain);
+    res.json({ success: true, domain });
+});
+
+// Existence check now goes through the same kernel-backed store as the CRUD
+// above (previously its own separate SQLite query in domains.lua) — the
+// actual provisioning work is unchanged: shells out to `netget provision-cert`
+// (netget.cli.ts -> certbotProvision.ts), same as /openresty-status etc.
+// above. Real certbot round-trip — expect tens of seconds, not milliseconds.
+router.post('/provision-cert', async (req, res) => {
+    const body = req.body || {};
+    const domain = typeof body.domain === 'string' ? body.domain.trim() : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!domain) {
+        return res.status(400).json({ error: 'domain is required and must be a valid hostname' });
+    }
+    if (!email) {
+        return res.status(400).json({ error: 'email is required and must be a valid address' });
+    }
+    const existing = await getDomainByName(domain);
+    if (!existing) {
+        return res.status(404).json({ error: 'Domain not registered — call /add-domain first' });
+    }
+    const result = await runNetgetCommand(['provision-cert', domain, '--email', email]);
+    res.status(result.ok ? 200 : 502).json(result);
 });
 
 export default router;

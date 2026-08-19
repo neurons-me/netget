@@ -3,6 +3,11 @@ module.exports = {
     {
       name: 'netget-proxy-dev',
       script: 'proxy.js',
+      // proxy.js itself is plain JS, but its routes now import domainStore.ts
+      // (kernel/domainStore.ts) directly — tsx transpiles that import on
+      // demand. Same reasoning as frontend_local's this.gui dependency: run
+      // the real source, no separate compiled-JS build step to keep in sync.
+      interpreter: './node_modules/.bin/tsx',
       instances: 1,
       exec_mode: 'fork',
       env: {

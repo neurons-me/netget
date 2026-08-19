@@ -74,15 +74,16 @@ Result: routing changes take effect in under 1 second, no nginx restart needed.
 
 ---
 
-## Known gap: domain store split-brain
+## Domain store: one path, not two
 
-`domain-map.json` above is generated exclusively from `kernel/domainStore.ts` (`.me`-kernel-backed —
-the intended source of truth). But the HTTP admin API behind `Domains.jsx`
-(`/domains`, `/add-domain`, `/update-domain`, `/delete-domain`, in `domains.lua`) writes to a
-completely separate, legacy SQLite database (`~/.get/domains.db`) that nothing regenerates
-`domain-map.json` from. A domain added through that admin API can report success and appear in its
-own list while staying invisible to real routing. Not fixed yet — full writeup in
-[DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md).
+`domain-map.json` above is generated exclusively from `kernel/domainStore.ts` (`.me`-kernel-backed).
+The HTTP admin API behind `Domains.jsx` (`/domains`, `/add-domain`, `/update-domain`,
+`/delete-domain`, `/domains/:parent/subdomains`, `/provision-cert`) goes through the same store now
+— nginx `proxy_pass`es each of those to the daemon (`localNetget.js`), which calls `domainStore.ts`
+directly, same shape as `/domains/metadata`. Used to write to a separate, legacy SQLite database
+(`~/.get/domains.db`) that nothing regenerated `domain-map.json` from — a domain added through the
+admin API could report success while staying invisible to real routing. Fixed 2026-08-17; full
+history in [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md).
 
 ---
 

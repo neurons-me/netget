@@ -6,16 +6,17 @@ Proof-of-concept doc. Written the day the circuit first worked end-to-end
 **See also** — this spans three packages; each has its own piece of the
 contract, cross-linked from here rather than duplicated:
 
-- [NRP v0.3.0 §9](../../../monad/Typescript/typedocs/NRP-v0.3.0.md#9-gateway-binding-notes) —
+- [NRP v0.3.0 §9](https://neurons-me.github.io/monad/Typescript/typedocs/NRP-v0.3.0.html#9-gateway-binding-notes) —
   where `/apps/:name`/`/monads/:name` sit in the gateway binding.
-- [NRP v0.3.0 §11](../../../monad/Typescript/typedocs/NRP-v0.3.0.md#11-websocket-binding-nrp) —
+- [NRP v0.3.0 §11](https://neurons-me.github.io/monad/Typescript/typedocs/NRP-v0.3.0.html#11-websocket-binding-nrp) —
   the full `/nrp` WebSocket message contract (`nrp.open`, `read`,
   `subscribe`, `data`, `stream`, …) that the "live-semantic loop" section
   below only summarizes.
-- [Mesh/status.md](../../../monad/Typescript/typedocs/Mesh/status.md#current-websocket-surface) —
+- [Mesh/status.md](https://neurons-me.github.io/monad/Typescript/typedocs/Mesh/status.html#current-websocket-surface) —
   current implementation status and known gaps for the monad side.
-- [this.gui Runtime-Contract §1](../../../../packages/GUI/Typescript/Runtime-Contract.md#me-runtime-live-over-a-network-monad) —
-  the client-side `createWsMeRuntime()` contract.
+- [this.gui Runtime-Contract §1](https://github.com/neurons-me/GUI/blob/main/Typescript/Runtime-Contract.md#me-runtime-live-over-a-network-monad) —
+  the client-side `createWsMeRuntime()` contract (not part of a built docs
+  site — GUI's typedocs doesn't include this file yet).
 
 ---
 

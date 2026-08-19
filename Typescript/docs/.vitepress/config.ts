@@ -26,6 +26,7 @@ export default defineConfig({
           { text: 'Domain Store Split-Brain', link: '/DomainStoreSplitBrain' },
           { text: 'Placement', link: '/Placement' },
           { text: 'Custom Domains', link: '/custom-domains' },
+          { text: 'Apps Over Netget', link: '/AppsOverNetget' },
         ],
       },
       {

@@ -23,8 +23,8 @@ import { getDomainMapPath } from '../../../runtime/domainMap.ts';
 // OpenResty worker processes run under launchd with a stripped-down PATH (no
 // nvm/homebrew bin dirs) and nginx clears inherited env vars entirely except
 // what's explicitly declared via `env` directives (HOME is not declared) —
-// so Lua handlers that shell out to the netget CLI (domains.lua, openresty.lua)
-// can't reliably rediscover it at request time via `which`/PATH lookups. This
+// so Lua handlers that shell out to the netget CLI (openresty.lua) can't
+// reliably rediscover it at request time via `which`/PATH lookups. This
 // Node process, running the actual netget CLI, still has a real PATH, so
 // resolve the absolute bin path once here and bake it into the generated
 // config as $NETGET_CLI_BIN — the same pattern already used for
@@ -155,12 +155,18 @@ ${netgetPanelErrorHandling}
     }
 `
     : `
-    # Root SPA served from selected Main Server UI dist
+    # Root SPA served from selected Main Server UI dist. index.html is
+    # deliberately never cached — it's the one file whose content decides
+    # which hashed asset filenames get loaded next; a stale cached copy of
+    # THIS specific file (not /assets/ below, already long-cached with
+    # immutable + expires 365d) is what makes a browser show an old build
+    # after a redeploy, silently, with no error to explain why.
     location / {
         if ($request_method = OPTIONS) { return 204; }
         root ${distRoot};
         index index.html;
         try_files $uri $uri/ /index.html;
+        add_header 'Cache-Control' 'no-cache' always;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -590,7 +596,14 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # Monad reverse proxy
+    # Monad reverse proxy — internal/infra route. Named by mechanism (which
+    # monad answers this), not by product. Kept for debugging/tooling; the
+    # public, user-facing route is /apps/:name below — both resolve through
+    # the exact same monad_proxy.lua handler today (an app is just "a monad,
+    # addressed publicly" for now), but /apps/:name is the one GUI/templates
+    # and end users should ever see or type, since not every future app is
+    # guaranteed to be a monad directly (a static surface, or netget's own
+    # built-in admin UI, could just as well answer at /apps/<name>).
     location ~ ^/monads/([^/]+)(/.*)?$ {
         if ($request_method = OPTIONS) { return 204; }
         set $monad_proxy_name $1;
@@ -601,6 +614,34 @@ ${viteAssetLocation}
 ${proxyHeaders}
         proxy_set_header X-NetGet-App-Kind monad;
         proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # App reverse proxy — the public, canonical route. Regex-matched, so it
+    # never shadows the exact-match /apps/report, /apps/catalog/* routes
+    # above (nginx always prefers an exact match over a regex match,
+    # regardless of file order). Same handler as /monads/:name today —
+    # nothing here assumes the target is a monad, monad_proxy.lua just
+    # happens to be the only backing implementation so far.
+    location ~ ^/apps/([^/]+)(/.*)?$ {
+        if ($request_method = OPTIONS) { return 204; }
+        set $monad_proxy_name $1;
+        set $monad_proxy_tail $2;
+        set $monad_proxy_target "";
+        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
+        proxy_pass $monad_proxy_target;
+${proxyHeaders}
+        proxy_set_header X-NetGet-App-Kind app;
+        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
     }
 ${meshGatewayErrorLocation}
 
@@ -625,23 +666,27 @@ ${meshGatewayErrorLocation}
         add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
     }
 
-    # Domains
+    # Domains — kernel-backed (domainStore.ts) via the daemon, same pattern as
+    # /domains/metadata below. Was content_by_lua_file into domains.lua
+    # (SQLite, io.popen) until the Domain Store Split-Brain migration — see
+    # docs/DomainStoreSplitBrain.md. No Lua business logic left here; verify
+    # (loopback-only, enforced by nginx itself) and forward only. Response
+    # shapes are unchanged from domains.lua's, so no frontend changes needed.
     location /domains {
         if ($request_method = OPTIONS) { return 204; }
-        set $domain_action list_domains;
-        content_by_lua_file lua/handlers/domains.lua;
+        proxy_pass http://127.0.0.1:3000/domains;
+${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
-        
+
     location ~ ^/domains/([^/]+)/subdomains$ {
         if ($request_method = OPTIONS) { return 204; }
-        set $parent_domain $1;
-        set $domain_action list_subdomains;
-        content_by_lua_file lua/handlers/domains.lua;
+        proxy_pass http://127.0.0.1:3000;
+${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -650,8 +695,8 @@ ${meshGatewayErrorLocation}
     }
     location /add-domain {
         if ($request_method = OPTIONS) { return 204; }
-        set $domain_action add_domain;
-        content_by_lua_file lua/handlers/domains.lua;
+        proxy_pass http://127.0.0.1:3000/add-domain;
+${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -660,8 +705,8 @@ ${meshGatewayErrorLocation}
     }
     location /update-domain {
         if ($request_method = OPTIONS) { return 204; }
-        set $domain_action update_domain;
-        content_by_lua_file lua/handlers/domains.lua;
+        proxy_pass http://127.0.0.1:3000/update-domain;
+${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -670,8 +715,8 @@ ${meshGatewayErrorLocation}
     }
     location /delete-domain {
         if ($request_method = OPTIONS) { return 204; }
-        set $domain_action delete_domain;
-        content_by_lua_file lua/handlers/domains.lua;
+        proxy_pass http://127.0.0.1:3000/delete-domain;
+${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
@@ -728,8 +773,8 @@ ${proxyHeaders}
     # a real certbot round-trip, expect tens of seconds, not milliseconds.
     location /provision-cert {
         if ($request_method = OPTIONS) { return 204; }
-        set $domain_action provision_cert;
-        content_by_lua_file lua/handlers/domains.lua;
+        proxy_pass http://127.0.0.1:3000/provision-cert;
+${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;

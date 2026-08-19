@@ -2,102 +2,122 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/index.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/hierarchy.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/classes/NetGet.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
+	</url>
+	<url>
+		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/MeNetgetClient.html</loc>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetAppHealth.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetAppLifecycle.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetAppOptions.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetAppRegistration.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetAppUi.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetConfig.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetExposurePolicy.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/NetGetSession.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/PortLease.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
+	</url>
+	<url>
+		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/interfaces/Surface.html</loc>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetAppKind.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetAppStatus.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetAuthMode.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetExposurePolicyInput.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetPublishMode.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetTlsMode.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/NetGetVisibility.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/PortLeaseMode.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/PortLeaseStatus.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
+	</url>
+	<url>
+		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/SurfaceKind.html</loc>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
+	</url>
+	<url>
+		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/types/SurfaceTrust.html</loc>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/variables/DEFAULT_NETGET_EXPOSURE_POLICY.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
+	</url>
+	<url>
+		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/functions/createMeNetgetClient.html</loc>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/functions/mergeNetGetExposurePolicy.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/functions/netget.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 	<url>
 		<loc>https://neurons-me.github.io/netget/Typescript/typedocs/api/functions/resolveNetGetExposurePolicy.html</loc>
-		<lastmod>2026-06-27T19:11:47.395Z</lastmod>
+		<lastmod>2026-08-19T20:23:07.577Z</lastmod>
 	</url>
 </urlset>

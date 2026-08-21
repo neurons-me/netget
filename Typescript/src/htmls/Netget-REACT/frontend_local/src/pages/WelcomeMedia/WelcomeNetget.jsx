@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Monad } from 'this.gui';
+import { Monad, Modal, Namespace } from 'this.gui';
 import './css/styles.css';
 
 // Network entrypoints — doors into this same netget resolver, not apps.
@@ -193,6 +193,13 @@ const WelcomeNetget = () => {
             tone: 'ok',
         },
     ]);
+    // The monad bubble is the resolved output of Total Monad Synthesis for
+    // this host — many registered candidates in apps.json, filtered down to
+    // the one that answers. Clicking it opens Namespace pointed at this same
+    // origin, so its own fetches (/__surface, /__bootstrap, /blockchain) go
+    // through that exact same synthesis again — you're looking at what the
+    // resolved bubble is actually made of, not a separately-looked-up monad.
+    const [meshOpen, setMeshOpen] = useState(false);
     const [mainView, setMainView] = useState(() => {
         const restoredView = readWindowState().mainView;
         return restoredView === 'terminal' ? 'terminal' : 'netget';
@@ -760,7 +767,18 @@ const WelcomeNetget = () => {
                     </div>
 
                     <div className="netget-monad-stage" aria-label="Monad entrypoint" ref={monadRef}>
-                        <div className={`netget-monad-bubble ${openrestyOnline ? 'netget-monad-bubble--on' : 'netget-monad-bubble--off'}`}>
+                        <div
+                            className={`netget-monad-bubble ${openrestyOnline ? 'netget-monad-bubble--on' : 'netget-monad-bubble--off'}`}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setMeshOpen(true)}
+                            onKeyDown={(event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                event.preventDefault();
+                                setMeshOpen(true);
+                            }}
+                            aria-label="Open the resolved monad's namespace"
+                        >
                             <Monad
                                 variant="identity"
                                 mode="contained"
@@ -807,6 +825,16 @@ const WelcomeNetget = () => {
             <div className={`netget-frame netget-frame--${mainView}`} aria-label="NetGet main view">
                 {mainView === 'terminal' ? renderTerminal('main') : renderNetgetConsole()}
             </div>
+
+            <Modal
+                open={meshOpen}
+                onClose={() => setMeshOpen(false)}
+                title="Resolved Namespace"
+                width="min(720px, 92vw)"
+                height="min(85vh, 900px)"
+            >
+                <Namespace endpoint={typeof window !== 'undefined' ? window.location.origin : ''} defaultTab="surface" />
+            </Modal>
         </div>
     );
 };

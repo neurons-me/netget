@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Monad, Modal, Namespace } from 'this.gui';
+import { Monad, Namespace } from 'this.gui';
 import './css/styles.css';
 
 // Network entrypoints — doors into this same netget resolver, not apps.
@@ -195,11 +195,13 @@ const WelcomeNetget = () => {
     ]);
     // The monad bubble is the resolved output of Total Monad Synthesis for
     // this host — many registered candidates in apps.json, filtered down to
-    // the one that answers. Clicking it opens Namespace pointed at this same
-    // origin, so its own fetches (/__surface, /__bootstrap, /blockchain) go
-    // through that exact same synthesis again — you're looking at what the
-    // resolved bubble is actually made of, not a separately-looked-up monad.
-    const [meshOpen, setMeshOpen] = useState(false);
+    // the one that answers. Clicking it rotates mainView to 'namespace', the
+    // same way clicking the terminal/netget dock rotates between those —
+    // not a modal on top, a third position in the same stage. Namespace is
+    // pointed at this same origin, so its own fetches (/__surface,
+    // /__bootstrap, /blockchain) go through that exact same synthesis again
+    // — you're looking at what the resolved bubble is actually made of, not
+    // a separately-looked-up monad.
     const [mainView, setMainView] = useState(() => {
         const restoredView = readWindowState().mainView;
         return restoredView === 'terminal' ? 'terminal' : 'netget';
@@ -712,6 +714,26 @@ const WelcomeNetget = () => {
         </button>
     );
 
+    const renderNamespaceView = () => (
+        <section className="netget-namespace" aria-label="Resolved monad namespace">
+            <div className="netget-namespace-header">
+                <button
+                    type="button"
+                    className="netget-namespace-back"
+                    onClick={() => setMainView('netget')}
+                >
+                    ← NetGet
+                </button>
+            </div>
+            <div className="netget-namespace-body">
+                <Namespace
+                    endpoint={typeof window !== 'undefined' ? window.location.origin : ''}
+                    defaultTab="surface"
+                />
+            </div>
+        </section>
+    );
+
     const renderNetgetConsole = () => (
         <section className="netget-console" aria-label="NetGet console">
             <div className="netget-body" ref={wireBodyRef}>
@@ -771,11 +793,11 @@ const WelcomeNetget = () => {
                             className={`netget-monad-bubble ${openrestyOnline ? 'netget-monad-bubble--on' : 'netget-monad-bubble--off'}`}
                             role="button"
                             tabIndex={0}
-                            onClick={() => setMeshOpen(true)}
+                            onClick={() => setMainView('namespace')}
                             onKeyDown={(event) => {
                                 if (event.key !== 'Enter' && event.key !== ' ') return;
                                 event.preventDefault();
-                                setMeshOpen(true);
+                                setMainView('namespace');
                             }}
                             aria-label="Open the resolved monad's namespace"
                         >
@@ -823,18 +845,12 @@ const WelcomeNetget = () => {
             </div>
 
             <div className={`netget-frame netget-frame--${mainView}`} aria-label="NetGet main view">
-                {mainView === 'terminal' ? renderTerminal('main') : renderNetgetConsole()}
+                {mainView === 'terminal'
+                    ? renderTerminal('main')
+                    : mainView === 'namespace'
+                        ? renderNamespaceView()
+                        : renderNetgetConsole()}
             </div>
-
-            <Modal
-                open={meshOpen}
-                onClose={() => setMeshOpen(false)}
-                title="Resolved Namespace"
-                width="min(720px, 92vw)"
-                height="min(85vh, 900px)"
-            >
-                <Namespace endpoint={typeof window !== 'undefined' ? window.location.origin : ''} defaultTab="surface" />
-            </Modal>
         </div>
     );
 };

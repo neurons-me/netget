@@ -323,6 +323,51 @@
     align-items: stretch;
 }
 
+.netget-frame.netget-frame--namespace {
+    width: min(760px, calc(100vw - 96px));
+    height: min(680px, calc(100vh - 96px));
+    align-items: stretch;
+    padding: 0;
+}
+
+.netget-namespace {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background: #f4f6f8;
+}
+
+.netget-namespace-header {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(37, 135, 232, 0.35);
+    background: #0b1017;
+}
+
+.netget-namespace-back {
+    border: 1px solid rgba(80, 171, 255, 0.4);
+    background: transparent;
+    color: #9fd3ff;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.netget-namespace-back:hover,
+.netget-namespace-back:focus-visible {
+    background: rgba(37, 135, 232, 0.16);
+}
+
+.netget-namespace-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    color: #111;
+}
+
 .netget-body {
     position: relative;
     display: flex;

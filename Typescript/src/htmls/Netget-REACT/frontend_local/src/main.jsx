@@ -1,7 +1,6 @@
 import React, { StrictMode } from 'react';
 import * as ReactDOM from 'react-dom/client';
 import { mount } from 'this.gui/runtime';
-import { CustomThemeProvider } from './context/ThemeContext.jsx';
 import { Theme } from 'this.gui';
 import 'this.gui/style.css';
 import './styles.css';
@@ -18,16 +17,23 @@ document.title = window.location.hostname;
 // packages/GUI/Typescript/npx/template/src/runtime.tsx for the same pattern
 // applied to the this.gui CLI template. App.jsx's router/pages are untouched
 // component references here; mount() only needs to own the outermost root.
+//
+// this.gui's own <Theme> already wraps its children in a real MUI
+// ThemeProvider + CssBaseline (see gui/Theme/Theme.tsx) — there used to be
+// a second, hand-rolled MUI ThemeProvider (CustomThemeProvider, from
+// context/ThemeContext.jsx) nested inside it. Nested ThemeProviders don't
+// merge, the inner one wins — so every this.gui component's `sx` theme
+// tokens (Namespace, Layout, ThemeLauncher, ...) had been resolving
+// against that separate hand-rolled theme instead of this.gui's own the
+// whole time, silently. CustomThemeProvider's only other export
+// (useThemeToggle) had zero consumers anywhere in this app — removed
+// outright rather than left half-wired.
 const spec = {
   type: StrictMode,
   children: {
     type: Theme,
     props: { 'data-gui-component': 'Theme' },
-    children: {
-      type: CustomThemeProvider,
-      props: { 'data-gui-component': 'CustomThemeProvider' },
-      children: { type: App, props: { 'data-gui-component': 'App' } },
-    },
+    children: { type: App, props: { 'data-gui-component': 'App' } },
   },
 };
 

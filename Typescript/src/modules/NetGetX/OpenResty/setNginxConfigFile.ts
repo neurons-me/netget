@@ -248,8 +248,8 @@ http {
     }
 
     server {
-        listen 443 ssl;
-        listen [::]:443 ssl;
+        listen 443 ssl default_server;
+        listen [::]:443 ssl default_server;
         server_name _;
 
         ssl_certificate     ${sslCertPath};

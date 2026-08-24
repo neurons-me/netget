@@ -80,7 +80,11 @@ function serverBlockFor(serverName: string): string {
 const mainPublicBlock = serverBlockFor(mainServerName);
 assert.match(mainPublicBlock, /try_files \$uri \$uri\/ \/index\.html;/);
 assert.match(mainPublicBlock, /content_by_lua_file lua\/handlers\/apps\.lua;/);
-assert.match(mainPublicBlock, /content_by_lua_file lua\/handlers\/domains\.lua;/);
+// Since the Domain Store Split-Brain fix, /domains proxy_passes straight to
+// the daemon (localNetget.js, kernel-backed domainStore.ts) — domains.lua
+// no longer exists.
+assert.match(mainPublicBlock, /location \/domains \{[\s\S]*?proxy_pass http:\/\/127\.0\.0\.1:3000\/domains;[\s\S]*?\}/);
+assert.doesNotMatch(mainPublicBlock, /content_by_lua_file lua\/handlers\/domains\.lua/);
 assert.doesNotMatch(mainPublicBlock, /surface_proxy\.lua/);
 assert.doesNotMatch(mainPublicBlock, /proxy_pass \$surface_proxy_target/);
 

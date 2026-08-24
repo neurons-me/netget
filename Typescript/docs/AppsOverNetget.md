@@ -218,6 +218,15 @@ generate).
 
 ## Known gaps — read before building a second app on this
 
+- **The frontend isn't served through netget — only the monad is.** Visiting
+  `local.netget/apps/:name` (or `<host>/apps/:name`) reaches the monad
+  directly, which answers with a minimal diagnostic page
+  ("monad provider shell loaded..."), not the app's real UI. The actual UI
+  only exists on its own dev port (e.g. Vite on `:5180`), reached directly —
+  which defeats the actual point of a semantic address (the user has to
+  know a port). Closing this means netget also proxying (dev) or serving
+  (built static bundle) the frontend under the same `/apps/:name` address,
+  so visiting one address is enough — nothing built yet.
 - **No real auth beyond loopback trust.** `/apps/:name` and `/monads/:name`
   rely on the same trust model every other loopback-only netget route uses
   today. Fine for local dev, not evaluated for anything beyond that.

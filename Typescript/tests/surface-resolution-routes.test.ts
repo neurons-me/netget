@@ -50,20 +50,22 @@ for (const route of ['openresty-status', 'openresty-restart', 'openresty-stop'])
 // existing domain CRUD locations must be untouched by this slice.
 assert.match(conf, /location = \/entrypoints[\s\S]*location = \/surfaces[\s\S]*location \/domains \{/);
 
-// Domain/cert routes are API endpoints. They must return domains.lua JSON and
-// must never fall back to the React SPA, otherwise callers get `<!DOCTYPE...`
-// and JSON parsing fails in the dashboard.
-for (const [marker, action] of [
-  ['location /domains {', 'list_domains'],
-  ['location ~ ^/domains/([^/]+)/subdomains$ {', 'list_subdomains'],
-  ['location /add-domain {', 'add_domain'],
-  ['location /update-domain {', 'update_domain'],
-  ['location /delete-domain {', 'delete_domain'],
-  ['location /provision-cert {', 'provision_cert'],
+// Domain/cert routes are API endpoints. Since the Domain Store Split-Brain
+// fix they proxy_pass straight to the daemon (localNetget.js, kernel-backed
+// domainStore.ts) — domains.lua no longer exists — but must still never fall
+// back to the React SPA, otherwise callers get `<!DOCTYPE...` and JSON
+// parsing fails in the dashboard.
+for (const [marker, path] of [
+  ['location /domains {', '/domains'],
+  ['location ~ ^/domains/([^/]+)/subdomains$ {', ''],
+  ['location /add-domain {', '/add-domain'],
+  ['location /update-domain {', '/update-domain'],
+  ['location /delete-domain {', '/delete-domain'],
+  ['location /provision-cert {', '/provision-cert'],
 ] as const) {
   const block = locationBlock(marker);
-  assert.match(block, new RegExp(`set \\$domain_action ${action};`));
-  assert.match(block, /content_by_lua_file lua\/handlers\/domains\.lua;/);
+  assert.match(block, new RegExp(`proxy_pass http://127\\.0\\.0\\.1:3000${path.replace(/\//g, '\\/')};`));
+  assert.doesNotMatch(block, /content_by_lua_file lua\/handlers\/domains\.lua/);
   assert.doesNotMatch(block, /try_files/);
 }
 

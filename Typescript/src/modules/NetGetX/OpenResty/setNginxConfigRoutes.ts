@@ -102,6 +102,84 @@ export function getNetgetAppConfContent(): string {
         proxy_intercept_errors on;
         error_page 502 503 504 = @mesh_gateway_error;`;
 
+  // /monads/:name and /apps/:name — the app-mesh reverse proxy, same
+  // monad_proxy.lua handler for both (see the per-location comments below).
+  // Shared across every server block that should be able to reach a
+  // registered app by name — not just the local.netget/admin alias block,
+  // but this machine's own hostname too (suis-macbook-air.local/apps/:name),
+  // so an app is reachable through the host's real namespace, not only
+  // through the loopback alias. Not wired into the NRP handle block
+  // ({handle}.hostname) — that block addresses .me identities, and an app
+  // is a virtual host/container, not an identity; conflating the two there
+  // is exactly the confusion this route split is meant to avoid.
+  const appMeshLocations = `
+    # Monad reverse proxy — internal/infra route. Named by mechanism (which
+    # monad answers this), not by product. Kept for debugging/tooling; the
+    # public, user-facing route is /apps/:name below — both resolve through
+    # the exact same monad_proxy.lua handler today (an app is just "a monad,
+    # addressed publicly" for now), but /apps/:name is the one GUI/templates
+    # and end users should ever see or type, since not every future app is
+    # guaranteed to be a monad directly (a static surface, or netget's own
+    # built-in admin UI, could just as well answer at /apps/<name>).
+    location ~ ^/monads/([^/]+)(/.*)?$ {
+        if ($request_method = OPTIONS) { return 204; }
+        set $monad_proxy_name $1;
+        set $monad_proxy_tail $2;
+        set $monad_proxy_target "";
+        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
+        proxy_pass $monad_proxy_target;
+${proxyHeaders}
+        proxy_set_header X-NetGet-App-Kind monad;
+        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
+        # The monad's own Express app sets a blanket 'Access-Control-Allow-Origin: *'
+        # (app.use(cors()) with no options) — nginx's add_header below does not
+        # replace an upstream response header, only appends, so without hiding
+        # it first the browser sees two Access-Control-Allow-Origin values and
+        # rejects the response outright. The specific-origin echo below is the
+        # one that's actually correct here anyway ('*' is invalid alongside
+        # Access-Control-Allow-Credentials: true per the CORS spec).
+        proxy_hide_header 'Access-Control-Allow-Origin';
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Forwarded-Host' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # App reverse proxy — the public, canonical route. Regex-matched, so it
+    # never shadows the exact-match /apps/report, /apps/catalog/* routes
+    # (only present in the admin-block copy of this same regex — those
+    # exact-match routes still take priority over the regex per nginx's
+    # matching order regardless of file order). Same handler as
+    # /monads/:name today — nothing here assumes the target is a monad,
+    # monad_proxy.lua just happens to be the only backing implementation
+    # so far.
+    location ~ ^/apps/([^/]+)(/.*)?$ {
+        if ($request_method = OPTIONS) { return 204; }
+        set $monad_proxy_name $1;
+        set $monad_proxy_tail $2;
+        set $monad_proxy_target "";
+        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
+        proxy_pass $monad_proxy_target;
+${proxyHeaders}
+        proxy_set_header X-NetGet-App-Kind app;
+        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
+        # The monad's own Express app sets a blanket 'Access-Control-Allow-Origin: *'
+        # (app.use(cors()) with no options) — nginx's add_header below does not
+        # replace an upstream response header, only appends, so without hiding
+        # it first the browser sees two Access-Control-Allow-Origin values and
+        # rejects the response outright. The specific-origin echo below is the
+        # one that's actually correct here anyway ('*' is invalid alongside
+        # Access-Control-Allow-Credentials: true per the CORS spec).
+        proxy_hide_header 'Access-Control-Allow-Origin';
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Forwarded-Host' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+`;
+
   // The local.netget/127.0.0.1/localhost control-plane block proxies its own
   // panel to the Vite dev server (devProxyTarget). When that dev server isn't
   // running — e.g. after a reboot/sleep, before `npm run dev` has been
@@ -596,53 +674,7 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # Monad reverse proxy — internal/infra route. Named by mechanism (which
-    # monad answers this), not by product. Kept for debugging/tooling; the
-    # public, user-facing route is /apps/:name below — both resolve through
-    # the exact same monad_proxy.lua handler today (an app is just "a monad,
-    # addressed publicly" for now), but /apps/:name is the one GUI/templates
-    # and end users should ever see or type, since not every future app is
-    # guaranteed to be a monad directly (a static surface, or netget's own
-    # built-in admin UI, could just as well answer at /apps/<name>).
-    location ~ ^/monads/([^/]+)(/.*)?$ {
-        if ($request_method = OPTIONS) { return 204; }
-        set $monad_proxy_name $1;
-        set $monad_proxy_tail $2;
-        set $monad_proxy_target "";
-        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
-        proxy_pass $monad_proxy_target;
-${proxyHeaders}
-        proxy_set_header X-NetGet-App-Kind monad;
-        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
-    }
-
-    # App reverse proxy — the public, canonical route. Regex-matched, so it
-    # never shadows the exact-match /apps/report, /apps/catalog/* routes
-    # above (nginx always prefers an exact match over a regex match,
-    # regardless of file order). Same handler as /monads/:name today —
-    # nothing here assumes the target is a monad, monad_proxy.lua just
-    # happens to be the only backing implementation so far.
-    location ~ ^/apps/([^/]+)(/.*)?$ {
-        if ($request_method = OPTIONS) { return 204; }
-        set $monad_proxy_name $1;
-        set $monad_proxy_tail $2;
-        set $monad_proxy_target "";
-        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
-        proxy_pass $monad_proxy_target;
-${proxyHeaders}
-        proxy_set_header X-NetGet-App-Kind app;
-        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
-    }
+${appMeshLocations}
 ${meshGatewayErrorLocation}
 
     # Slice 2 — read-only network entrypoints / semantic surfaces report.
@@ -925,6 +957,7 @@ ${sslDirectives}
     error_log  ${layout.logDir}/netget_error.log warn;
 ${vendorLocations}
 ${namespaceAssetLocations}
+${appMeshLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";

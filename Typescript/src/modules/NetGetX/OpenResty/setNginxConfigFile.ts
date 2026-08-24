@@ -685,3 +685,36 @@ export const setNginxConfigFile = async (): Promise<void> => {
         throw error;
     }
 };
+
+/**
+ * Non-interactive counterpart to setNginxConfigFile(): writes nginx.conf
+ * whenever it differs from the current template, no confirmation prompt.
+ *
+ * setNginxConfigFile()'s "offer to reset" UX makes sense for someone
+ * driving the interactive menu, but `netget init` already treats every
+ * other step (cert, netget_app.conf) as "always refresh so a git pull
+ * takes effect" — nginx.conf was the one file with no non-interactive path
+ * to pick up template changes at all, discovered when default_server and
+ * the wildcard cert-lookup fallback (both landed in buildNginxConfigContent)
+ * had to be hand-patched onto a live server because nothing regenerated it.
+ * Returns true if the file was written (created or updated).
+ */
+export const syncNginxConfigFile = async (): Promise<boolean> => {
+    const layout = detectOpenRestyLayout();
+    if (!layout.isSupported) return false;
+
+    const expectedContent = buildNginxConfigContent(layout);
+    const normalize = (s: string) => s.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim();
+
+    let actual: string | null = null;
+    try {
+        actual = fs.readFileSync(layout.configFilePath, 'utf8');
+    } catch (error: any) {
+        if (error.code !== 'ENOENT') throw error;
+    }
+
+    if (actual !== null && normalize(actual) === normalize(expectedContent)) return false;
+
+    await writeNginxConfigContent(layout, expectedContent);
+    return true;
+};

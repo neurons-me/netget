@@ -481,6 +481,7 @@ program
       const { loadOrCreateXConfig } = await import('./modules/NetGetX/config/xConfig.ts');
       const { ensureMkcertCert } = await import('./modules/NetGetX/Domains/SSL/mkcert/mkcert.ts');
       const includeNetgetAppConf = (await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts')).default;
+      const { syncNginxConfigFile } = await import('./modules/NetGetX/OpenResty/setNginxConfigFile.ts');
       const { installOpenRestyService, waitForOpenRestyGateway, getOpenRestyServiceStatus } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
       const { GatewayClaimsManager } = await import('./modules/NetGetX/Auth/GatewayClaimsManager.ts');
 
@@ -498,7 +499,14 @@ program
 
       process.stdout.write(chalk.cyan('[2/3] Gateway config… '));
       await includeNetgetAppConf();
-      console.log(chalk.green('✔'));
+      // nginx.conf itself (the MAIN_SERVER_NAME bypass, the SSL default_server
+      // and wildcard-cert-fallback fixes) has no other regeneration path —
+      // buildNginxConfigContent() previously had zero real callers, so a
+      // fixed template only ever reached a live server via a hand-patched
+      // SSH session. init now keeps it in sync the same way it already does
+      // for netget_app.conf.
+      const nginxConfChanged = await syncNginxConfigFile();
+      console.log(chalk.green('✔') + (nginxConfChanged ? chalk.gray(' (nginx.conf updated)') : ''));
 
       if (!isOnline) {
         process.stdout.write(chalk.cyan('[3/3] Starting gateway… '));

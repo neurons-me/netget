@@ -27,6 +27,8 @@ function createLegacyDb(): void {
         VALUES ('legacy-one.example', 'admin@neurons.me', 'letsencrypt', '/etc/letsencrypt/live/legacy-one.example/fullchain.pem', '/etc/letsencrypt/live/legacy-one.example/privkey.pem', '127.0.0.1:8181', 'server', 'owner-a');
         INSERT INTO domains (domain, email, sslMode, target, type, owner)
         VALUES ('legacy-two.example', 'admin@neurons.me', 'none', '127.0.0.1:8182', 'server', 'owner-b');
+        INSERT INTO domains (domain, email, sslMode, target, type, owner)
+        VALUES ('legacy-bareport.example', 'admin@neurons.me', 'none', '8181', 'server', 'owner-c');
         INSERT INTO domains (domain) VALUES ('');
     `;
     const r = spawnSync('sqlite3', [sqlitePath], { input: sql, encoding: 'utf8' });
@@ -42,7 +44,7 @@ const { getDomainMapPath } = await import('../src/runtime/domainMap.ts');
 // ── First run: migrates both real rows, skips the blank-domain row ────────
 const result = await migrateLegacyDomains(sqlitePath);
 assert.equal(result.ok, true, result.message);
-assert.equal(result.migrated, 2);
+assert.equal(result.migrated, 3);
 assert.equal(result.skipped, 1);
 assert.equal(result.errors.length, 0);
 
@@ -55,6 +57,12 @@ assert.equal(one?.owner, 'owner-a');
 const two = await getDomainByName('legacy-two.example');
 assert.equal(two?.target, '127.0.0.1:8182');
 
+// A bare-port target ("8181", no host) breaks proxy_pass construction
+// downstream ("http://" .. target -> "http://8181", a 502 for every
+// request) — must be normalized to 127.0.0.1:<port> during migration.
+const bareport = await getDomainByName('legacy-bareport.example');
+assert.equal(bareport?.target, '127.0.0.1:8181', 'bare-port target must be normalized to host:port');
+
 // ── domain-map.json regenerated with both, real cert path preserved ───────
 const map = JSON.parse(fs.readFileSync(getDomainMapPath(), 'utf8'));
 assert.ok(map.domains['legacy-one.example'], 'domain-map must include the migrated domain');
@@ -65,7 +73,7 @@ assert.equal(map.domains['legacy-two.example'].ssl.enabled, false, 'sslMode=none
 // ── Re-running is safe: upserts instead of "already exists" errors ────────
 const secondRun = await migrateLegacyDomains(sqlitePath);
 assert.equal(secondRun.ok, true, secondRun.message);
-assert.equal(secondRun.migrated, 2);
+assert.equal(secondRun.migrated, 3);
 assert.equal(secondRun.errors.length, 0);
 
 console.log('migrate-legacy-domains ok');

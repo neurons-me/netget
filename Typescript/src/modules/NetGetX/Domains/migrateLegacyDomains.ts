@@ -43,6 +43,19 @@ function readLegacyDomains(sqlitePath: string): LegacyDomainRow[] {
   return JSON.parse(trimmed) as LegacyDomainRow[];
 }
 
+// Legacy rows sometimes store `target` as a bare port number ("8181")
+// instead of "host:port" — found live on netget.site across 26 domains.
+// setNginxConfigFile.ts's proxy_pass construction does `"http://" ..
+// target`, so a bare port produces `http://8181` (tries to resolve a host
+// literally named "8181"), a 502 for every request to that domain — cert
+// and routing can both otherwise be perfectly correct and it won't matter.
+// Normalized here so every future migration gets this for free, not just
+// a one-off fix on this VM.
+function normalizeTarget(target: string | null | undefined): string | null | undefined {
+  if (target && /^\d+$/.test(target)) return `127.0.0.1:${target}`;
+  return target;
+}
+
 export interface MigrationResult {
   ok: boolean;
   message: string;
@@ -90,7 +103,7 @@ export async function migrateLegacyDomains(sqlitePath: string): Promise<Migratio
       row.sslMode ?? undefined,
       row.sslCertificate ?? undefined,
       row.sslCertificateKey ?? undefined,
-      row.target ?? undefined,
+      normalizeTarget(row.target) ?? undefined,
       row.type ?? undefined,
       row.projectPath ?? undefined,
       row.owner ?? undefined,

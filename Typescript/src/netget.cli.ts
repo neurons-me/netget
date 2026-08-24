@@ -417,6 +417,22 @@ program
   });
 
 program
+  .command('migrate-legacy-domains')
+  .description('One-time migration: copy every row from the legacy sqlite domains table into the kernel-backed domain store, then regenerate the domain-map. Safe to re-run (upserts).')
+  .option('--sqlite-path <path>', 'Path to the legacy domains.db', `${process.env.NETGET_DATA_DIR || (process.platform === 'linux' ? '/opt/.get' : '')}/domains.db`)
+  .action(async (opts: { sqlitePath: string }) => {
+    try {
+      const { migrateLegacyDomains } = await import('./modules/NetGetX/Domains/migrateLegacyDomains.ts');
+      const result = await migrateLegacyDomains(opts.sqlitePath);
+      console.log(result.ok ? chalk.green(result.message) : chalk.yellow(result.message));
+      process.exit(result.ok ? 0 : 1);
+    } catch (err: any) {
+      console.error(chalk.red(`migrate-legacy-domains failed: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
+  });
+
+program
   .command('claim')
   .description('Claim this gateway — establish your .me identity as the owner (first-run setup or key update)')
   .option('--reset', 'Force re-claim even if gateway is already claimed (updates Ed25519 key)')

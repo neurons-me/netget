@@ -131,36 +131,75 @@ export function ensureCertReadableByGatewayWorker(
     return { ok: true, message: `Gateway worker (${user}) granted read access to ${domain} certs.` };
 }
 
+/** DNS-01 providers with an automated certbot plugin wired up. Only 'google'
+ * is implemented today — it covers the majority of wildcard domains this
+ * gateway serves (Google Cloud DNS, via the VM's own service account, no
+ * credentials file to manage). Add providers here as real hosts show up. */
+export type DnsProvider = 'google';
+
+export interface ProvisionOptions {
+    /** Also request `*.<domain>` alongside `<domain>` itself. Requires a
+     * DNS-01 challenge (HTTP-01/webroot cannot validate wildcards) — must be
+     * paired with `dnsProvider`. */
+    wildcard?: boolean;
+    /** Which certbot DNS plugin to use for the DNS-01 challenge. Required
+     * when `wildcard` is true; ignored otherwise (non-wildcard always uses
+     * webroot/HTTP-01, unchanged from before this option existed). */
+    dnsProvider?: DnsProvider;
+}
+
 /**
- * Provision a Let's Encrypt cert for `domain` via certbot HTTP-01 webroot.
+ * Provision a Let's Encrypt cert for `domain`.
  *
+ * Default (no options): HTTP-01 via webroot — single domain, no wildcard.
  * Requirements:
  * - Port 80 must be reachable on the public internet for `domain`.
  * - The nginx port 80 block must serve /.well-known/acme-challenge/ from getAcmeWebroot()
  *   (setNginxConfigFile.ts already includes this location).
+ *
+ * `{ wildcard: true, dnsProvider: 'google' }`: DNS-01 via certbot-dns-google.
+ * Requests `<domain>` and `*.<domain>` in one certificate. No webroot
+ * involved — the plugin creates/removes the `_acme-challenge` TXT record
+ * itself via the Cloud DNS API, using the VM's own service account
+ * (Application Default Credentials) when `roles/dns.admin` is granted on
+ * the hosted zone. This is what makes wildcard renewal unattended: unlike
+ * `certbot certonly --manual --preferred-challenges dns` (the old wizard in
+ * letsEncrypt.ts / SSLCertificates.ts), which needs a human to paste a TXT
+ * record every ~90 days, this authenticator is written into the renewal
+ * config and `certbot renew` can satisfy it on its own from then on.
  */
-export async function provisionCert(domain: string, email: string): Promise<ProvisionResult> {
+export async function provisionCert(
+    domain: string,
+    email: string,
+    options: ProvisionOptions = {},
+): Promise<ProvisionResult> {
     if (!isCertbotInstalled()) {
         return { ok: false, message: 'certbot not found. Install with: sudo apt install certbot  OR  brew install certbot' };
     }
-
-    const webroot = getAcmeWebroot();
-    fs.mkdirSync(path.join(webroot, '.well-known', 'acme-challenge'), { recursive: true });
+    if (options.wildcard && !options.dnsProvider) {
+        return { ok: false, message: 'wildcard provisioning requires a dnsProvider (HTTP-01/webroot cannot validate wildcards).' };
+    }
 
     console.log(chalk.blue(`Provisioning Let's Encrypt cert for ${domain}…`));
-    console.log(chalk.gray(`  webroot: ${webroot}`));
     console.log(chalk.gray(`  email:   ${email}`));
 
-    const args = [
-        'certonly',
-        '--webroot',
-        '-w', webroot,
-        '-d', domain,
-        '--non-interactive',
-        '--agree-tos',
-        '-m', email,
-        '--expand',
-    ];
+    const args = ['certonly'];
+
+    if (options.wildcard) {
+        if (options.dnsProvider === 'google') {
+            args.push('--dns-google');
+        }
+        console.log(chalk.gray(`  challenge: dns-01 (${options.dnsProvider})`));
+        console.log(chalk.gray(`  domains: ${domain}, *.${domain}`));
+        args.push('-d', domain, '-d', `*.${domain}`);
+    } else {
+        const webroot = getAcmeWebroot();
+        fs.mkdirSync(path.join(webroot, '.well-known', 'acme-challenge'), { recursive: true });
+        console.log(chalk.gray(`  webroot: ${webroot}`));
+        args.push('--webroot', '-w', webroot, '-d', domain);
+    }
+
+    args.push('--non-interactive', '--agree-tos', '-m', email, '--expand');
 
     const r = spawnSync('sudo', ['certbot', ...args], { stdio: 'inherit' });
     if (r.error || r.status !== 0) {

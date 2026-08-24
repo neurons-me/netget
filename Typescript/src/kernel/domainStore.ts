@@ -92,6 +92,11 @@ export interface DomainRecord {
   rootDomain?: string;
   owner?: string;
   nginxConfig?: string;
+  /** Wildcard cert requested, and which certbot DNS-01 plugin to use to
+   * provision/renew it unattended. Matches certbotProvision.ts's
+   * DnsProvider union — kept as a plain string here (not imported) so the
+   * kernel-backed store has no dependency on the SSL provisioning module. */
+  dnsProvider?: string;
 }
 
 export interface DomainConfigResult {
@@ -133,6 +138,7 @@ function readDomainRecord(me: InstanceType<typeof ME>, domain: string): DomainRe
     rootDomain:      (me as any)(`domains.${key}.rootDomain`),
     owner:           (me as any)(`domains.${key}.owner`),
     nginxConfig:     (me as any)(`domains.${key}.nginxConfig`),
+    dnsProvider:     (me as any)(`domains.${key}.dnsProvider`),
   };
 }
 
@@ -198,6 +204,7 @@ function collectDomainKeys(me: InstanceType<typeof ME>): Set<string> {
     'registered',
     'subdomain',
     'sslMode',
+    'dnsProvider',
     'target',
     'owner',
     'email',
@@ -321,7 +328,7 @@ export async function deleteDomain(domain: string): Promise<void> {
   const key = domainKey(domain);
   // Tombstone all known fields under this domain
   const fields = ['target','type','subdomain','email','sslMode','sslCertificate',
-                  'sslCertificateKey','projectPath','rootDomain','owner','nginxConfig','registered'];
+                  'sslCertificateKey','projectPath','rootDomain','owner','nginxConfig','registered','dnsProvider'];
   for (const f of fields) {
     try { (me as any).domains[key]['-'](f); } catch { /* field may not exist */ }
   }
@@ -355,6 +362,12 @@ export async function storeConfigInDB(
   d.registered(true);
   saveKernel();
   await regenerateMap();
+}
+
+export async function updateDnsProvider(domain: string, dnsProvider: string): Promise<void> {
+  const me = getKernel();
+  (me as any).domains[domainKey(domain)].dnsProvider(dnsProvider);
+  saveKernel();
 }
 
 export async function updateSSLCertificatePaths(

@@ -289,6 +289,12 @@ http {
             if not map then return end
 
             local route = map.domains[host]
+            if not route then
+                local wildcard = host:match("[^.]+%.(.+)")
+                if wildcard then
+                    route = map.domains["*." .. wildcard]
+                end
+            end
             if not route or not route.ssl or not route.ssl.enabled then
                 return
             end

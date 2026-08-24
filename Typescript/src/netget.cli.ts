@@ -403,6 +403,20 @@ program
   });
 
 program
+  .command('sync-certs')
+  .description('Re-link every registered domain\'s cert/key paths from /etc/letsencrypt/live, fix gateway-worker read ACLs, and hot-reload nginx if anything changed. Called by the certbot renewal deploy hook (certbotProvision.ts) after every successful renewal — must exist as a real command, since the hook shells out to it non-interactively.')
+  .action(async () => {
+    try {
+      const { syncCertsFromLetsEncrypt } = await import('./modules/NetGetX/Domains/SSL/Certbot/certbotProvision.ts');
+      await syncCertsFromLetsEncrypt();
+      process.exit(0);
+    } catch (err: any) {
+      console.error(chalk.red(`sync-certs failed: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
+  });
+
+program
   .command('claim')
   .description('Claim this gateway — establish your .me identity as the owner (first-run setup or key update)')
   .option('--reset', 'Force re-claim even if gateway is already claimed (updates Ed25519 key)')

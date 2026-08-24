@@ -288,7 +288,7 @@ async function installRenewalHook(domain: string): Promise<void> {
 # Runs after every successful certbot renewal to update the netget domain-map
 # and gracefully reload OpenResty so the new cert is picked up immediately.
 set -e
-${netgetBin} ssl sync-certs 2>&1 || true
+${netgetBin} sync-certs 2>&1 || true
 openresty -s reload 2>/dev/null || nginx -s reload 2>/dev/null || true
 `;
 

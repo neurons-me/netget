@@ -19,15 +19,33 @@ export default defineConfig({
     // in a production (rollup) build — router hooks from one can't see the
     // <BrowserRouter> context from the other, throwing "Cannot destructure
     // property 'basename' of ... useContext(...) as it is null" at runtime.
-    // Vite's dev server doesn't hit this (its module resolution naturally
-    // converges duplicates), which is why this only surfaced after switching
-    // to a static production build.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-router', 'react-router-dom', 'this.gui', '@mui/material', '@emotion/react', '@emotion/styled'],
     alias: [
       { find: 'netget.gui/compounds', replacement: path.join(NETGET_GUI, 'compounds/index.ts') },
       { find: 'netget.gui/molecules', replacement: path.join(NETGET_GUI, 'molecules/index.ts') },
       { find: 'netget.gui/atoms',     replacement: path.join(NETGET_GUI, 'atoms/index.ts') },
       { find: 'netget.gui',           replacement: path.join(NETGET_GUI, 'index.ts') },
+      // `dedupe` alone does NOT converge these on Vite's dev server: this.gui
+      // is a symlinked package resolving @mui/material and friends through
+      // the pnpm monorepo's own store, while this app has its own plain
+      // `npm install`-ed copy — two different files on disk, so two separate
+      // module instances with two separate React Context objects. A `<Card>`
+      // imported directly here (as Domains.jsx/Logs.jsx do) never saw the
+      // this.gui `<Theme>`'s ThemeContext.Provider this way and silently fell
+      // back to MUI's bare default theme (white Paper, default text color) —
+      // confirmed via two different `.vite/deps/@mui_material.js` bundle
+      // hashes loaded simultaneously. Pinning both to this app's own
+      // installed copy makes every `@mui/material` import — from this app's
+      // own code and from this.gui's symlinked source alike — resolve to the
+      // exact same file, and therefore the exact same ThemeContext.
+      { find: '@mui/material', replacement: path.resolve(__dirname, 'node_modules/@mui/material') },
+      { find: '@mui/icons-material', replacement: path.resolve(__dirname, 'node_modules/@mui/icons-material') },
+      // Not installed directly under frontend_local/ — both hoist to
+      // netget/Typescript's own node_modules (confirmed via require.resolve,
+      // including from @mui/material's own internal resolution), so that's
+      // the one real copy to pin everyone to.
+      { find: '@emotion/react', replacement: path.resolve(__dirname, '../../../../node_modules/@emotion/react') },
+      { find: '@emotion/styled', replacement: path.resolve(__dirname, '../../../../node_modules/@emotion/styled') },
     ],
   },
 
@@ -60,6 +78,17 @@ export default defineConfig({
       '/openresty-status':  'http://127.0.0.1:3000',
       '/openresty-restart': 'http://127.0.0.1:3000',
       '/openresty-stop':    'http://127.0.0.1:3000',
+      // Domains.jsx + WelcomeNetget.jsx — added late (this allowlist wasn't
+      // updated when those pages/fetches were added), so these fell through
+      // to Vite's own SPA fallback (index.html, not JSON) whenever this dev
+      // server was hit directly instead of through netget's real gateway.
+      '/entrypoints':      'http://127.0.0.1:3000',
+      '/surfaces':         'http://127.0.0.1:3000',
+      '/domains':          'http://127.0.0.1:3000',
+      '/add-domain':       'http://127.0.0.1:3000',
+      '/delete-domain':    'http://127.0.0.1:3000',
+      '/provision-cert':   'http://127.0.0.1:3000',
+      '/check-auth':       'http://127.0.0.1:3000',
     },
   },
 });

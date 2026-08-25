@@ -47,10 +47,26 @@ import { useRegisterGuiNode } from 'this.gui';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
+// A non-JSON response (most often this dev server's own index.html, served
+// for any path it doesn't recognize — see vite.config.js's proxy allowlist)
+// makes a bare `res.json()` throw the raw "Unexpected token '<' ... is not
+// valid JSON" browser parse error verbatim. That's the underlying failure
+// mode, not this reporting it clearly — this names it instead.
+async function parseJsonResponse(res) {
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        throw new Error(
+            `Expected JSON from ${res.url}, got "${contentType || 'unknown content-type'}" ` +
+            `(HTTP ${res.status}). This route may not be reachable from this server.`
+        );
+    }
+    return res.json();
+}
+
 async function fetchDomains() {
     const res = await fetch('/domains');
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     return Array.isArray(data.domains) ? data.domains : [];
 }
 
@@ -60,7 +76,7 @@ async function addDomain({ domain, target, type, email }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, target, type, email }),
     });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
 }
@@ -71,7 +87,7 @@ async function provisionCert({ domain, email }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, email }),
     });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? data.message ?? `${res.status}`);
     return data;
 }
@@ -82,7 +98,7 @@ async function deleteDomain(domain) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain }),
     });
-    const data = await res.json();
+    const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
 }

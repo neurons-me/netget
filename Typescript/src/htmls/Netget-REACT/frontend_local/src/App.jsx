@@ -8,6 +8,7 @@ import Domains from './pages/Domains.jsx';
 import MediaPage from './pages/Media/MediaPage.jsx';
 import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
+import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
 
 // Home/Domains/Logs are plain components that take no props, so they never
 // forward data-gui-node-id to any DOM element — a SpecBoundary spec'd
@@ -93,6 +94,14 @@ function NetGetShell() {
             props: {
               label: 'Theme',
               element: <ThemeLauncher />,
+              tooltip: false,
+            },
+          },
+          {
+            type: 'action',
+            props: {
+              label: 'Frontend Mode',
+              element: <FrontendModeLauncher />,
               tooltip: false,
             },
           },

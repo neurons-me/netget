@@ -78,6 +78,7 @@ export default defineConfig({
       '/openresty-status':  'http://127.0.0.1:3000',
       '/openresty-restart': 'http://127.0.0.1:3000',
       '/openresty-stop':    'http://127.0.0.1:3000',
+      '/frontend-mode':     'http://127.0.0.1:3000',
       // Domains.jsx + WelcomeNetget.jsx — added late (this allowlist wasn't
       // updated when those pages/fetches were added), so these fell through
       // to Vite's own SPA fallback (index.html, not JSON) whenever this dev

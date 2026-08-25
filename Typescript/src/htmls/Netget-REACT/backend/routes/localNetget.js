@@ -105,6 +105,24 @@ router.post("/openresty-stop", async (req, res) => {
     res.status(result.ok ? 200 : 502).json(result);
 });
 
+// ─── Main Server frontend mode (dev / local-dist / package-dist) ─────────────
+// Same `netget frontend-mode` CLI command the interactive menu already uses —
+// this is the HTTP door onto it, not a separate implementation, so the panel
+// toggle and the CLI can never drift out of sync with each other.
+router.get("/frontend-mode", async (req, res) => {
+    const result = await runNetgetCommand(["frontend-mode", "--json"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
+
+router.post("/frontend-mode", async (req, res) => {
+    const mode = String(req.body?.mode || "").trim();
+    if (mode !== "dev" && mode !== "local-dist" && mode !== "package-dist") {
+        return res.status(400).json({ ok: false, message: `Invalid mode: "${mode}". Use dev, local-dist, or package-dist.` });
+    }
+    const result = await runNetgetCommand(["frontend-mode", mode, "--json"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
+
 // ─── Gateway identity ────────────────────────────────────────────────────────
 // Reads the materialized claims snapshot — never calls .me at runtime.
 router.get("/gateway-identity", (req, res) => {

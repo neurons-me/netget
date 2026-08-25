@@ -435,7 +435,8 @@ program
 program
   .command('frontend-mode [mode]')
   .description('Switch the Main Server panel between dev (live Vite proxy), local-dist (~/.get/dist), and package-dist (bundled with the npm package) — no SSH-and-hand-edit required. Omit mode to print the current one.')
-  .action(async (mode?: string) => {
+  .option('--json', 'Print a single JSON line instead of colored text (for scripted/HTTP callers)')
+  .action(async (mode: string | undefined, opts: { json?: boolean }) => {
     try {
       const {
         resolveMainServerFrontendConfig,
@@ -445,6 +446,10 @@ program
 
       if (!mode) {
         const current = resolveMainServerFrontendConfig();
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, mode: current.mode, devUrl: current.devUrl, localDistRoot: current.localDistRoot, packageDistRoot: current.packageDistRoot }));
+          return;
+        }
         console.log(chalk.cyan(`Current mode: ${current.mode}`));
         console.log(chalk.gray(`  dev url:      ${current.devUrl}`));
         console.log(chalk.gray(`  local dist:   ${current.localDistRoot}`));
@@ -453,7 +458,12 @@ program
       }
 
       if (mode !== 'dev' && mode !== 'package-dist' && mode !== 'local-dist') {
-        console.error(chalk.red(`Invalid mode: ${mode}. Use dev, package-dist, or local-dist.`));
+        const message = `Invalid mode: ${mode}. Use dev, package-dist, or local-dist.`;
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: false, message }));
+          process.exit(1);
+        }
+        console.error(chalk.red(message));
         process.exit(1);
       }
 
@@ -466,7 +476,12 @@ program
 
       const layout = detectOpenRestyLayout();
       if (!layout.isSupported) {
-        console.log(chalk.yellow(`Mode set to ${mode}, but this platform has no OpenResty layout to reload — regenerate config manually.`));
+        const message = `Mode set to ${mode}, but this platform has no OpenResty layout to reload — regenerate config manually.`;
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, mode, reloaded: false, message }));
+          return;
+        }
+        console.log(chalk.yellow(message));
         return;
       }
 
@@ -475,13 +490,29 @@ program
       await writeFileWithFallback(destConf, getNetgetAppConfContent(), `write netget_app.conf at ${destConf}`);
 
       const syncResult = syncMainServerFrontendToHtmlRoot();
-
       const reloaded = await startOpenRestyOnce(true);
+
+      if (opts.json) {
+        console.log(JSON.stringify({
+          ok: true,
+          mode,
+          reloaded,
+          htmlRootSynced: !!syncResult.copied,
+          message: reloaded ? `Frontend mode set to ${mode}.` : `Frontend mode set to ${mode}, but reload may have failed — check OpenResty logs.`,
+        }));
+        return;
+      }
+
       console.log(chalk.green(`✔ Frontend mode set to ${mode}.`));
       if (syncResult.copied) console.log(chalk.gray(`  html root synced from ${syncResult.from}`));
       console.log(reloaded ? chalk.green('✔ Gateway reloaded.') : chalk.yellow('⚠ Reload may have failed — check OpenResty logs.'));
     } catch (err: any) {
-      console.error(chalk.red(`frontend-mode failed: ${err instanceof Error ? err.message : String(err)}`));
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: false, message }));
+        process.exit(1);
+      }
+      console.error(chalk.red(`frontend-mode failed: ${message}`));
       process.exit(1);
     }
   });

@@ -442,6 +442,7 @@ program
         resolveMainServerFrontendConfig,
         saveMainServerFrontendConfig,
         syncMainServerFrontendToHtmlRoot,
+        copyPackageMainServerUiToLocalDist,
       } = await import('./modules/NetGetX/OpenResty/mainServerFrontend.ts');
 
       if (!mode) {
@@ -468,6 +469,19 @@ program
       }
 
       await saveMainServerFrontendConfig({ mode });
+
+      // local-dist serves ~/.get/dist — a per-machine copy of the package
+      // build, not the package build itself. Switching modes never used to
+      // refresh that copy: copyPackageMainServerUiToLocalDist() existed but
+      // was only ever wired into the interactive menu's separate
+      // "copy-bundled" action, never called from here. Without this,
+      // switching to local-dist silently served whatever was last manually
+      // copied — possibly a build from days earlier — with no indication
+      // anything was stale.
+      let localDistCopy: { copied: boolean; from: string; to: string } | null = null;
+      if (mode === 'local-dist') {
+        localDistCopy = copyPackageMainServerUiToLocalDist();
+      }
 
       const { getNetgetAppConfContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
       const { writeFileWithFallback } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
@@ -498,12 +512,14 @@ program
           mode,
           reloaded,
           htmlRootSynced: !!syncResult.copied,
+          localDistCopied: !!localDistCopy?.copied,
           message: reloaded ? `Frontend mode set to ${mode}.` : `Frontend mode set to ${mode}, but reload may have failed — check OpenResty logs.`,
         }));
         return;
       }
 
       console.log(chalk.green(`✔ Frontend mode set to ${mode}.`));
+      if (localDistCopy?.copied) console.log(chalk.gray(`  ~/.get/dist refreshed from ${localDistCopy.from}`));
       if (syncResult.copied) console.log(chalk.gray(`  html root synced from ${syncResult.from}`));
       console.log(reloaded ? chalk.green('✔ Gateway reloaded.') : chalk.yellow('⚠ Reload may have failed — check OpenResty logs.'));
     } catch (err: any) {

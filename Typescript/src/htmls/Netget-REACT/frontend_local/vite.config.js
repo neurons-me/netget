@@ -50,7 +50,18 @@ export default defineConfig({
   },
 
   build: {
-    outDir: "../dist",
+    // The canonical production build location — this *is* what
+    // `mainServerFrontendMode: 'package-dist'`/`'local-dist'` serve
+    // (getPackageMainServerUiDistDir() in mainServerFrontend.ts), and what
+    // package.json's `files` list publishes. Used to point at "../dist"
+    // (Netget-REACT/dist), a location nothing else ever read — this app's
+    // own production build was silently never reaching either frontend
+    // mode. gui/src/app.tsx used to be the real source for this path; that
+    // was a second, unrelated admin app (no Domains/Logs/WelcomeNetget,
+    // none of this app's theme/inspector work) — retired in favor of this
+    // one build producing both dev and production.
+    outDir: "../../../../assets/main-server-ui/dist",
+    emptyOutDir: true,
     minify: "terser",
     terserOptions: {
       compress: { drop_console: true },

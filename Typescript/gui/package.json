@@ -37,7 +37,6 @@
     "build": "vite build && tsc -p tsconfig.build.json",
     "build:lib": "vite build",
     "build:types": "tsc -p tsconfig.build.json",
-    "build:app": "vite build --config vite.app.config.ts",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6007",
     "build-storybook": "storybook build -o storybook-static"

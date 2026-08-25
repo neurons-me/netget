@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
-import { Layout, ThemeLauncher } from 'this.gui';
+import { Layout, ThemeLauncher, LauncherPopoverProvider } from 'this.gui';
 import { DevToolsLauncher, SpecBoundary } from 'this.gui/devtools';
 import WelcomeNetget from './pages/WelcomeMedia/WelcomeNetget.jsx';
 import Home from './pages/Home.jsx';
@@ -81,6 +81,11 @@ function NetGetShell() {
             props: {
               label: 'Dev Tools',
               element: <DevToolsLauncher />,
+              // Both launchers already open their own hover popper — the
+              // rail's own label Tooltip would anchor to the same icon and
+              // collide with it otherwise (see LeftSidebarAction's
+              // `tooltip` prop doc, this.gui/runtime/LeftSidebarAction).
+              tooltip: false,
             },
           },
           {
@@ -88,6 +93,7 @@ function NetGetShell() {
             props: {
               label: 'Theme',
               element: <ThemeLauncher />,
+              tooltip: false,
             },
           },
         ],
@@ -115,11 +121,13 @@ function NetGetShell() {
 }
 
 const App = () => (
-  <Router>
-    <Routes>
-      <Route path="/*" element={<NetGetShell />} />
-    </Routes>
-  </Router>
+  <LauncherPopoverProvider>
+    <Router>
+      <Routes>
+        <Route path="/*" element={<NetGetShell />} />
+      </Routes>
+    </Router>
+  </LauncherPopoverProvider>
 );
 
 export default App;

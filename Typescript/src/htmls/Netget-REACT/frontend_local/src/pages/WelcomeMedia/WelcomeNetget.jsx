@@ -115,10 +115,6 @@ function nowStamp() {
     });
 }
 
-function entryLabel(method, target, status) {
-    return `${method} ${target} -> ${status}`;
-}
-
 function compactText(value, limit = 86) {
     const text = String(value || '').replace(/\s+/g, ' ').trim();
     return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
@@ -222,7 +218,9 @@ const WelcomeNetget = () => {
         {
             id: 'boot',
             at: nowStamp(),
-            text: entryLabel('BOOT', currentHost, 'watching'),
+            method: 'BOOT',
+            target: currentHost,
+            status: 'watching',
             detail: 'local request terminal online',
             tone: 'ok',
         },
@@ -283,13 +281,7 @@ const WelcomeNetget = () => {
 
     const addRequestEntry = useCallback((method, target, status, detail = '', tone = 'ok') => {
         const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const nextEntry = {
-            id,
-            at: nowStamp(),
-            text: entryLabel(method, target, status),
-            detail,
-            tone,
-        };
+        const nextEntry = { id, at: nowStamp(), method, target, status, detail, tone };
 
         setRequestEntries((entries) => [nextEntry, ...entries].slice(0, REQUEST_LIMIT));
     }, []);
@@ -640,8 +632,11 @@ const WelcomeNetget = () => {
         <div className="port-row" aria-label="NetGet listening ports">
             {portsWithStatus.map((item) => (
                 <div key={item.id} className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}>
-                    <span>{item.port}</span>
-                    <small>{item.label}</small>
+                    <span className="port-chip-dot" aria-hidden="true" />
+                    <span className="port-chip-text">
+                        <span className="port-chip-port">{item.port}</span>
+                        <small className="port-chip-label">{item.label}</small>
+                    </span>
                 </div>
             ))}
         </div>
@@ -656,7 +651,7 @@ const WelcomeNetget = () => {
         >
             <div className="terminal-header">
                 <span>netget://requests</span>
-                <strong>live</strong>
+                <strong><span className="terminal-live-dot" aria-hidden="true" />live</strong>
             </div>
 
             {renderPortRow()}
@@ -665,7 +660,9 @@ const WelcomeNetget = () => {
                 {requestEntries.map((entry) => (
                     <div key={entry.id} className={`terminal-line terminal-line--${entry.tone}`}>
                         <span className="terminal-time">{entry.at}</span>
-                        <span className="terminal-text">{entry.text}</span>
+                        <span className="terminal-method">{entry.method}</span>
+                        <span className="terminal-target">{entry.target}</span>
+                        <span className="terminal-status">{entry.status}</span>
                         {entry.detail && <span className="terminal-detail">{entry.detail}</span>}
                     </div>
                 ))}
@@ -820,8 +817,11 @@ const WelcomeNetget = () => {
                                 }}
                                 className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}
                             >
-                                <span>{item.port}</span>
-                                <small>{item.label}</small>
+                                <span className="port-chip-dot" aria-hidden="true" />
+                                <span className="port-chip-text">
+                                    <span className="port-chip-port">{item.port}</span>
+                                    <small className="port-chip-label">{item.label}</small>
+                                </span>
                             </div>
                         ))}
                         <button type="button" className="port-chip port-chip--add" onClick={handleAddPort} aria-label="Add a listening port">

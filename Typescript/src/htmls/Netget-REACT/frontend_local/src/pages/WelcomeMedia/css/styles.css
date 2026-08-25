@@ -30,9 +30,10 @@
 .netget-terminal {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
-    gap: 12px;
-    padding: 16px;
+    gap: 14px;
+    padding: 20px;
     border: 2px solid color-mix(in srgb, var(--gui-primary, #2587e8) 54%, transparent);
+    border-radius: 10px;
     background: var(--gui-bg-nav, #040a10);
     box-shadow:
         inset 0 0 0 1px rgba(84, 169, 255, 0.07),
@@ -41,7 +42,10 @@
 
 .netget-terminal--main {
     border: 0;
-    padding: 0;
+    /* Sits inside TabViews' own front-box border — this is the padding
+       between that border and the header/ports/lines below. Used to be 0,
+       which put the content flush against the frame. */
+    padding: 22px 24px;
     background: transparent;
     box-shadow: none;
 }
@@ -51,27 +55,71 @@
     height: 260px;
 }
 
+/* Parked preview tile: much narrower than the front view, so the full
+   [time][method][target][status] grid leaves almost no room for the
+   target path — it was collapsing to a sliver. Timestamps aren't the
+   point of a glance-sized preview; drop that column and give the other
+   three a bit more room each. */
+.netget-terminal--background .terminal-line {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 8px;
+}
+
+.netget-terminal--background .terminal-time {
+    display: none;
+}
+
+.netget-terminal--background .terminal-detail {
+    grid-column: 1 / -1;
+}
+
 .terminal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--gui-primary, #74b8ff) 20%, transparent);
     color: var(--gui-primary, #74b8ff);
     font-size: 0.76rem;
     font-weight: 800;
+    letter-spacing: 0.02em;
     line-height: 1;
 }
 
 .terminal-header strong {
     display: inline-flex;
     align-items: center;
-    min-height: 18px;
-    padding: 0 7px;
+    gap: 5px;
+    min-height: 20px;
+    padding: 0 8px;
     border: 1px solid var(--gui-success, #4de18d);
+    border-radius: 999px;
     color: #dcffe9;
-    background: rgba(77, 225, 141, 0.07);
+    background: color-mix(in srgb, var(--gui-success, #4de18d) 10%, transparent);
     font-size: 0.62rem;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.terminal-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gui-success, #4de18d);
+    box-shadow: 0 0 5px var(--gui-success, #4de18d);
+    animation: terminal-live-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes terminal-live-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .terminal-live-dot {
+        animation: none;
+    }
 }
 
 .port-row {
@@ -81,26 +129,46 @@
 }
 
 .port-chip {
-    min-height: 42px;
-    display: grid;
-    gap: 3px;
-    align-content: center;
-    padding: 7px 9px;
-    border: 2px solid currentColor;
-    background: color-mix(in srgb, var(--gui-text-primary, #dcecff) 8%, transparent);
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    border: 1.5px solid currentColor;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--gui-text-primary, #dcecff) 6%, transparent);
+    transition: background-color 140ms ease;
 }
 
-.port-chip span {
+.port-chip-dot {
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 5px currentColor;
+}
+
+.port-chip-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.port-chip-port {
     font-size: 1rem;
     font-weight: 900;
-    line-height: 1;
+    line-height: 1.15;
 }
 
-.port-chip small {
-    font-size: 0.62rem;
+.port-chip-label {
+    font-size: 0.6rem;
     font-weight: 800;
-    line-height: 1;
+    line-height: 1.15;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
+    opacity: 0.75;
 }
 
 .port-chip--on {
@@ -108,15 +176,24 @@
     box-shadow: 0 0 6px rgba(77, 225, 141, 0.12);
 }
 
+.port-chip--on .port-chip-label {
+    color: var(--gui-text-secondary, inherit);
+    opacity: 0.65;
+}
+
 .port-chip--off {
     color: #58606a;
+}
+
+.port-chip--off .port-chip-dot {
+    box-shadow: none;
 }
 
 .terminal-lines {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 2px;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -140,43 +217,96 @@
     border: 2px solid color-mix(in srgb, var(--gui-text-primary, #dcecff) 6%, transparent);
 }
 
+/* [time] [METHOD badge] [target, truncates] [status pill] on row one,
+   detail (indented to align under the method badge) on row two. The old
+   version joined method/target/status into one plain string and gave the
+   timestamp a fixed 64px column — "05:21:20 PM" alone is wider than that,
+   so it overran into the next column with no visible gap ("PM" glued to
+   "GET"). Separate elements + a wide-enough time column fixes both the
+   collision and gives each part its own visual weight. */
 .terminal-line {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
-    column-gap: 9px;
-    row-gap: 3px;
-    align-items: baseline;
-    padding-bottom: 6px;
+    grid-template-columns: 84px auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 5px;
+    padding: 7px 6px;
+    border-radius: 6px;
+    transition: background-color 120ms ease;
+}
+
+.terminal-line:not(:last-child) {
     border-bottom: 1px solid rgba(84, 169, 255, 0.08);
-    color: #b8d9f8;
-    font-size: 0.7rem;
-    line-height: 1.25;
+}
+
+.terminal-line:hover {
+    background: color-mix(in srgb, var(--gui-text-primary, #dcecff) 4%, transparent);
 }
 
 .terminal-time {
     color: var(--gui-text-secondary, #5f7d98);
+    font-size: 0.66rem;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.terminal-method {
+    justify-self: start;
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--gui-primary, #4aa8ff) 45%, transparent);
+    background: color-mix(in srgb, var(--gui-primary, #4aa8ff) 12%, transparent);
+    color: var(--gui-primary, #4aa8ff);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
     white-space: nowrap;
 }
 
-.terminal-text {
+.terminal-target {
     min-width: 0;
     overflow: hidden;
     color: var(--gui-text-primary, #e7f3ff);
-    font-weight: 800;
+    font-weight: 700;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+.terminal-status {
+    justify-self: end;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--gui-success, #4de18d) 14%, transparent);
+    color: var(--gui-success, #4de18d);
+    font-size: 0.62rem;
+    font-weight: 800;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .terminal-detail {
-    grid-column: 2;
+    grid-column: 2 / -1;
     min-width: 0;
     overflow: hidden;
     color: var(--gui-text-secondary, #6889a8);
+    font-size: 0.64rem;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.terminal-line--warn .terminal-text {
+.terminal-line--warn .terminal-method {
+    border-color: color-mix(in srgb, var(--gui-warning, #f4bf75) 45%, transparent);
+    background: color-mix(in srgb, var(--gui-warning, #f4bf75) 14%, transparent);
+    color: var(--gui-warning, #f4bf75);
+}
+
+.terminal-line--warn .terminal-status {
+    background: color-mix(in srgb, var(--gui-warning, #f4bf75) 16%, transparent);
+    color: var(--gui-warning, #f4bf75);
+}
+
+.terminal-line--warn .terminal-target {
     color: var(--gui-warning, #f4bf75);
 }
 

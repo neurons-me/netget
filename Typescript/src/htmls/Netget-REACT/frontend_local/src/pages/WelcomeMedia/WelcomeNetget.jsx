@@ -5,11 +5,10 @@ import './css/styles.css';
 // Node ids for the Semantic Inspector / Layout Grid dev tools. TabViews
 // registers its own chrome (root/parked strip/front box) automatically —
 // these cover the named regions *inside* whichever view is currently
-// front, which TabViews has no way to know about on its own. Kept as one
-// id per meaningful section (matching how ThemeLauncher/DevToolsLauncher
-// register themselves), not one per DOM element — full per-row coverage
-// (every port chip, every surface-history row) is a further step, not done
-// here.
+// front, which TabViews has no way to know about on its own. Every
+// repeated row (terminal log lines, port chips, surface-history rows) also
+// gets its own node — see TerminalLine/PortChip/SurfaceRow below — not
+// just these section-level containers.
 const NODE = {
     terminal: 'WelcomeNetget.terminal',
     netgetConsole: 'WelcomeNetget.netgetConsole',
@@ -41,6 +40,73 @@ const InfoTip = ({ text }) => (
         <span className="info-tip-bubble" role="tooltip">{text}</span>
     </span>
 );
+
+// Every repeated row gets its own inspector node — a hook can't live inside
+// the .map() that renders these (call count would vary with the list
+// length, breaking the rules of hooks), so each is its own component
+// instead of a render* closure.
+
+const TerminalLine = ({ entry }) => {
+    const nodeId = `${NODE.terminal}.line.${entry.id}`;
+    useRegisterGuiNode(nodeId, 'TerminalLine', NODE.terminal);
+    return (
+        <div
+            className={`terminal-line terminal-line--${entry.tone}`}
+            data-gui-node-id={nodeId}
+            data-gui-component="TerminalLine"
+        >
+            <span className="terminal-time">{entry.at}</span>
+            <span className="terminal-method">{entry.method}</span>
+            <span className="terminal-target">{entry.target}</span>
+            <span className="terminal-status">{entry.status}</span>
+            {entry.detail && <span className="terminal-detail">{entry.detail}</span>}
+        </div>
+    );
+};
+
+const PortChip = ({ item, nodeId, parentId, portRef }) => {
+    useRegisterGuiNode(nodeId, 'PortChip', parentId);
+    return (
+        <div
+            ref={portRef}
+            className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}
+            data-gui-node-id={nodeId}
+            data-gui-component="PortChip"
+        >
+            <span className="port-chip-dot" aria-hidden="true" />
+            <span className="port-chip-text">
+                <span className="port-chip-port">{item.port}</span>
+                <small className="port-chip-label">{item.label}</small>
+            </span>
+        </div>
+    );
+};
+
+const SurfaceRow = ({ row, surfaceRefs, onNavigate }) => {
+    const nodeId = `${NODE.addresses}.${row.surface}`;
+    useRegisterGuiNode(nodeId, 'SurfaceRow', NODE.addresses);
+    return (
+        <button
+            ref={(node) => {
+                if (node) surfaceRefs.current[row.surface] = node;
+            }}
+            type="button"
+            data-gui-node-id={nodeId}
+            data-gui-component="SurfaceRow"
+            className={[
+                'surface-history-item',
+                row.selected ? 'surface-history-item--selected' : '',
+                row.online ? 'surface-history-item--online' : 'surface-history-item--offline',
+            ].filter(Boolean).join(' ')}
+            disabled={row.disabled || !row.online}
+            onClick={() => onNavigate(row.surface)}
+            aria-current={row.selected ? 'true' : undefined}
+        >
+            <span className="surface-status-led" aria-hidden="true"><span className="surface-status-dot" /></span>
+            <span className="surface-name">{row.surface}</span>
+        </button>
+    );
+};
 
 function uniqueHosts(hosts) {
     return [...new Set(hosts.filter(Boolean))];
@@ -631,13 +697,12 @@ const WelcomeNetget = () => {
     const renderPortRow = () => (
         <div className="port-row" aria-label="NetGet listening ports">
             {portsWithStatus.map((item) => (
-                <div key={item.id} className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}>
-                    <span className="port-chip-dot" aria-hidden="true" />
-                    <span className="port-chip-text">
-                        <span className="port-chip-port">{item.port}</span>
-                        <small className="port-chip-label">{item.label}</small>
-                    </span>
-                </div>
+                <PortChip
+                    key={item.id}
+                    item={item}
+                    nodeId={`${NODE.terminal}.port.${item.id}`}
+                    parentId={NODE.terminal}
+                />
             ))}
         </div>
     );
@@ -658,13 +723,7 @@ const WelcomeNetget = () => {
 
             <div className="terminal-lines">
                 {requestEntries.map((entry) => (
-                    <div key={entry.id} className={`terminal-line terminal-line--${entry.tone}`}>
-                        <span className="terminal-time">{entry.at}</span>
-                        <span className="terminal-method">{entry.method}</span>
-                        <span className="terminal-target">{entry.target}</span>
-                        <span className="terminal-status">{entry.status}</span>
-                        {entry.detail && <span className="terminal-detail">{entry.detail}</span>}
-                    </div>
+                    <TerminalLine key={entry.id} entry={entry} />
                 ))}
             </div>
         </section>
@@ -728,27 +787,6 @@ const WelcomeNetget = () => {
         );
     };
 
-    const renderSurfaceRow = (row) => (
-        <button
-            key={row.surface}
-            ref={(node) => {
-                if (node) surfaceRefs.current[row.surface] = node;
-            }}
-            type="button"
-            className={[
-                'surface-history-item',
-                row.selected ? 'surface-history-item--selected' : '',
-                row.online ? 'surface-history-item--online' : 'surface-history-item--offline',
-            ].filter(Boolean).join(' ')}
-            disabled={row.disabled || !row.online}
-            onClick={() => navigateToSurface(row.surface)}
-            aria-current={row.selected ? 'true' : undefined}
-        >
-            <span className="surface-status-led" aria-hidden="true"><span className="surface-status-dot" /></span>
-            <span className="surface-name">{row.surface}</span>
-        </button>
-    );
-
     const renderNamespaceView = () => (
         <section
             className="netget-namespace"
@@ -810,19 +848,15 @@ const WelcomeNetget = () => {
                         data-gui-component="NetgetPorts"
                     >
                         {portsWithStatus.map((item) => (
-                            <div
+                            <PortChip
                                 key={item.id}
-                                ref={(node) => {
+                                item={item}
+                                nodeId={`${NODE.ports}.${item.id}`}
+                                parentId={NODE.ports}
+                                portRef={(node) => {
                                     if (node) portRefs.current[item.id] = node;
                                 }}
-                                className={`port-chip ${item.active ? 'port-chip--on' : 'port-chip--off'}`}
-                            >
-                                <span className="port-chip-dot" aria-hidden="true" />
-                                <span className="port-chip-text">
-                                    <span className="port-chip-port">{item.port}</span>
-                                    <small className="port-chip-label">{item.label}</small>
-                                </span>
-                            </div>
+                            />
                         ))}
                         <button type="button" className="port-chip port-chip--add" onClick={handleAddPort} aria-label="Add a listening port">
                             <span>+</span>
@@ -838,12 +872,16 @@ const WelcomeNetget = () => {
 
                         <div className="surface-history" aria-label="Netget entrypoints and semantic surfaces">
                             <div className="surface-group-label" aria-hidden="true">Network Entrypoints</div>
-                            {entrypointRows.map((row) => renderSurfaceRow(row))}
+                            {entrypointRows.map((row) => (
+                                <SurfaceRow key={row.surface} row={row} surfaceRefs={surfaceRefs} onNavigate={navigateToSurface} />
+                            ))}
 
                             {surfaceRows.length > 0 ? (
                                 <>
                                     <div className="surface-group-label" aria-hidden="true">Semantic Surfaces</div>
-                                    {surfaceRows.map((row) => renderSurfaceRow(row))}
+                                    {surfaceRows.map((row) => (
+                                        <SurfaceRow key={row.surface} row={row} surfaceRefs={surfaceRefs} onNavigate={navigateToSurface} />
+                                    ))}
                                 </>
                             ) : null}
                         </div>

@@ -1,6 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Monad, Namespace, TabViews } from 'this.gui';
+import { Monad, Namespace, TabViews, useRegisterGuiNode } from 'this.gui';
 import './css/styles.css';
+
+// Node ids for the Semantic Inspector / Layout Grid dev tools. TabViews
+// registers its own chrome (root/parked strip/front box) automatically —
+// these cover the named regions *inside* whichever view is currently
+// front, which TabViews has no way to know about on its own. Kept as one
+// id per meaningful section (matching how ThemeLauncher/DevToolsLauncher
+// register themselves), not one per DOM element — full per-row coverage
+// (every port chip, every surface-history row) is a further step, not done
+// here.
+const NODE = {
+    terminal: 'WelcomeNetget.terminal',
+    netgetConsole: 'WelcomeNetget.netgetConsole',
+    netgetHeader: 'WelcomeNetget.netgetConsole.header',
+    openrestyControl: 'WelcomeNetget.netgetConsole.openrestyControl',
+    ports: 'WelcomeNetget.netgetConsole.ports',
+    addresses: 'WelcomeNetget.netgetConsole.addresses',
+    monadStage: 'WelcomeNetget.netgetConsole.monadStage',
+    namespace: 'WelcomeNetget.namespace',
+};
 
 // Network entrypoints — doors into this same netget resolver, not apps.
 // Distinct from SEMANTIC SURFACES (real registered domains, below): an
@@ -164,6 +183,21 @@ const DEFAULT_PORTS = [
 ];
 
 const WelcomeNetget = () => {
+    // Registered unconditionally, top-level, regardless of which view is
+    // currently front/parked — render* below only attaches the matching
+    // data-gui-node-id when that section is actually in the DOM. Hooks
+    // can't live inside render*() themselves: TabViews calls a different
+    // subset of them (render() vs renderPreview()) depending on which view
+    // is active, so the call count/order would vary across renders.
+    useRegisterGuiNode(NODE.terminal, 'NetgetTerminal');
+    useRegisterGuiNode(NODE.netgetConsole, 'NetgetConsole');
+    useRegisterGuiNode(NODE.netgetHeader, 'NetgetConsoleHeader', NODE.netgetConsole);
+    useRegisterGuiNode(NODE.openrestyControl, 'OpenRestyControl', NODE.netgetHeader);
+    useRegisterGuiNode(NODE.ports, 'NetgetPorts', NODE.netgetConsole);
+    useRegisterGuiNode(NODE.addresses, 'NetgetAddresses', NODE.netgetConsole);
+    useRegisterGuiNode(NODE.monadStage, 'NetgetMonadStage', NODE.netgetConsole);
+    useRegisterGuiNode(NODE.namespace, 'NamespaceView');
+
     const currentHost = getCurrentHost();
     const currentPort = getCurrentPort();
     const seenLogKeys = useRef(new Set());
@@ -614,7 +648,12 @@ const WelcomeNetget = () => {
     );
 
     const renderTerminal = (variant) => (
-        <section className={`netget-terminal netget-terminal--${variant}`} aria-label="NetGet live request terminal">
+        <section
+            className={`netget-terminal netget-terminal--${variant}`}
+            aria-label="NetGet live request terminal"
+            data-gui-node-id={NODE.terminal}
+            data-gui-component="NetgetTerminal"
+        >
             <div className="terminal-header">
                 <span>netget://requests</span>
                 <strong>live</strong>
@@ -649,7 +688,12 @@ const WelcomeNetget = () => {
                 : 'STOPPED';
 
         return (
-            <div className="openresty-control" aria-label="OpenResty gateway control">
+            <div
+                className="openresty-control"
+                aria-label="OpenResty gateway control"
+                data-gui-node-id={NODE.openrestyControl}
+                data-gui-component="OpenRestyControl"
+            >
                 <div className="openresty-status">
                     <span className={`surface-status-led openresty-led openresty-led--${openrestyOnline ? 'on' : 'off'}`} aria-hidden="true">
                         <span className="surface-status-dot" />
@@ -709,7 +753,12 @@ const WelcomeNetget = () => {
     );
 
     const renderNamespaceView = () => (
-        <section className="netget-namespace" aria-label="Resolved monad namespace">
+        <section
+            className="netget-namespace"
+            aria-label="Resolved monad namespace"
+            data-gui-node-id={NODE.namespace}
+            data-gui-component="NamespaceView"
+        >
             <div className="netget-namespace-header">
                 <button
                     type="button"
@@ -729,7 +778,12 @@ const WelcomeNetget = () => {
     );
 
     const renderNetgetConsole = () => (
-        <section className="netget-console" aria-label="NetGet console">
+        <section
+            className="netget-console"
+            aria-label="NetGet console"
+            data-gui-node-id={NODE.netgetConsole}
+            data-gui-component="NetgetConsole"
+        >
             <div className="netget-body" ref={wireBodyRef}>
                 <svg className="netget-wires" aria-hidden="true">
                     {wirePaths.map((wire) => (
@@ -742,13 +796,22 @@ const WelcomeNetget = () => {
                     ))}
                 </svg>
 
-                <div className="netget-header">
+                <div
+                    className="netget-header"
+                    data-gui-node-id={NODE.netgetHeader}
+                    data-gui-component="NetgetConsoleHeader"
+                >
                     <div className="netget-word" aria-hidden="true">NETGET</div>
                     {renderOpenRestyControl()}
                 </div>
 
                 <div className="netget-layers" aria-label="NetGet request flow">
-                    <div className="netget-ports" aria-label="Listening ports">
+                    <div
+                        className="netget-ports"
+                        aria-label="Listening ports"
+                        data-gui-node-id={NODE.ports}
+                        data-gui-component="NetgetPorts"
+                    >
                         {portsWithStatus.map((item) => (
                             <div
                                 key={item.id}
@@ -766,7 +829,11 @@ const WelcomeNetget = () => {
                         </button>
                     </div>
 
-                    <div className="netget-addresses">
+                    <div
+                        className="netget-addresses"
+                        data-gui-node-id={NODE.addresses}
+                        data-gui-component="NetgetAddresses"
+                    >
                         <div className="surface-position-marker" title={currentHost} aria-label={`Current URL: ${currentHost}`}></div>
 
                         <div className="surface-history" aria-label="Netget entrypoints and semantic surfaces">
@@ -782,7 +849,13 @@ const WelcomeNetget = () => {
                         </div>
                     </div>
 
-                    <div className="netget-monad-stage" aria-label="Monad entrypoint" ref={monadRef}>
+                    <div
+                        className="netget-monad-stage"
+                        aria-label="Monad entrypoint"
+                        ref={monadRef}
+                        data-gui-node-id={NODE.monadStage}
+                        data-gui-component="NetgetMonadStage"
+                    >
                         <div
                             className={`netget-monad-bubble ${openrestyOnline ? 'netget-monad-bubble--on' : 'netget-monad-bubble--off'}`}
                             role="button"

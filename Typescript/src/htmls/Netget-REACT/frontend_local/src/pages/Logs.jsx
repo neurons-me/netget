@@ -31,10 +31,14 @@ import {
     Clear as ClearIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useRegisterGuiNode } from 'this.gui';
 
 const domains_route = "";   // same origin — nginx proxies to the Express backend
 
 const Logs = () => {
+    useRegisterGuiNode('Logs.header', 'LogsHeader');
+    useRegisterGuiNode('Logs.filters', 'LogsFilters');
+    useRegisterGuiNode('Logs.logsCard', 'LogsCard');
     const navigate = useNavigate();
     const location = useLocation();
     const [logs, setLogs] = useState([]);
@@ -204,7 +208,11 @@ const Logs = () => {
         <>
             <Box sx={{ px: 2, py: 2 }}>
                 {/* Header */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Box
+                    data-gui-node-id="Logs.header"
+                    data-gui-component="LogsHeader"
+                    sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}
+                >
                     <Box>
                         <Typography variant="h4" component="h1" gutterBottom>
                             Server Logs
@@ -241,7 +249,11 @@ const Logs = () => {
                 </Box>
 
                 {/* Controls */}
-                <Card sx={{ mb: 3 }}>
+                <Card
+                    data-gui-node-id="Logs.filters"
+                    data-gui-component="LogsFilters"
+                    sx={{ mb: 3 }}
+                >
                     <CardContent>
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
                             <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -356,7 +368,10 @@ const Logs = () => {
                 )}
 
                 {/* Logs Table */}
-                <Card>
+                <Card
+                    data-gui-node-id="Logs.logsCard"
+                    data-gui-component="LogsCard"
+                >
                     <CardContent>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                             <Typography variant="h6">

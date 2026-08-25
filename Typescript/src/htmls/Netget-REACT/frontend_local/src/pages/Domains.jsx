@@ -43,6 +43,7 @@ import {
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { deriveCleakerNode, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
+import { useRegisterGuiNode } from 'this.gui';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ async function editDomainMetadata(session, domain, description) {
 const EMPTY_FORM = { domain: '', target: '', type: 'proxy', email: '' };
 
 function AddDomainDialog({ open, onClose, onSuccess }) {
+    useRegisterGuiNode('Domains.addDialog', 'AddDomainDialog');
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -142,7 +144,14 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
     };
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <Dialog
+            open={open}
+            onClose={handleClose}
+            maxWidth="sm"
+            fullWidth
+            data-gui-node-id="Domains.addDialog"
+            data-gui-component="AddDomainDialog"
+        >
             <DialogTitle>Add Domain Route</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
                 <TextField
@@ -207,6 +216,7 @@ function hasPublicCert(row) {
 }
 
 function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
+    useRegisterGuiNode('Domains.provisionDialog', 'ProvisionCertDialog');
     const [email, setEmail] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -245,7 +255,14 @@ function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
     };
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <Dialog
+            open={open}
+            onClose={handleClose}
+            maxWidth="sm"
+            fullWidth
+            data-gui-node-id="Domains.provisionDialog"
+            data-gui-component="ProvisionCertDialog"
+        >
             <DialogTitle>
                 {hasPublicCert(row) ? 'Renew Certificate' : 'Provision Certificate'}
             </DialogTitle>
@@ -286,6 +303,7 @@ function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
 // that identity is allowed to do — the server does, on every request.
 
 function UnlockDialog({ open, onClose, onUnlocked }) {
+    useRegisterGuiNode('Domains.unlockDialog', 'UnlockDialog');
     const [username, setUsername] = useState('');
     const [secret, setSecret] = useState('');
     const [unlocking, setUnlocking] = useState(false);
@@ -326,7 +344,14 @@ function UnlockDialog({ open, onClose, onUnlocked }) {
     };
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <Dialog
+            open={open}
+            onClose={handleClose}
+            maxWidth="sm"
+            fullWidth
+            data-gui-node-id="Domains.unlockDialog"
+            data-gui-component="UnlockDialog"
+        >
             <DialogTitle>Unlock .me Proof</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
                 <Typography variant="body2" sx={{ opacity: 0.65 }}>
@@ -370,6 +395,7 @@ function UnlockDialog({ open, onClose, onUnlocked }) {
 // server answers is shown as-is — no local guess at whether it'll succeed.
 
 function EditDescriptionDialog({ row, open, onClose, onSuccess, session }) {
+    useRegisterGuiNode('Domains.editDialog', 'EditDescriptionDialog');
     const [description, setDescription] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -402,7 +428,14 @@ function EditDescriptionDialog({ row, open, onClose, onSuccess, session }) {
     };
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <Dialog
+            open={open}
+            onClose={handleClose}
+            maxWidth="sm"
+            fullWidth
+            data-gui-node-id="Domains.editDialog"
+            data-gui-component="EditDescriptionDialog"
+        >
             <DialogTitle>Edit Description</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
                 <Typography variant="body2" sx={{ opacity: 0.65 }}>
@@ -441,6 +474,9 @@ function EditDescriptionDialog({ row, open, onClose, onSuccess, session }) {
 // ─── Domains page ─────────────────────────────────────────────────────────────
 
 export default function Domains() {
+    useRegisterGuiNode('Domains.header', 'DomainsHeader');
+    useRegisterGuiNode('Domains.sessionControl', 'DomainsSessionControl', 'Domains.header');
+    useRegisterGuiNode('Domains.routesCard', 'DomainsRoutesCard');
     const [domains, setDomains] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -502,14 +538,22 @@ export default function Domains() {
             <Box sx={{ px: 3, py: 2, maxWidth: 1100, mx: 'auto' }}>
 
                 {/* Header */}
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+                <Box
+                    data-gui-node-id="Domains.header"
+                    data-gui-component="DomainsHeader"
+                    sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}
+                >
                     <Box>
                         <Typography variant="h5" fontWeight={700}>Domains</Typography>
                         <Typography variant="body2" sx={{ opacity: 0.5, mt: 0.25 }}>
                             Registered domain → upstream routes. Changes hot-reload Nginx.
                         </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                        data-gui-node-id="Domains.sessionControl"
+                        data-gui-component="DomainsSessionControl"
+                        sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
                         {session ? (
                             <Tooltip title={`Unlocked — ${session.identityHash ? session.identityHash.slice(0, 12) : 'identity'}… Signing key stays in memory for this tab only.`}>
                                 <Chip
@@ -572,7 +616,11 @@ export default function Domains() {
                 )}
 
                 {/* Table */}
-                <Card variant="outlined">
+                <Card
+                    variant="outlined"
+                    data-gui-node-id="Domains.routesCard"
+                    data-gui-component="DomainsRoutesCard"
+                >
                     <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
                         {loading && domains.length === 0 ? (
                             <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>

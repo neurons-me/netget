@@ -433,6 +433,60 @@ program
   });
 
 program
+  .command('frontend-mode [mode]')
+  .description('Switch the Main Server panel between dev (live Vite proxy), local-dist (~/.get/dist), and package-dist (bundled with the npm package) — no SSH-and-hand-edit required. Omit mode to print the current one.')
+  .action(async (mode?: string) => {
+    try {
+      const {
+        resolveMainServerFrontendConfig,
+        saveMainServerFrontendConfig,
+        syncMainServerFrontendToHtmlRoot,
+      } = await import('./modules/NetGetX/OpenResty/mainServerFrontend.ts');
+
+      if (!mode) {
+        const current = resolveMainServerFrontendConfig();
+        console.log(chalk.cyan(`Current mode: ${current.mode}`));
+        console.log(chalk.gray(`  dev url:      ${current.devUrl}`));
+        console.log(chalk.gray(`  local dist:   ${current.localDistRoot}`));
+        console.log(chalk.gray(`  package dist: ${current.packageDistRoot}`));
+        return;
+      }
+
+      if (mode !== 'dev' && mode !== 'package-dist' && mode !== 'local-dist') {
+        console.error(chalk.red(`Invalid mode: ${mode}. Use dev, package-dist, or local-dist.`));
+        process.exit(1);
+      }
+
+      await saveMainServerFrontendConfig({ mode });
+
+      const { getNetgetAppConfContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
+      const { writeFileWithFallback } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
+      const { detectOpenRestyLayout } = await import('./modules/NetGetX/OpenResty/platformDetect.ts');
+      const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+
+      const layout = detectOpenRestyLayout();
+      if (!layout.isSupported) {
+        console.log(chalk.yellow(`Mode set to ${mode}, but this platform has no OpenResty layout to reload — regenerate config manually.`));
+        return;
+      }
+
+      const path = (await import('path')).default;
+      const destConf = path.join(layout.confDDir, 'netget_app.conf');
+      await writeFileWithFallback(destConf, getNetgetAppConfContent(), `write netget_app.conf at ${destConf}`);
+
+      const syncResult = syncMainServerFrontendToHtmlRoot();
+
+      const reloaded = await startOpenRestyOnce(true);
+      console.log(chalk.green(`✔ Frontend mode set to ${mode}.`));
+      if (syncResult.copied) console.log(chalk.gray(`  html root synced from ${syncResult.from}`));
+      console.log(reloaded ? chalk.green('✔ Gateway reloaded.') : chalk.yellow('⚠ Reload may have failed — check OpenResty logs.'));
+    } catch (err: any) {
+      console.error(chalk.red(`frontend-mode failed: ${err instanceof Error ? err.message : String(err)}`));
+      process.exit(1);
+    }
+  });
+
+program
   .command('claim')
   .description('Claim this gateway — establish your .me identity as the owner (first-run setup or key update)')
   .option('--reset', 'Force re-claim even if gateway is already claimed (updates Ed25519 key)')

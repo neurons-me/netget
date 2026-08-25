@@ -6,7 +6,7 @@ import { handlePermission } from '../../utils/handlePermissions.ts';
 import { getNetgetAppConfContent } from './setNginxConfigRoutes.ts';
 import { detectOpenRestyLayout, findOpenRestyBin, validateOpenRestyConfig } from './platformDetect.ts';
 
-async function writeFileWithFallback(destPath: string, content: string, task: string): Promise<void> {
+export async function writeFileWithFallback(destPath: string, content: string, task: string): Promise<void> {
   try {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
     fs.writeFileSync(destPath, content, 'utf8');

@@ -1,15 +1,17 @@
+/* Colors flow from this.gui's Theme wherever it wraps this app (var(--gui-*)
+   custom properties set on :root by MuiCssBaseline, see
+   packages/GUI/Typescript/src/gui/Theme/fromTokens.ts). The literal value
+   after each comma is only the fallback for the rare case this page renders
+   outside a <Theme> provider — it should never be the value actually seen. */
+
 .welcome-page {
     min-height: 100vh;
-    position: relative;
-    display: grid;
-    place-items: center;
     padding: 48px;
-    overflow: hidden;
-    color: #dcecff;
+    color: var(--gui-text-primary, #dcecff);
     background:
         linear-gradient(90deg, rgba(4, 12, 19, 0.98) 0 50%, rgba(5, 9, 13, 0.98) 50% 100%),
         repeating-linear-gradient(0deg, rgba(84, 169, 255, 0.012) 0 1px, transparent 1px 18px),
-        #05090e;
+        var(--gui-bg-default, #05090e);
     font-family: Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
@@ -17,112 +19,6 @@
 .welcome-page *::before,
 .welcome-page *::after {
     box-sizing: border-box;
-}
-
-.welcome-page::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background:
-        linear-gradient(90deg, transparent calc(50% - 1px), rgba(37, 135, 232, 0.08) calc(50% - 1px), rgba(37, 135, 232, 0.08) calc(50% + 1px), transparent calc(50% + 1px)),
-        linear-gradient(180deg, rgba(39, 140, 247, 0.014), transparent 34%, transparent 66%, rgba(77, 225, 141, 0.008));
-}
-
-.stage-split {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-.stage-pane {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    color: inherit;
-    outline: none;
-    cursor: pointer;
-    transition: opacity 180ms ease;
-}
-
-.stage-pane--left {
-    justify-content: flex-start;
-    padding: clamp(28px, 5vw, 76px);
-    padding-right: clamp(154px, 21vw, 340px);
-}
-
-.stage-pane--right {
-    justify-content: flex-end;
-    padding: clamp(28px, 5vw, 76px);
-    padding-left: clamp(154px, 21vw, 340px);
-}
-
-.stage-pane--parked {
-    pointer-events: none;
-    opacity: 0.34;
-}
-
-.stage-pane--available:hover,
-.stage-pane--available:focus-visible {
-    opacity: 1;
-}
-
-.stage-pane--available:hover .netget-terminal--background,
-.stage-pane--available:focus-visible .netget-terminal--background,
-.stage-pane--available:hover .netget-dock,
-.stage-pane--available:focus-visible .netget-dock {
-    opacity: 0.86;
-    transform: translateY(-1px);
-}
-
-.netget-frame {
-    position: relative;
-    z-index: 2;
-    width: min(560px, calc(100vw - 128px), calc(100vh - 128px));
-    height: min(560px, calc(100vw - 128px), calc(100vh - 128px));
-    display: grid;
-    place-items: center;
-    padding: clamp(34px, 5vmin, 50px);
-    overflow: hidden;
-    border: 6px solid #2587e8;
-    background:
-        repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.014) 0 2px, transparent 2px 5px),
-        linear-gradient(180deg, rgba(8, 15, 22, 0.98), rgba(5, 11, 17, 0.98)),
-        #070d13;
-    box-shadow:
-        0 0 0 1px rgba(80, 171, 255, 0.08),
-        0 0 18px rgba(22, 126, 235, 0.1),
-        inset 0 0 18px rgba(16, 99, 184, 0.035);
-}
-
-@supports (height: 100svh) {
-    .netget-frame {
-        width: min(560px, calc(100vw - 128px), calc(100svh - 128px));
-        height: min(560px, calc(100vw - 128px), calc(100svh - 128px));
-    }
-}
-
-.netget-frame::before,
-.netget-frame::after {
-    content: "";
-    position: absolute;
-    pointer-events: none;
-    opacity: 0.32;
-}
-
-.netget-frame::before {
-    inset: -14px 8px;
-    border-top: 6px solid #2587e8;
-    border-bottom: 6px solid #2587e8;
-}
-
-.netget-frame::after {
-    inset: 8px -14px;
-    border-right: 6px solid #2587e8;
-    border-left: 6px solid #2587e8;
 }
 
 .netget-terminal,
@@ -139,10 +35,10 @@
     grid-template-rows: auto auto minmax(0, 1fr);
     gap: 12px;
     padding: 16px;
-    border: 2px solid rgba(37, 135, 232, 0.54);
+    border: 2px solid color-mix(in srgb, var(--gui-primary, #2587e8) 54%, transparent);
     background:
         linear-gradient(180deg, rgba(4, 10, 16, 0.96), rgba(2, 7, 12, 0.96)),
-        #040a10;
+        var(--gui-bg-nav, #040a10);
     box-shadow:
         inset 0 0 0 1px rgba(84, 169, 255, 0.07),
         inset 0 0 14px rgba(37, 135, 232, 0.035);
@@ -156,11 +52,8 @@
 }
 
 .netget-terminal--background {
-    width: min(360px, calc(50vw - 126px));
-    height: min(440px, calc(100vh - 188px));
-    opacity: 0.64;
-    transform: translateY(0);
-    transition: opacity 180ms ease, transform 180ms ease;
+    width: 100%;
+    height: 260px;
 }
 
 .terminal-header {
@@ -168,7 +61,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    color: #74b8ff;
+    color: var(--gui-primary, #74b8ff);
     font-size: 0.76rem;
     font-weight: 800;
     line-height: 1;
@@ -179,7 +72,7 @@
     align-items: center;
     min-height: 18px;
     padding: 0 7px;
-    border: 1px solid #4de18d;
+    border: 1px solid var(--gui-success, #4de18d);
     color: #dcffe9;
     background: rgba(77, 225, 141, 0.07);
     font-size: 0.62rem;
@@ -216,7 +109,7 @@
 }
 
 .port-chip--on {
-    color: #4de18d;
+    color: var(--gui-success, #4de18d);
     box-shadow: 0 0 6px rgba(77, 225, 141, 0.12);
 }
 
@@ -266,14 +159,14 @@
 }
 
 .terminal-time {
-    color: #5f7d98;
+    color: var(--gui-text-secondary, #5f7d98);
     white-space: nowrap;
 }
 
 .terminal-text {
     min-width: 0;
     overflow: hidden;
-    color: #e7f3ff;
+    color: var(--gui-text-primary, #e7f3ff);
     font-weight: 800;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -283,17 +176,17 @@
     grid-column: 2;
     min-width: 0;
     overflow: hidden;
-    color: #6889a8;
+    color: var(--gui-text-secondary, #6889a8);
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
 .terminal-line--warn .terminal-text {
-    color: #f4bf75;
+    color: var(--gui-warning, #f4bf75);
 }
 
 .terminal-line--warn .terminal-detail {
-    color: #9a7650;
+    color: color-mix(in srgb, var(--gui-warning, #9a7650) 70%, transparent);
 }
 
 .netget-console {
@@ -308,26 +201,11 @@
     justify-content: center;
     overflow-y: auto;
     overflow-x: hidden;
-}
-
-.netget-frame.netget-frame--netget {
-    width: min(720px, calc(100vw - 128px));
-    height: min(500px, calc(100vh - 128px));
-    /* .netget-frame is a grid with place-items:center, which sizes its
-       child to content and centers it — so when .netget-body's content
-       (layers wrapped at narrow widths) exceeds this frame's fixed height,
-       .netget-console never actually overflows *itself*, and this frame's
-       own overflow:hidden clips it symmetrically top and bottom instead,
-       with no scroll possible. Stretching .netget-console to the frame's
-       real box lets its own overflow-y:auto do the job properly. */
-    align-items: stretch;
-}
-
-.netget-frame.netget-frame--namespace {
-    width: min(760px, calc(100vw - 96px));
-    height: min(680px, calc(100vh - 96px));
-    align-items: stretch;
-    padding: 0;
+    padding: 20px 24px;
+    background:
+        repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.014) 0 2px, transparent 2px 5px),
+        linear-gradient(180deg, rgba(8, 15, 22, 0.98), rgba(5, 11, 17, 0.98)),
+        var(--gui-bg-paper, #070d13);
 }
 
 .netget-namespace {
@@ -335,7 +213,7 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    min-height: 0;
+    min-height: 480px;
     background: #f4f6f8;
 }
 
@@ -343,13 +221,13 @@
     flex-shrink: 0;
     padding: 10px 14px;
     border-bottom: 1px solid rgba(37, 135, 232, 0.35);
-    background: #0b1017;
+    background: var(--gui-bg-nav, #0b1017);
 }
 
 .netget-namespace-back {
     border: 1px solid rgba(80, 171, 255, 0.4);
     background: transparent;
-    color: #9fd3ff;
+    color: var(--gui-primary, #9fd3ff);
     border-radius: 6px;
     padding: 5px 10px;
     font-size: 0.78rem;
@@ -373,10 +251,6 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* flex-start, not center: when the layers wrap at narrow widths the
-       content can exceed the frame's height, and centered overflow leaves
-       the initial scroll position stranded mid-content — the title becomes
-       unreachable. Starting from the top keeps everything scrollable into view. */
     justify-content: flex-start;
     gap: 26px;
     width: 100%;
@@ -426,12 +300,12 @@
 }
 
 .netget-wire--http {
-    stroke: #4de18d;
+    stroke: var(--gui-success, #4de18d);
     filter: drop-shadow(0 0 2px rgba(77, 225, 141, 0.35));
 }
 
 .netget-wire--https {
-    stroke: #4aa8ff;
+    stroke: var(--gui-primary, #4aa8ff);
     filter: drop-shadow(0 0 2px rgba(74, 168, 255, 0.35));
 }
 
@@ -489,16 +363,16 @@
 }
 
 .netget-monad-bubble:focus-visible {
-    outline: 2px solid #29bfff;
+    outline: 2px solid var(--gui-primary, #29bfff);
     outline-offset: 3px;
 }
 
 .netget-monad-bubble--on {
-    box-shadow: 0 0 0 2px #29bfff, 0 0 10px 2px rgba(0, 200, 255, 0.5);
+    box-shadow: 0 0 0 2px var(--gui-success, #29bfff), 0 0 10px 2px rgba(0, 200, 255, 0.5);
 }
 
 .netget-monad-bubble--off {
-    box-shadow: 0 0 0 2px #ff1a1a, 0 0 10px 2px rgba(255, 0, 0, 0.4);
+    box-shadow: 0 0 0 2px var(--gui-error, #ff1a1a), 0 0 10px 2px rgba(255, 0, 0, 0.4);
 }
 
 .netget-monad-label {
@@ -516,7 +390,7 @@
     justify-content: center;
     border: 2px dashed rgba(37, 135, 232, 0.42);
     background: transparent;
-    color: #4aa8ff;
+    color: var(--gui-primary, #4aa8ff);
     font-size: 1.05rem;
     font-weight: 900;
     line-height: 1;
@@ -533,26 +407,23 @@
 }
 
 .netget-dock {
-    width: min(270px, calc(50vw - 146px));
+    width: 100%;
     min-height: 160px;
     display: grid;
     align-content: center;
     gap: 10px;
     padding: 16px;
-    border: 2px solid rgba(37, 135, 232, 0.46);
+    border: 2px solid color-mix(in srgb, var(--gui-primary, #2587e8) 46%, transparent);
     background:
         linear-gradient(180deg, rgba(5, 13, 20, 0.9), rgba(3, 8, 12, 0.9)),
-        #050b11;
+        var(--gui-bg-nav, #050b11);
     box-shadow:
         inset 0 0 0 1px rgba(84, 169, 255, 0.06),
         inset 0 0 12px rgba(37, 135, 232, 0.035);
-    opacity: 0.58;
-    transform: translateY(0);
-    transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .netget-dock-word {
-    color: #278cf7;
+    color: var(--gui-primary, #278cf7);
     font-size: 1.72rem;
     font-weight: 900;
     line-height: 1;
@@ -566,7 +437,7 @@
 .netget-dock-host {
     min-width: 0;
     overflow: hidden;
-    color: #e7f3ff;
+    color: var(--gui-text-primary, #e7f3ff);
     font-size: 0.78rem;
     font-weight: 800;
     line-height: 1.2;
@@ -576,7 +447,7 @@
 
 .netget-word {
     align-self: center;
-    color: #278cf7;
+    color: var(--gui-primary, #278cf7);
     font-size: 3.75rem;
     font-weight: 900;
     line-height: 1;
@@ -606,7 +477,7 @@
 }
 
 .openresty-led.openresty-led--on .surface-status-dot {
-    color: #4de18d;
+    color: var(--gui-success, #4de18d);
 }
 
 .openresty-led.openresty-led--off .surface-status-dot {
@@ -615,7 +486,7 @@
 }
 
 .openresty-status-label {
-    color: #8ea9c4;
+    color: var(--gui-text-secondary, #8ea9c4);
     font-size: 0.66rem;
     font-weight: 800;
     letter-spacing: 0.04em;
@@ -631,7 +502,7 @@
 }
 
 .openresty-badge--warn {
-    color: #f4bf75;
+    color: var(--gui-warning, #f4bf75);
     border: 1px solid rgba(244, 191, 117, 0.5);
 }
 
@@ -646,7 +517,7 @@
     padding: 6px 10px;
     border: 2px solid currentColor;
     background: transparent;
-    color: #4aa8ff;
+    color: var(--gui-primary, #4aa8ff);
     font: inherit;
     font-size: 0.64rem;
     font-weight: 900;
@@ -667,7 +538,7 @@
 }
 
 .openresty-btn--power-on {
-    color: #4de18d;
+    color: var(--gui-success, #4de18d);
 }
 
 .openresty-btn--power-on:hover:not(:disabled),
@@ -676,7 +547,7 @@
 }
 
 .openresty-btn--power-off {
-    color: #e2685c;
+    color: var(--gui-error, #e2685c);
 }
 
 .openresty-btn--power-off:hover:not(:disabled),
@@ -699,7 +570,7 @@
     justify-content: center;
     border-radius: 50%;
     border: 1px solid rgba(142, 169, 196, 0.55);
-    color: #8ea9c4;
+    color: var(--gui-text-secondary, #8ea9c4);
     font-size: 0.56rem;
     font-weight: 800;
     font-style: normal;
@@ -710,8 +581,8 @@
 
 .info-tip:hover .info-tip-icon,
 .info-tip:focus-visible .info-tip-icon {
-    color: #e7f3ff;
-    border-color: #4aa8ff;
+    color: var(--gui-text-primary, #e7f3ff);
+    border-color: var(--gui-primary, #4aa8ff);
 }
 
 .info-tip-bubble {
@@ -722,7 +593,7 @@
     width: max-content;
     max-width: 240px;
     padding: 8px 10px;
-    background: #0b1620;
+    background: var(--gui-bg-nav, #0b1620);
     border: 1px solid rgba(74, 168, 255, 0.4);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
     color: #cfe3f7;
@@ -803,7 +674,7 @@
 
 .surface-group-label {
     padding: 6px 2px 2px;
-    color: #5f7d98;
+    color: var(--gui-text-secondary, #5f7d98);
     font-size: 0.58rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -824,7 +695,7 @@
     gap: 9px;
     padding: 5px 2px;
     border: 0;
-    color: #8ea9c4;
+    color: var(--gui-text-secondary, #8ea9c4);
     background: transparent;
     font: inherit;
     font-size: 0.68rem;
@@ -840,12 +711,12 @@
 
 .surface-history-item:not(:disabled):hover,
 .surface-history-item:not(:disabled):focus-visible {
-    color: #e7f3ff;
+    color: var(--gui-text-primary, #e7f3ff);
     background: transparent;
 }
 
 .surface-history-item--selected {
-    color: #e7f3ff;
+    color: var(--gui-text-primary, #e7f3ff);
     background: transparent;
     box-shadow: none;
 }
@@ -879,7 +750,7 @@
 }
 
 .surface-history-item--online .surface-status-led .surface-status-dot {
-    color: #4de18d;
+    color: var(--gui-success, #4de18d);
 }
 
 .surface-history-item--offline .surface-status-led .surface-status-dot {
@@ -905,31 +776,6 @@
 }
 
 @media (max-width: 860px) {
-    .stage-pane--left {
-        padding-right: clamp(108px, 18vw, 170px);
-    }
-
-    .stage-pane--right {
-        padding-left: clamp(108px, 18vw, 170px);
-    }
-
-    .netget-terminal--background {
-        width: min(300px, calc(50vw - 88px));
-    }
-
-    .netget-dock {
-        width: min(230px, calc(50vw - 94px));
-    }
-
-    .netget-frame {
-        width: min(500px, calc(100vw - 96px), calc(100vh - 96px));
-        height: min(500px, calc(100vw - 96px), calc(100vh - 96px));
-    }
-
-    .netget-body {
-        gap: 18px;
-    }
-
     .netget-ports {
         width: 86px;
     }
@@ -937,76 +783,15 @@
     .netget-header {
         gap: 20px;
     }
-
-    @supports (height: 100svh) {
-        .netget-frame {
-            width: min(500px, calc(100vw - 96px), calc(100svh - 96px));
-            height: min(500px, calc(100vw - 96px), calc(100svh - 96px));
-        }
-    }
 }
 
 @media (max-width: 620px) {
     .welcome-page {
-        padding: 28px;
-        overflow: auto;
-    }
-
-    .stage-split {
-        grid-template-columns: 1fr;
-        opacity: 0.45;
-    }
-
-    .stage-pane {
-        align-items: flex-start;
-        justify-content: center;
         padding: 20px;
-    }
-
-    .stage-pane--right {
-        display: none;
-    }
-
-    .welcome-page--terminal .stage-pane--left {
-        display: none;
-    }
-
-    .welcome-page--terminal .stage-pane--right {
-        display: flex;
-        align-items: flex-end;
-        justify-content: center;
-    }
-
-    .netget-terminal--background {
-        width: min(360px, calc(100vw - 40px));
-        height: 360px;
-    }
-
-    .netget-dock {
-        width: min(300px, calc(100vw - 40px));
-        min-height: 130px;
-    }
-
-    .netget-frame {
-        width: min(360px, calc(100vw - 56px), calc(100vh - 56px));
-        height: min(360px, calc(100vw - 56px), calc(100vh - 56px));
-        padding: clamp(22px, 7vmin, 30px);
-    }
-
-    @supports (height: 100svh) {
-        .netget-frame {
-            width: min(360px, calc(100vw - 56px), calc(100svh - 56px));
-            height: min(360px, calc(100vw - 56px), calc(100svh - 56px));
-        }
     }
 
     .netget-word {
         font-size: 2.15rem;
-    }
-
-    .netget-frame.netget-frame--netget {
-        width: min(360px, calc(100vw - 56px), calc(100vh - 56px));
-        height: min(440px, calc(100vh - 56px));
     }
 
     .netget-body {

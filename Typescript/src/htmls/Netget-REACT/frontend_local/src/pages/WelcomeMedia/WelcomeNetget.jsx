@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Monad, Namespace } from 'this.gui';
+import { Monad, Namespace, TabViews } from 'this.gui';
 import './css/styles.css';
 
 // Network entrypoints — doors into this same netget resolver, not apps.
@@ -602,12 +602,6 @@ const WelcomeNetget = () => {
         };
     }, [portsWithStatus, entrypointRows, surfaceRows, mainView, openrestyOnline]);
 
-    const handlePaneKeyDown = (view) => (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        setMainView(view);
-    };
-
     const renderPortRow = () => (
         <div className="port-row" aria-label="NetGet listening ports">
             {portsWithStatus.map((item) => (
@@ -818,39 +812,34 @@ const WelcomeNetget = () => {
         </section>
     );
 
+    const stageViews = [
+        {
+            id: 'terminal',
+            label: 'Request Terminal',
+            render: () => renderTerminal('main'),
+            renderPreview: () => renderTerminal('background'),
+        },
+        {
+            id: 'netget',
+            label: 'NetGet Console',
+            render: () => renderNetgetConsole(),
+            renderPreview: () => renderNetgetDock(),
+        },
+        {
+            id: 'namespace',
+            label: 'Namespace',
+            render: () => renderNamespaceView(),
+        },
+    ];
+
     return (
-        <div className={`welcome-page welcome-page--${mainView}`}>
-            <div className="stage-split" aria-label="NetGet background views">
-                <div
-                    className={`stage-pane stage-pane--left ${mainView === 'terminal' ? 'stage-pane--parked' : 'stage-pane--available'}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setMainView('terminal')}
-                    onKeyDown={handlePaneKeyDown('terminal')}
-                    aria-label="Show request terminal"
-                >
-                    {renderTerminal('background')}
-                </div>
-
-                <div
-                    className={`stage-pane stage-pane--right ${mainView === 'netget' ? 'stage-pane--parked' : 'stage-pane--available'}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setMainView('netget')}
-                    onKeyDown={handlePaneKeyDown('netget')}
-                    aria-label="Show NetGet console"
-                >
-                    {renderNetgetDock()}
-                </div>
-            </div>
-
-            <div className={`netget-frame netget-frame--${mainView}`} aria-label="NetGet main view">
-                {mainView === 'terminal'
-                    ? renderTerminal('main')
-                    : mainView === 'namespace'
-                        ? renderNamespaceView()
-                        : renderNetgetConsole()}
-            </div>
+        <div className="welcome-page">
+            <TabViews
+                views={stageViews}
+                activeId={mainView}
+                onActiveChange={setMainView}
+                sx={{ width: '100%', maxWidth: 900, margin: '0 auto' }}
+            />
         </div>
     );
 };

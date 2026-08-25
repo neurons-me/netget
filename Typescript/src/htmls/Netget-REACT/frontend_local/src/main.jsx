@@ -41,5 +41,8 @@ mount(spec, '#root', {
   gui: {},
   React,
   ReactDOM,
-  devtools: { inspector: false, inspectorToggleVisible: true },
+  // inspectorToggleVisible: false — the LeftBar's own Dev Tools popover
+  // (wrench icon, bottom of the rail) already has a Semantic Inspector
+  // on/off toggle; this floating bottom-right button duplicated it.
+  devtools: { inspector: false, inspectorToggleVisible: false },
 });

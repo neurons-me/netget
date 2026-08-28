@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout, ThemeLauncher, LauncherPopoverProvider } from 'this.gui';
+import { SeedSessionProvider, MeLauncher, CleakerLanding } from 'this.gui/react';
 import { DevToolsLauncher, SpecBoundary } from 'this.gui/devtools';
 import WelcomeNetget from './pages/WelcomeMedia/WelcomeNetget.jsx';
 import Home from './pages/Home.jsx';
@@ -9,6 +10,7 @@ import MediaPage from './pages/Media/MediaPage.jsx';
 import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
+import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
 
 // Home/Domains/Logs are plain components that take no props, so they never
 // forward data-gui-node-id to any DOM element — a SpecBoundary spec'd
@@ -55,6 +57,7 @@ const LOGS_SPEC = {
 };
 
 const navItems = [
+  { label: 'Home', icon: 'home', to: '/' },
   { label: 'Dashboard', icon: 'dashboard', to: '/home' },
   { label: 'Domains', icon: 'language', to: '/domains' },
   { label: 'Logs', icon: 'article', to: '/logs' },
@@ -105,6 +108,14 @@ function NetGetShell() {
               tooltip: false,
             },
           },
+          {
+            type: 'action',
+            props: {
+              label: '.me',
+              element: <MeLauncher cleakerEndpoint="http://local.cleaker" />,
+              tooltip: false,
+            },
+          },
         ],
       }}
     >
@@ -129,14 +140,39 @@ function NetGetShell() {
   );
 }
 
+// local.cleaker's whole job is identity — it gets its own landing (the
+// same session as everywhere else, this.gui's CleakerLanding as the
+// entire page) instead of netget's admin dashboard/sidebar. local.host is
+// deliberately NOT in this list: it's the general local host surface/entry
+// point (same role as local.netget — the machine's own admin dashboard),
+// not the cleaker service itself. local.cleaker is one namespace reachable
+// from that surface, not replaced by it — see the naming-migration memory
+// for the fuller local.host/@user/namespace grammar this is heading toward.
+// Every other host (local.netget, local.host, the machine hostname, ...) is
+// unaffected — nginx's bare "/" is a static file shared by every
+// admin-block hostname (setNginxConfigRoutes.ts), so this has to branch
+// client-side on the hostname that actually loaded the page, the same way
+// main.jsx's document.title already does.
+const IS_CLEAKER_HOST = typeof window !== 'undefined' && window.location.hostname === 'local.cleaker';
+
 const App = () => (
-  <LauncherPopoverProvider>
-    <Router>
-      <Routes>
-        <Route path="/*" element={<NetGetShell />} />
-      </Routes>
-    </Router>
-  </LauncherPopoverProvider>
+  <SeedSessionProvider
+    transportOrigin={netgetMonadTransportOrigin()}
+    resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
+    sessionBackend="cleaker"
+  >
+    <LauncherPopoverProvider>
+      {IS_CLEAKER_HOST ? (
+        <CleakerLanding cleakerEndpoint="http://local.cleaker" />
+      ) : (
+        <Router>
+          <Routes>
+            <Route path="/*" element={<NetGetShell />} />
+          </Routes>
+        </Router>
+      )}
+    </LauncherPopoverProvider>
+  </SeedSessionProvider>
 );
 
 export default App;

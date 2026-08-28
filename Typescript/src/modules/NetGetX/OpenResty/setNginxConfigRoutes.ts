@@ -1019,6 +1019,10 @@ ${meshGatewayErrorLocation}
 #   {handle}.${machineHostnameLower}     → handle namespace surface (surface_proxy.lua → registered monad)
 #   ${machineHostnameLower.replace(/\.local$/, '')}.netget  → admin/control plane (LAN access)
 #   local.netget / localhost / 127.0.0.1 → admin/control plane (loopback alias)
+#   local.host                           → canonical local .me kernel surface, same admin block
+#   local.cleaker                        → legacy alias for local.host (kept for compatibility)
+#   local.host/@{handle}                 → identity-handle resolution — see localNetget.js's handle middleware
+#   local.cleaker/@{handle}              → same, via the legacy alias
 
 lua_shared_dict jwt_cache      10m;
 lua_shared_dict gateway_nonces  1m;
@@ -1030,7 +1034,7 @@ ${publicDomainBlocks}
 
 server {
 ${listenLines}
-    server_name local.netget ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
+    server_name local.netget local.host local.cleaker ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
     client_max_body_size 500M;
 ${sslDirectives}
 

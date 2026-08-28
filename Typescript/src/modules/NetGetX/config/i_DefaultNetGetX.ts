@@ -65,6 +65,27 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
 
         console.log(`Host: ${chalk.blue(entry)}`);
 
+        // The canonical local .me kernel surface — one static entry covers
+        // every /@handle, no per-handle hosts maintenance needed (see
+        // kernel/topologyResolver.ts and localNetget.js's /@handle route).
+        const localHostEntry: string = '127.0.0.1 local.host';
+        if (!checkLocalHostEntryExists(localHostEntry)) {
+            console.log(chalk.blue(`Entry does not exist, adding: ${localHostEntry}`));
+            await addLocalHostEntry(localHostEntry);
+        }
+
+        console.log(`Host: ${chalk.blue(localHostEntry)}`);
+
+        // local.cleaker — legacy alias for local.host, kept for compatibility
+        // with existing bookmarks/config; not the canonical name.
+        const cleakerEntry: string = '127.0.0.1 local.cleaker';
+        if (!checkLocalHostEntryExists(cleakerEntry)) {
+            console.log(chalk.blue(`Entry does not exist, adding: ${cleakerEntry}`));
+            await addLocalHostEntry(cleakerEntry);
+        }
+
+        console.log(`Host: ${chalk.blue(cleakerEntry)}`);
+
         // Self-signed certificates validation
         try {
             const getSelfSignedCertificates: boolean = await checkSelfSignedCertificates();

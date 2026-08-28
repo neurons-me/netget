@@ -78,7 +78,7 @@ export default defineConfig({
     // can bind IPv6-only ([::1]:5173) on machines that prefer IPv6 for
     // "localhost", leaving 127.0.0.1 unreachable and nginx's proxy_pass 502ing.
     host: '127.0.0.1',
-    allowedHosts: ['local.netget', 'suis-macbook-air.local', 'suis-macbook-air.netget'],
+    allowedHosts: ['local.netget', 'local.host', 'local.cleaker', 'suis-macbook-air.local', 'suis-macbook-air.netget'],
     proxy: {
       '/gateway-identity': 'http://127.0.0.1:3000',
       '/apps':             'http://127.0.0.1:3000',

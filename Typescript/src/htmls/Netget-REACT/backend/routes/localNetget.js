@@ -24,6 +24,7 @@ import {
 } from "../../../../kernel/domainStore.ts";
 import { getNetgetMonadOrigin, getGatewayRootNamespace } from "../../../../kernel/netgetMonadProcess.ts";
 import { resolveSurface } from "../../../../kernel/topologyResolver.ts";
+import { loadOrCreateXConfig } from "../../../../modules/NetGetX/config/xConfig.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -454,13 +455,27 @@ router.get("/logs", (req, res) => {
 });
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-router.get('/ip-info', (req, res) => {
+// localIP is live-detected every call (this machine's own NIC never needs
+// a stored value); publicIP is NOT re-detected here -- it's whatever
+// i_DefaultNetGetX.ts's init-time getPublicIP() call last saved to xConfig
+// (same value setNginxConfigRoutes.ts and NetGetX.cli.ts's status display
+// already read), empty string if this host was never brought online with a
+// public IP (a private-network-only local dev machine, for example).
+const IPV4_PATTERN = /^\d{1,3}(\.\d{1,3}){3}$/;
+
+router.get('/ip-info', async (req, res) => {
     try {
         const interfaces = os.networkInterfaces();
         const localIP = Object.values(interfaces)
             .flat()
             .find(iface => iface && !iface.internal && iface.family === 'IPv4')?.address ?? 'Not available';
-        res.json({ success: true, localIP });
+        const xConfig = await loadOrCreateXConfig();
+        // Some xConfig files on disk carry stale non-IP sentinel strings
+        // (e.g. a literal "Not available") from an older writer -- never
+        // forward one of those as if it were a real address.
+        const storedPublicIP = String(xConfig.publicIP || '');
+        const publicIP = IPV4_PATTERN.test(storedPublicIP) ? storedPublicIP : '';
+        res.json({ success: true, localIP, publicIP });
     } catch {
         res.status(500).json({ success: false, error: 'Failed to retrieve IP information' });
     }
@@ -566,6 +581,26 @@ router.post('/domains/metadata', (req, res) => {
 router.get('/domains', async (req, res) => {
     const domains = await getDomains();
     res.json({ success: true, domains, count: domains.length });
+});
+
+// Which namespace this netget instance's own monad is designated as —
+// distinct from gatewayId (the physical host, /gateway-identity) and from
+// owner/ownerUsername (who administers this gateway). This is the
+// designated context (getGatewayRootNamespace()'s own three-source
+// resolution: NETGET_MONAD_NAMESPACE -> xConfig.mainServerName ->
+// "local.cleaker") -- see Namespace-Is-Context.md for why a host and a
+// namespace must never be conflated.
+router.get('/main-server-namespace', async (req, res) => {
+    // namespace is the resolved value (falls back to "local.cleaker" when
+    // unconfigured). mainServerName is the RAW xConfig value, unresolved --
+    // empty when nothing has been set via mainServer.cli.ts. Returning both
+    // lets a caller distinguish "explicitly configured" from "using the
+    // default," which the resolved value alone can't tell you.
+    const xConfig = await loadOrCreateXConfig();
+    res.json({
+        namespace: getGatewayRootNamespace(),
+        mainServerName: String(xConfig.mainServerName || '').trim() || null,
+    });
 });
 
 router.get('/domains/:parent/subdomains', async (req, res) => {

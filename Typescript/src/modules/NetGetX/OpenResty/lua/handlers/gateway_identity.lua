@@ -5,7 +5,7 @@
 --
 -- Response shape (matches GatewayCardProps in netget.gui):
 --   ip, port, scheme, bootstrapped,
---   gatewayId, owner (identityHash string | null),
+--   gatewayId, owner (identityHash string | null), ownerUsername (string | null),
 --   adminCount, scopes, updatedAt
 
 local cjson = require "cjson.safe"
@@ -58,6 +58,18 @@ end
 
 local bootstrapped = claims ~= nil and claims.owner ~= nil and claims.owner ~= cjson.null
 
+-- identityHash alone doesn't tell a human which namespace actually owns
+-- this surface -- resolve it against the same identityHash -> username map
+-- bootstrapOwner()/grantAdmin() already populate on the claims snapshot
+-- (see GatewayClaimsManager.ts) so callers don't need a second lookup.
+local owner_username = cjson.null
+if bootstrapped and claims and type(claims.usernames) == "table" then
+  local resolved = claims.usernames[claims.owner]
+  if resolved ~= nil and resolved ~= cjson.null then
+    owner_username = resolved
+  end
+end
+
 -- Count admins (excluding owner so we report unique non-owner admin count).
 local admin_count = 0
 if claims and type(claims.admins) == "table" then
@@ -94,6 +106,7 @@ ngx.say(cjson.encode({
   bootstrapped = bootstrapped,
   gatewayId    = (claims and claims.gatewayId) or ngx.var.hostname or cjson.null,
   owner        = (claims and claims.owner)     or cjson.null,
+  ownerUsername = owner_username,
   adminCount   = admin_count,
   scopes       = scopes,
   updatedAt    = updated_at,

@@ -791,6 +791,32 @@ ${appMeshLocations}
 ${appFrontendDistLocations}
 ${meshGatewayErrorLocation}
 
+    # Which namespace this netget's own monad is designated as -- proxied to
+    # Express (getGatewayRootNamespace() is a plain TS function, not Lua-
+    # reachable), same forward-only pattern as /domains below.
+    location = /main-server-namespace {
+        # CORS headers ONLY on the OPTIONS branch, which nginx answers itself
+        # (never reaches Express) -- the proxied GET response already carries
+        # its own Access-Control-* headers from proxy.js's cors() middleware,
+        # and add_header always appends on top of an upstream header of the
+        # same name rather than replacing it. Duplicating them here produced
+        # two Access-Control-Allow-Origin headers on every GET response,
+        # which browsers treat as an invalid CORS response and reject
+        # outright (confirmed live: curl saw a clean 200 with the value
+        # doubled; a real fetch() failed with "Failed to fetch") -- the same
+        # bug already latent on /domains and every other proxied location
+        # below that repeats this pattern, not introduced here, just not
+        # copied forward onto this new route.
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        proxy_pass http://127.0.0.1:3000/main-server-namespace;
+${proxyHeaders}
+    }
+
     # Slice 2 — read-only network entrypoints / semantic surfaces report.
     # See src/types/SurfaceResolution.ts for the contract. No writes here;
     # /add-domain etc. below remain the only way to change what's registered.
@@ -819,7 +845,6 @@ ${meshGatewayErrorLocation}
     # (loopback-only, enforced by nginx itself) and forward only. Response
     # shapes are unchanged from domains.lua's, so no frontend changes needed.
     location /domains {
-        if ($request_method = OPTIONS) { return 204; }
         # /domains is both a React Router page (client-side navigation, no
         # server round-trip for the page itself) AND a real API route
         # (this app's own fetch('/domains') for row data). They collide on
@@ -831,54 +856,82 @@ ${meshGatewayErrorLocation}
         # fall through to the SPA instead of the API here — confirmed by
         # testing (this bug reproduced consistently on direct navigation).
         if ($http_sec_fetch_mode = "navigate") { rewrite ^ /index.html last; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above: add_header appends onto an upstream header of the same name
+        # rather than replacing it, so putting these on the proxied GET/POST
+        # branch double-sends Access-Control-Allow-Origin (proxy.js's cors()
+        # middleware already sets it) and browsers reject the response.
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/domains;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location ~ ^/domains/([^/]+)/subdomains$ {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
     location /add-domain {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/add-domain;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
     location /update-domain {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/update-domain;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
     location /delete-domain {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/delete-domain;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
     # Gateway capability model (Phase 1 prototype) — see
     # docs/GatewayCapabilityModel.md. me_sig.lua verifies the request's
@@ -891,7 +944,17 @@ ${proxyHeaders}
     # other /domains* location above, this one has no Lua-side business
     # logic to duplicate; Lua's job stops at verify-and-forward.
     location = /domains/metadata {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         set $me_identity "";
         set $me_scopes "[]";
         # access_by_lua_file and access_by_lua_block are the same directive
@@ -918,25 +981,25 @@ ${proxyHeaders}
 ${proxyHeaders}
         proxy_set_header X-Netget-Identity $me_identity;
         proxy_set_header X-Netget-Scopes $me_scopes;
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     # Issues a real Let's Encrypt cert for an already-registered domain via
     # netget provision-cert (netget.cli.ts -> certbotProvision.ts). Slow --
     # a real certbot round-trip, expect tens of seconds, not milliseconds.
     location /provision-cert {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/provision-cert;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     # Semantic Inspector: Explain / Inspect — passthrough to netget's own
@@ -946,24 +1009,34 @@ ${proxyHeaders}
     # were added when the routes themselves were built but never wired into
     # the production gateway config, only Vite's dev proxy.
     location /explain {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/explain;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
     location /inspect {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/inspect;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     # cleaker's TopologyResolver, implemented by netget (see
@@ -972,14 +1045,19 @@ ${proxyHeaders}
     # admin server_name block below) so cleaker's resolver has its own name
     # distinct from local.netget's admin/control-plane surface.
     location /cleaker/resolve {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000/cleaker/resolve;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     # <handle>.local.cleaker identity resolution — /@handle path form
@@ -993,14 +1071,19 @@ ${proxyHeaders}
     # this needs its own explicit regex location to ever reach Express —
     # same reasoning as /cleaker/resolve just above.
     location ~ ^/@ {
-        if ($request_method = OPTIONS) { return 204; }
+        # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
+        # above for why (duplicate Access-Control-Allow-Origin on the proxied
+        # response otherwise).
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         proxy_pass http://127.0.0.1:3000;
 ${proxyHeaders}
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     # Misc

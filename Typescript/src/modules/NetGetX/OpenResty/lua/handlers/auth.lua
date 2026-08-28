@@ -415,8 +415,19 @@ end
 local function gateway_info()
   local claims = load_claims()
   set_json()
+  -- Prefer the operator's configured mainServerName (same "choose your own
+  -- domain" field netget's own dashboard already exposes — mainServer.cli.ts,
+  -- set globally at nginx-config-load time, see setNginxConfigFile.ts) over
+  -- the raw machine hostname, so this gateway's own namespace root (what
+  -- useCleakerAuth.ts derives its /@handle addressing from) matches
+  -- whatever local.cleaker/@handle's resolver composes server-side
+  -- (getGatewayRootNamespace() in netgetMonadProcess.ts) — same source,
+  -- same fallback order, so the two never silently disagree.
+  local mainServerName = _G.MAIN_SERVER_NAME
+  local hostname = (mainServerName and mainServerName ~= "" and mainServerName)
+    or ngx.var.hostname or os.getenv("HOSTNAME") or "unknown"
   ngx.say(cjson.encode({
-    hostname  = ngx.var.hostname or os.getenv("HOSTNAME") or "unknown",
+    hostname  = hostname,
     gatewayId = (claims and claims.gatewayId) or ngx.var.hostname or "unknown",
     claimed   = claims ~= nil and claims.owner ~= nil and claims.owner ~= cjson.null,
   }))

@@ -4,7 +4,7 @@
 // Allows adding and deleting entries.
 // Changes bump domain-map.version so Nginx routing hot-reloads.
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
     Box,
     Button,
@@ -42,8 +42,9 @@ import {
     LockOpen as LockOpenIcon,
     Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import { deriveCleakerNode, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
+import { deriveCleakerNodeFromMe, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
 import { useRegisterGuiNode } from 'this.gui';
+import { useOptionalSeedSessionContext } from 'this.gui/react';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -118,6 +119,98 @@ async function editDomainMetadata(session, domain, description) {
         throw new Error(data.required ? `${detail} — required: ${data.required}` : detail);
     }
     return data;
+}
+
+// ─── Domain table row ───────────────────────────────────────────────────────
+// Extracted so it can call useRegisterGuiNode individually — hooks can't
+// live inside domains.map() directly (same reasoning as WelcomeNetget.jsx's
+// TerminalLine/PortChip/SurfaceRow). `row.semanticPath` comes straight from
+// domainStore.ts's toDomainRecord() — already the real, fully-qualified
+// kernel path (users.<owner>.domains.<key>), so Explain works against real
+// data with zero owner/escaping logic duplicated here.
+function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onDelete }) {
+    const nodeId = `Domains.row.${row.domain}`;
+    useRegisterGuiNode(nodeId, 'DomainRow', 'Domains.routesCard', { semanticPath: row.semanticPath });
+    // Per-field registration — the row's own semanticPath points at the whole
+    // record (no single scalar to explain there); each field's real value
+    // lives one level deeper (`<record>.target`, `.type`, `.sslMode`), so
+    // Explain only resolves to something meaningful when pointed at the
+    // field itself, not the row as a whole.
+    const targetNodeId = `${nodeId}.target`;
+    const typeNodeId = `${nodeId}.type`;
+    const sslNodeId = `${nodeId}.sslMode`;
+    useRegisterGuiNode(targetNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.target` } : undefined);
+    useRegisterGuiNode(typeNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.type` } : undefined);
+    useRegisterGuiNode(sslNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.sslMode` } : undefined);
+    return (
+        <TableRow
+            data-gui-node-id={nodeId}
+            sx={{ '&:hover': { background: 'action.hover' } }}
+        >
+            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                {row.domain}
+            </TableCell>
+            <TableCell data-gui-node-id={targetNodeId} sx={{ fontFamily: 'monospace', opacity: 0.7 }}>
+                {row.target || '—'}
+            </TableCell>
+            <TableCell data-gui-node-id={typeNodeId}>
+                <Chip
+                    label={row.type || 'proxy'}
+                    size="small"
+                    variant="outlined"
+                />
+            </TableCell>
+            <TableCell data-gui-node-id={sslNodeId}>
+                <Chip
+                    label={row.sslMode || 'none'}
+                    size="small"
+                    variant={row.sslMode && row.sslMode !== 'none' ? 'filled' : 'outlined'}
+                    color={row.sslMode && row.sslMode !== 'none' ? 'success' : 'default'}
+                />
+            </TableCell>
+            <TableCell align="right">
+                <Tooltip title={session ? 'Edit description' : 'Unlock .me proof to attempt this'}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            onClick={() => onEdit(row)}
+                            disabled={!session}
+                        >
+                            <EditIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Tooltip title={`${hasPublicCert(row) ? 'Renew' : 'Provision'} Let's Encrypt certificate`}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => onProvision(row)}
+                            disabled={provisioning === row.domain || deleting === row.domain}
+                        >
+                            {provisioning === row.domain
+                                ? <CircularProgress size={16} />
+                                : <HttpsIcon fontSize="small" />}
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Tooltip title={`Delete ${row.domain}`}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => onDelete(row.domain)}
+                            disabled={deleting === row.domain}
+                        >
+                            {deleting === row.domain
+                                ? <CircularProgress size={16} />
+                                : <DeleteIcon fontSize="small" />}
+                        </IconButton>
+                    </span>
+                </Tooltip>
+            </TableCell>
+        </TableRow>
+    );
 }
 
 // ─── Add Domain Dialog ────────────────────────────────────────────────────────
@@ -312,100 +405,6 @@ function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
     );
 }
 
-// ─── Unlock .me proof ─────────────────────────────────────────────────────────
-// Not a login. No cookie, no JWT, nothing persisted. This only loads signing
-// key material into memory (a Cleaker node bound to this gateway's hostname)
-// so this page can produce a real X-Me-Proof. It decides nothing about what
-// that identity is allowed to do — the server does, on every request.
-
-function UnlockDialog({ open, onClose, onUnlocked }) {
-    useRegisterGuiNode('Domains.unlockDialog', 'UnlockDialog');
-    const [username, setUsername] = useState('');
-    const [secret, setSecret] = useState('');
-    const [unlocking, setUnlocking] = useState(false);
-    const [error, setError] = useState(null);
-
-    const handleClose = () => {
-        if (unlocking) return;
-        setSecret('');
-        setError(null);
-        onClose();
-    };
-
-    const handleSubmit = async () => {
-        if (!username.trim() || !secret) {
-            setError('Username and secret are both required.');
-            return;
-        }
-        setUnlocking(true);
-        setError(null);
-        try {
-            const hostname = await fetchGatewayHostname();
-            const node = deriveCleakerNode(username.trim(), secret, hostname);
-            const res = await signedRequest(node, hostname, '/check-auth');
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.authenticated) {
-                throw new Error(data.error ?? 'Proof did not verify against this gateway.');
-            }
-
-            onUnlocked({ node, hostname, identityHash: data.identityHash ?? '' });
-            setUsername('');
-            setSecret('');
-            onClose();
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setUnlocking(false);
-        }
-    };
-
-    return (
-        <Dialog
-            open={open}
-            onClose={handleClose}
-            maxWidth="sm"
-            fullWidth
-            data-gui-node-id="Domains.unlockDialog"
-            data-gui-component="UnlockDialog"
-        >
-            <DialogTitle>Unlock .me Proof</DialogTitle>
-            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
-                <Typography variant="body2" sx={{ opacity: 0.65 }}>
-                    Loads signing key material into memory for this tab only — not a login,
-                    nothing persisted. Lets this page produce a signed X-Me-Proof; the gateway
-                    still decides everything it&apos;s allowed to do.
-                </Typography>
-                <TextField
-                    label="Username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    autoFocus
-                    fullWidth
-                />
-                <TextField
-                    label="Secret"
-                    type="password"
-                    value={secret}
-                    onChange={(e) => setSecret(e.target.value)}
-                    fullWidth
-                />
-                {error && <Alert severity="error">{error}</Alert>}
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={handleClose} disabled={unlocking}>Cancel</Button>
-                <Button
-                    variant="contained"
-                    onClick={handleSubmit}
-                    disabled={unlocking}
-                    startIcon={unlocking ? <CircularProgress size={14} /> : <LockOpenIcon />}
-                >
-                    {unlocking ? 'Unlocking…' : 'Unlock'}
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-}
-
 // ─── Edit Description Dialog ──────────────────────────────────────────────────
 // Calls the one capability-gated write this page knows about. Whatever the
 // server answers is shown as-is — no local guess at whether it'll succeed.
@@ -502,10 +501,57 @@ export default function Domains() {
     const [provisionOpen, setProvisionOpen] = useState(null);
     const [certNotice, setCertNotice] = useState(null);
     const [deleteError, setDeleteError] = useState(null);
-    const [session, setSession] = useState(null);          // { node, hostname, identityHash } | null — never persisted
-    const [unlockOpen, setUnlockOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(null);         // row currently being edited
     const [descriptionNotice, setDescriptionNotice] = useState(null);
+
+    // The .me session lives in MeLauncher (sidebar bubble) now — this page
+    // just reads it. candidateSession.node/hostname are re-derived from the
+    // shared session's own `me` kernel instance (deriveCleakerNodeFromMe),
+    // not a second independent identity: same seed, same cleaker binding
+    // UnlockDialog used to compute locally, see docs/wild-bubbling-lemon.
+    //
+    // A monad claim/open success only proves identity (A) — it says nothing
+    // about whether this gateway's own gateway-claims.json (a completely
+    // separate store — "the jewel", see EncryptedAudienceCapabilityTests)
+    // has ever heard of this identity or granted it anything (C). Gating
+    // "Unlocked"/edit-capability on the monad session alone (without this
+    // verify step) would show a false-positive Unlocked chip for any seed
+    // that can open a monad session but was never registered as a gateway
+    // admin — the real /domains/metadata write would still 403 server-side,
+    // but the UI would have claimed otherwise. So: still call /check-auth
+    // once, same as UnlockDialog always did, just with the session-derived
+    // node instead of a freshly-typed one.
+    const seedCtx = useOptionalSeedSessionContext();
+    const [gatewayHostname, setGatewayHostname] = useState(null);
+    useEffect(() => {
+        fetchGatewayHostname().then(setGatewayHostname).catch(() => {});
+    }, []);
+    const candidateSession = useMemo(() => {
+        if (!seedCtx?.authenticated || !seedCtx.me || !gatewayHostname) return null;
+        return {
+            node: deriveCleakerNodeFromMe(seedCtx.me, gatewayHostname),
+            hostname: gatewayHostname,
+            identityHash: seedCtx.identityHash || '',
+        };
+    }, [seedCtx?.authenticated, seedCtx?.me, seedCtx?.identityHash, gatewayHostname]);
+
+    // null = no session / not checked yet, 'checking' = /check-auth in
+    // flight, true = verified, false = checked and rejected (distinct from
+    // 'checking' — collapsing these looked identical in the header chip,
+    // which got stuck on "Verifying…" forever for a real 401).
+    const [verified, setVerified] = useState(null);
+    useEffect(() => {
+        if (!candidateSession) { setVerified(null); return undefined; }
+        let cancelled = false;
+        setVerified('checking');
+        signedRequest(candidateSession.node, candidateSession.hostname, '/check-auth')
+            .then((res) => res.json().catch(() => ({})))
+            .then((data) => { if (!cancelled) setVerified(!!data.authenticated); })
+            .catch(() => { if (!cancelled) setVerified(false); });
+        return () => { cancelled = true; };
+    }, [candidateSession]);
+
+    const session = verified === true ? candidateSession : null;
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -578,19 +624,25 @@ export default function Domains() {
                                     label="Unlocked"
                                     variant="outlined"
                                     color="success"
-                                    onDelete={() => setSession(null)}
+                                    onDelete={() => seedCtx?.logout()}
                                     deleteIcon={<LockIcon fontSize="small" />}
                                 />
                             </Tooltip>
+                        ) : verified === 'checking' ? (
+                            <Chip size="small" icon={<LockIcon fontSize="small" />} label="Verifying…" variant="outlined" />
+                        ) : verified === false && candidateSession ? (
+                            <Tooltip title="This .me identity has no capability grant on this gateway (gateway-claims.json). Reads still work; writes will 403.">
+                                <Chip size="small" icon={<LockIcon fontSize="small" />} label="Not registered" variant="outlined" color="warning" />
+                            </Tooltip>
                         ) : (
-                            <Button
-                                size="small"
-                                variant="outlined"
-                                startIcon={<LockOpenIcon />}
-                                onClick={() => setUnlockOpen(true)}
-                            >
-                                Unlock .me Proof
-                            </Button>
+                            <Tooltip title="Use the .me bubble in the sidebar to unlock a signing session.">
+                                <Chip
+                                    size="small"
+                                    icon={<LockIcon fontSize="small" />}
+                                    label="Locked"
+                                    variant="outlined"
+                                />
+                            </Tooltip>
                         )}
                         <Tooltip title="Refresh">
                             <IconButton onClick={load} disabled={loading}>
@@ -665,73 +717,17 @@ export default function Domains() {
                                     </TableHead>
                                     <TableBody>
                                         {domains.map((row) => (
-                                            <TableRow
+                                            <DomainRow
                                                 key={row.domain}
-                                                sx={{ '&:hover': { background: 'action.hover' } }}
-                                            >
-                                                <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                                                    {row.domain}
-                                                </TableCell>
-                                                <TableCell sx={{ fontFamily: 'monospace', opacity: 0.7 }}>
-                                                    {row.target || '—'}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={row.type || 'proxy'}
-                                                        size="small"
-                                                        variant="outlined"
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Chip
-                                                        label={row.sslMode || 'none'}
-                                                        size="small"
-                                                        variant={row.sslMode && row.sslMode !== 'none' ? 'filled' : 'outlined'}
-                                                        color={row.sslMode && row.sslMode !== 'none' ? 'success' : 'default'}
-                                                    />
-                                                </TableCell>
-                                                <TableCell align="right">
-                                                    <Tooltip title={session ? 'Edit description' : 'Unlock .me proof to attempt this'}>
-                                                        <span>
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => setEditOpen(row)}
-                                                                disabled={!session}
-                                                            >
-                                                                <EditIcon fontSize="small" />
-                                                            </IconButton>
-                                                        </span>
-                                                    </Tooltip>
-                                                    <Tooltip title={`${hasPublicCert(row) ? 'Renew' : 'Provision'} Let's Encrypt certificate`}>
-                                                        <span>
-                                                            <IconButton
-                                                                size="small"
-                                                                color="primary"
-                                                                onClick={() => setProvisionOpen(row)}
-                                                                disabled={provisioning === row.domain || deleting === row.domain}
-                                                            >
-                                                                {provisioning === row.domain
-                                                                    ? <CircularProgress size={16} />
-                                                                    : <HttpsIcon fontSize="small" />}
-                                                            </IconButton>
-                                                        </span>
-                                                    </Tooltip>
-                                                    <Tooltip title={`Delete ${row.domain}`}>
-                                                        <span>
-                                                            <IconButton
-                                                                size="small"
-                                                                color="error"
-                                                                onClick={() => handleDelete(row.domain)}
-                                                                disabled={deleting === row.domain}
-                                                            >
-                                                                {deleting === row.domain
-                                                                    ? <CircularProgress size={16} />
-                                                                    : <DeleteIcon fontSize="small" />}
-                                                            </IconButton>
-                                                        </span>
-                                                    </Tooltip>
-                                                </TableCell>
-                                            </TableRow>
+                                                row={row}
+                                                session={session}
+                                                provisioning={provisioning}
+                                                deleting={deleting}
+                                                hasPublicCert={hasPublicCert}
+                                                onEdit={setEditOpen}
+                                                onProvision={setProvisionOpen}
+                                                onDelete={handleDelete}
+                                            />
                                         ))}
                                     </TableBody>
                                 </Table>
@@ -755,11 +751,6 @@ export default function Domains() {
                 open={!!provisionOpen}
                 onClose={() => setProvisionOpen(null)}
                 onSuccess={handleCertProvisioned}
-            />
-            <UnlockDialog
-                open={unlockOpen}
-                onClose={() => setUnlockOpen(false)}
-                onUnlocked={setSession}
             />
             <EditDescriptionDialog
                 row={editOpen}

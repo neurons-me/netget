@@ -807,6 +807,7 @@ const WelcomeNetget = () => {
                 <Namespace
                     endpoint={typeof window !== 'undefined' ? window.location.origin : ''}
                     defaultTab="surface"
+                    framed={false}
                 />
             </div>
         </section>

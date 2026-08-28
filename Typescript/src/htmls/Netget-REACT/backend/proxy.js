@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import localNetgetRoutes from './routes/localNetget.js';
+import { startNetgetMonad, stopNetgetMonad, loadGatewayRootNamespaceCache } from '../../../kernel/netgetMonadProcess.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,29 @@ app.use('/', localNetgetRoutes);
 app.listen(PORT, '127.0.0.1', () => {
     console.log(chalk.green(`NetGet local GUI backend on port ${PORT} (${NODE_ENV})`));
 });
+
+// netget runs its own monad.ai instance instead of an embedded kernel
+// (domainStore.ts talks to it over HTTP — see kernel/netgetMonadProcess.ts).
+// Domain CRUD depends on this being up; routing itself does not (Lua polls
+// domain-map.json on disk, unaffected if this process is briefly down).
+// The mainServerName cache must load BEFORE the monad starts — it decides
+// which namespace the monad process itself starts under
+// (getGatewayRootNamespace(), read inside startNetgetMonad()).
+loadGatewayRootNamespaceCache().then(() => startNetgetMonad()).then((status) => {
+    if (status.ok) {
+        console.log(chalk.cyan(`netget monad: ${status.message}`));
+    } else {
+        console.warn(chalk.yellow(`netget monad failed to start: ${status.message}`));
+    }
+});
+
+async function shutdown(signal) {
+    console.log(chalk.gray(`${signal} received, stopping netget's own monad...`));
+    await stopNetgetMonad();
+    process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // ─── Log parsing utilities (used by localNetget.js /logs route) ──────────────
 

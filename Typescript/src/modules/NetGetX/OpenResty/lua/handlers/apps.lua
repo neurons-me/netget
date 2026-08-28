@@ -135,6 +135,16 @@ local function report_app()
     app.verified_at = now_ms()
   end
 
+  -- frontendMode is an operator preference (set via the frontend_mode
+  -- action below, not reported by the app itself) — this assignment is a
+  -- wholesale replace, so without preserving it here the next heartbeat
+  -- (≤ MONAD_NETGET_HEARTBEAT_MS, ~3s) would silently wipe the toggle back
+  -- to unset every time.
+  local existing = registry.apps[app.id]
+  if existing and existing.frontendMode and not app.frontendMode then
+    app.frontendMode = existing.frontendMode
+  end
+
   registry.apps[app.id] = app
 
   local ok, err = write_registry(registry)
@@ -350,6 +360,104 @@ local function spawn_catalog_monad()
   return json(200, { success = true, name = name, message = "Spawn signal sent." })
 end
 
+-- ── Frontend mode: per-app dev ↔ dist toggle ──────────────────────────────────
+-- Generalizes the same dev/static-dist switch netget's own Main Server panel
+-- has always had (mainServerFrontend.ts) to any registered app, addressed at
+-- /apps/<name>/__frontend-mode. See setNginxConfigRoutes.ts for why this is a
+-- generic regex location (works before any app-specific config exists) plus a
+-- per-app exact-match override once an app is in dist mode.
+
+local function normalize_token(value)
+  local text = tostring(value or ""):lower()
+  text = text:gsub("[^a-z0-9%._%-]+", "-")
+  text = text:gsub("^%-+", ""):gsub("%-+$", "")
+  return text
+end
+
+local function app_monad_name(app)
+  local metadata = type(app.metadata) == "table" and app.metadata or {}
+  local direct = normalize_token(metadata.monadName)
+  if direct ~= "" then return direct end
+  local name = tostring(app.name or "")
+  name = name:gsub("^monad:", "")
+  return normalize_token(name)
+end
+
+local function find_app_by_name(name)
+  local wanted = normalize_token(ngx.unescape_uri(name or ""))
+  if wanted == "" then return nil end
+  local registry = read_registry()
+  for _, app in pairs(registry.apps or {}) do
+    if app_monad_name(app) == wanted or normalize_token(app.id) == wanted then
+      return app
+    end
+  end
+  return nil
+end
+
+local function file_exists(path)
+  local f = io.open(path, "r")
+  if not f then return false end
+  f:close()
+  return true
+end
+
+local function frontend_mode()
+  if not is_local_request() then
+    return json(403, { success = false, error = "Frontend mode is local-only until auth/policies are enabled." })
+  end
+
+  local name = ngx.var.apps_target
+  local app = find_app_by_name(name)
+  if not app then
+    return json(404, { success = false, error = "App '" .. tostring(name) .. "' is not registered." })
+  end
+
+  if ngx.req.get_method() == "GET" then
+    local meta = type(app.metadata) == "table" and app.metadata or {}
+    return json(200, {
+      success = true,
+      name = name,
+      frontendMode = app.frontendMode or "dev",
+      distDir = meta.frontendDistDir,
+    })
+  end
+
+  ngx.req.read_body()
+  local body = ngx.req.get_body_data()
+  local req = body and cjson.decode(body) or nil
+  local mode = req and tostring(req.mode or "") or ""
+  if mode ~= "dev" and mode ~= "dist" then
+    return json(400, { success = false, error = "Invalid mode: \"" .. mode .. "\". Use dev or dist." })
+  end
+
+  local meta = type(app.metadata) == "table" and app.metadata or {}
+  local distDir = tostring(meta.frontendDistDir or "")
+  if mode == "dist" then
+    if distDir == "" or not file_exists(distDir .. "/index.html") then
+      return json(400, {
+        success = false,
+        error = "No built dist found at " .. (distDir ~= "" and distDir or "(unreported)")
+          .. "/index.html — run the app's build first.",
+      })
+    end
+  end
+
+  local registry = read_registry()
+  local id = app.id
+  if not registry.apps[id] then
+    return json(404, { success = false, error = "App '" .. tostring(name) .. "' is no longer registered." })
+  end
+  registry.apps[id].frontendMode = mode
+
+  local ok, err = write_registry(registry)
+  if not ok then
+    return json(500, { success = false, error = err or "Could not write app registry." })
+  end
+
+  return json(200, { success = true, name = name, frontendMode = mode })
+end
+
 local action = ngx.var.apps_action
 if action == "report" then
   return report_app()
@@ -367,6 +475,8 @@ elseif action == "catalog_delete" then
   return delete_catalog_entry()
 elseif action == "catalog_spawn" then
   return spawn_catalog_monad()
+elseif action == "frontend_mode" then
+  return frontend_mode()
 end
 
 return json(404, { success = false, error = "Unknown apps action." })

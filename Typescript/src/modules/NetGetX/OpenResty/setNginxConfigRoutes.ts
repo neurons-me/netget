@@ -11,6 +11,7 @@ import {
 } from './mainServerFrontend.ts';
 import { MKCERT_CERT_PATH, MKCERT_KEY_PATH } from '../Domains/SSL/mkcert/mkcert.ts';
 import { getDomainMapPath } from '../../../runtime/domainMap.ts';
+import { readReportedApps } from '../../../runtime/appRegistry.ts';
 
 /**
  * Generate the content for netget_app.conf (app routes) with concrete paths.
@@ -35,6 +36,89 @@ function resolveNetgetCliBinPath(): string {
     if (out) return out;
   } catch { /* fall through — Lua handlers fall back to their own candidate scan */ }
   return '';
+}
+
+// Mirrors monad_proxy.lua's normalize_token()/app_monad_name() exactly — the
+// public name an app answers to at /apps/<name> is metadata.monadName if
+// set, else app.name with a "monad:" prefix stripped, both normalized the
+// same way. Must stay byte-for-byte consistent with the Lua version or a
+// generated location block's path won't match what monad_proxy.lua/apps.lua
+// resolve at request time.
+function normalizeAppToken(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '');
+}
+
+function appPublicName(app: { name?: string; metadata?: Record<string, unknown> }): string {
+  const direct = normalizeAppToken(app.metadata?.monadName);
+  if (direct) return direct;
+  return normalizeAppToken(String(app.name || '').replace(/^monad:/, ''));
+}
+
+// Generalizes netget's own dev↔dist Main Server panel switch
+// (mainServerFrontend.ts) to any registered app. Emits one static-serve
+// location per app currently in `dist` mode with a real, existing built
+// dist — everything else keeps going through the live-proxy appMeshLocations
+// regex untouched, so this is additive, not a replacement path. `alias`
+// (not `root`) is required here since the matched prefix (/apps/<name>/)
+// must be stripped before resolving the filesystem path — `root` would
+// instead look under `<distDir>/apps/<name>/...`, which doesn't exist. The
+// `^~` modifier makes nginx prefer this exact-prefix block over the shared
+// `location ~ ^/apps/...` regex proxy even though regex normally wins over
+// a plain (non-^~) prefix location — without it, every request would still
+// fall through to monad_proxy.lua. Each block also carries its own
+// exact-match `__frontend-mode` override: `^~` makes nginx skip regex
+// evaluation entirely for anything under the matched prefix, which would
+// otherwise swallow the one route needed to switch back out of dist mode
+// (the generic regex route below still handles every app NOT currently in
+// dist mode, including one that was never toggled at all).
+function getAppFrontendDistLocations(): string {
+  const apps = readReportedApps();
+  const blocks: string[] = [];
+
+  for (const app of apps) {
+    const frontendMode = (app as { frontendMode?: string }).frontendMode;
+    if (frontendMode !== 'dist') continue;
+
+    const name = appPublicName(app);
+    if (!name) continue;
+
+    const distDir = String((app.metadata as Record<string, unknown> | undefined)?.frontendDistDir || '').trim();
+    if (!distDir || !fs.existsSync(path.join(distDir, 'index.html'))) continue;
+
+    const aliasRoot = distDir.endsWith('/') ? distDir : `${distDir}/`;
+
+    blocks.push(`
+    location ^~ /apps/${name}/ {
+        if ($request_method = OPTIONS) { return 204; }
+        alias ${aliasRoot};
+        try_files $uri $uri/ /index.html;
+        add_header 'Cache-Control' 'no-cache' always;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    location = /apps/${name}/__frontend-mode {
+        if ($request_method = OPTIONS) { return 204; }
+        set $apps_action frontend_mode;
+        set $apps_target ${name};
+        content_by_lua_file lua/handlers/apps.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+`);
+  }
+
+  return blocks.join('\n');
 }
 
 export function getNetgetAppConfContent(): string {
@@ -179,6 +263,31 @@ ${proxyHeaders}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 `;
+
+  // Per-app dev↔dist toggle route — generic, works immediately for any
+  // registered app with zero per-app config, since netget_app.conf is only
+  // ever regenerated on an explicit CLI action (frontend-mode, app-frontend-mode,
+  // `netget init`), never automatically when an app registers. Placed BEFORE
+  // appMeshLocations's /apps/:name proxy regex in the same server blocks —
+  // nginx picks among competing regex locations by first match in file
+  // order (not specificity), so this always wins for the __frontend-mode
+  // path regardless of whether the app is currently proxied live or (once
+  // getAppFrontendDistLocations() below adds its own more-specific
+  // exact-match override for that case) served from a static dist.
+  const appFrontendModeLocation = `
+    location ~ ^/apps/([^/]+)/__frontend-mode$ {
+        if ($request_method = OPTIONS) { return 204; }
+        set $apps_action frontend_mode;
+        set $apps_target $1;
+        content_by_lua_file lua/handlers/apps.lua;
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+`;
+  const appFrontendDistLocations = getAppFrontendDistLocations();
 
   // The local.netget/127.0.0.1/localhost control-plane block proxies its own
   // panel to the Vite dev server (devProxyTarget). When that dev server isn't
@@ -488,6 +597,9 @@ ${viteAssetLocation}
     # Logs
     location /logs {
         if ($request_method = OPTIONS) { return 204; }
+        # Same /domains-vs-page collision (see that location's comment) —
+        # /logs is also both a React Router page and a real API route.
+        if ($http_sec_fetch_mode = "navigate") { rewrite ^ /index.html last; }
         content_by_lua_file lua/handlers/logs.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
@@ -674,7 +786,9 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+${appFrontendModeLocation}
 ${appMeshLocations}
+${appFrontendDistLocations}
 ${meshGatewayErrorLocation}
 
     # Slice 2 — read-only network entrypoints / semantic surfaces report.
@@ -706,6 +820,17 @@ ${meshGatewayErrorLocation}
     # shapes are unchanged from domains.lua's, so no frontend changes needed.
     location /domains {
         if ($request_method = OPTIONS) { return 204; }
+        # /domains is both a React Router page (client-side navigation, no
+        # server round-trip for the page itself) AND a real API route
+        # (this app's own fetch('/domains') for row data). They collide on
+        # a hard navigation — typing this URL directly, or refreshing — where
+        # the browser's real HTTP request hits this location first and gets
+        # raw JSON instead of the SPA shell. Sec-Fetch-Mode: navigate is set
+        # by the browser only for real top-level navigations, never for a
+        # fetch() call from the app's own JS, so it's a reliable signal to
+        # fall through to the SPA instead of the API here — confirmed by
+        # testing (this bug reproduced consistently on direct navigation).
+        if ($http_sec_fetch_mode = "navigate") { rewrite ^ /index.html last; }
         proxy_pass http://127.0.0.1:3000/domains;
 ${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
@@ -810,6 +935,70 @@ ${proxyHeaders}
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # Semantic Inspector: Explain / Inspect — passthrough to netget's own
+    # monad (see kernel/netgetMonadProcess.ts + localNetget.js's /explain,
+    # /inspect routes). Same missing-location-block bug class already found
+    # for /domains, /entrypoints, /surfaces earlier this session — these two
+    # were added when the routes themselves were built but never wired into
+    # the production gateway config, only Vite's dev proxy.
+    location /explain {
+        if ($request_method = OPTIONS) { return 204; }
+        proxy_pass http://127.0.0.1:3000/explain;
+${proxyHeaders}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+    location /inspect {
+        if ($request_method = OPTIONS) { return 204; }
+        proxy_pass http://127.0.0.1:3000/inspect;
+${proxyHeaders}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # cleaker's TopologyResolver, implemented by netget (see
+    # kernel/topologyResolver.ts) — "given a namespace, which live surface
+    # currently claims it" — addressed here AND at local.cleaker (see the
+    # admin server_name block below) so cleaker's resolver has its own name
+    # distinct from local.netget's admin/control-plane surface.
+    location /cleaker/resolve {
+        if ($request_method = OPTIONS) { return 204; }
+        proxy_pass http://127.0.0.1:3000/cleaker/resolve;
+${proxyHeaders}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Max-Age' 86400 always;
+    }
+
+    # <handle>.local.cleaker identity resolution — /@handle path form
+    # (same convention useCleakerAuth.ts already uses against the machine's
+    # own hostname, and monad's own resolveChainNamespace()/
+    # getAtSelectorFromPath() already parse — reused here rather than
+    # inventing a subdomain-based address, which /etc/hosts can't resolve
+    # for arbitrary handles: no wildcard syntax exists there, only one
+    # static entry per host is possible). The bare "location /" above is a
+    # static try_files block (serves index.html straight from disk), so
+    # this needs its own explicit regex location to ever reach Express —
+    # same reasoning as /cleaker/resolve just above.
+    location ~ ^/@ {
+        if ($request_method = OPTIONS) { return 204; }
+        proxy_pass http://127.0.0.1:3000;
+${proxyHeaders}
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        add_header 'Access-Control-Allow-Credentials' 'true' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
@@ -957,7 +1146,9 @@ ${sslDirectives}
     error_log  ${layout.logDir}/netget_error.log warn;
 ${vendorLocations}
 ${namespaceAssetLocations}
+${appFrontendModeLocation}
 ${appMeshLocations}
+${appFrontendDistLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";

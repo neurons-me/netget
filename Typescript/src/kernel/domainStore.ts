@@ -1,83 +1,42 @@
 /**
  * domainStore.ts
  *
- * Domain registry backed by the .me semantic kernel.
- * Drop-in replacement for sqlite/utils_sqlite3.ts — same public API,
- * zero native dependencies.
+ * Domain registry backed by netget's own monad (see netgetMonadProcess.ts —
+ * netget spawns and supervises a real, generic `modules/monad/Typescript`
+ * daemon instead of embedding a private `.me` kernel directly in this
+ * process). Same public API as before this migration, so callers are
+ * unaffected.
  *
- * Storage layout in the kernel:
- *   me.domains["example.com"].target   → routing target
- *   me.domains["example.com"].type     → "proxy" | "static" | "server"
- *   me.domains["example.com"].ssl.cert → cert path
- *   me.domains["example.com"].ssl.key  → key path
- *   me.domains["example.com"].owner    → owner string
- *   me.domains["example.com"].email    → contact email
- *   me.domains["example.com"].subdomain
- *   me.domains["example.com"].projectPath
- *   me.domains["example.com"].sslMode
- *   me.domains["example.com"].nginxConfig
- *   me.domains["example.com"].rootDomain
+ * Storage layout in the kernel (via the monad's semantic write/read surface,
+ * `POST /` and `GET /<path>`, monadHttpClient.ts):
  *
- * The kernel is persisted to ~/.get/kernel/snapshot.json via DiskStore.
- * No sqlite3, no native addons, no GLIBC constraints.
+ *   users.<owner>.domains["example.com"].target      → routing target
+ *   users.<owner>.domains["example.com"].type         → "proxy" | "static" | "server"
+ *   users.<owner>.domains["example.com"].owner         → owner string (redundant
+ *     with the namespace itself, kept for record completeness/back-compat)
+ *   ...(see DOMAIN_FIELDS below for the full field list)
+ *
+ * Every domain is written under its OWNER's namespace (`users.<owner>.*`) —
+ * this is how the generic monad write path (`namespaceToKernelPrefix`)
+ * already works; there's no way to opt out of it, and the user confirmed in
+ * conversation this is actually the right shape: it sections domains by who
+ * manages them for free. Domains without an explicit owner fall back to the
+ * `netget` identity itself (`users.netget.*`).
+ *
+ * Because per-owner data has no single "list everything" primitive, a small
+ * index is maintained alongside it at `users.netget.domainIndex.<key> =
+ * {owner}` — getDomains() reads this index first, then reads each domain's
+ * full record from its owner's namespace.
+ *
+ * Persistence is automatic: the monad's `POST /` handler calls
+ * `saveSnapshot()` itself after every write (see modules/monad's
+ * commandHandler.ts) — this module never needs to explicitly persist.
  */
 
-import ME from 'this.me';
-import path from 'path';
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import os from 'os';
-import { getNetgetDataDir } from '../utils/netgetPaths.js';
+import { getNetgetMonadOrigin, getGatewayRootNamespace } from './netgetMonadProcess.js';
+import { writeToMonad, readFromMonad } from './monadHttpClient.js';
 
-// ── Kernel singleton ──────────────────────────────────────────────────────────
-
-const GATEWAY_SEED_ENV = 'NETGET_GATEWAY_SEED';
-const SNAPSHOT_FILENAME = 'snapshot.json';
-
-function getKernelStateDir(): string {
-  return path.join(getNetgetDataDir(), 'kernel');
-}
-
-function resolveGatewaySeed(): string {
-  const explicit = String(process.env[GATEWAY_SEED_ENV] || '').trim();
-  if (explicit) return explicit;
-  // Fallback: deterministic from hostname — stable across restarts,
-  // but not a security secret. Gateway config is not sensitive user data.
-  return `netget-gateway:${os.hostname().toLowerCase()}`;
-}
-
-let _kernel: InstanceType<typeof ME> | null = null;
-
-function getKernel(): InstanceType<typeof ME> {
-  if (_kernel) return _kernel;
-  const stateDir = getKernelStateDir();
-  mkdirSync(stateDir, { recursive: true });
-  const seed = resolveGatewaySeed();
-  _kernel = new ME(seed, {
-    store: new ME.DiskStore({ baseDir: stateDir }),
-  });
-  const snapshotPath = path.join(stateDir, SNAPSHOT_FILENAME);
-  if (existsSync(snapshotPath)) {
-    try {
-      _kernel.hydrate(JSON.parse(readFileSync(snapshotPath, 'utf8')));
-    } catch {
-      // snapshot corrupt or incompatible — start fresh
-    }
-  }
-  return _kernel;
-}
-
-function saveKernel(): void {
-  if (!_kernel) return;
-  const stateDir = getKernelStateDir();
-  mkdirSync(stateDir, { recursive: true });
-  writeFileSync(
-    path.join(stateDir, SNAPSHOT_FILENAME),
-    JSON.stringify((_kernel as any).exportSnapshot()),
-    'utf8',
-  );
-}
-
-// ── Types (same as utils_sqlite3.ts) ─────────────────────────────────────────
+// ── Types (unchanged — same public shape as before this migration) ─────────
 
 export interface DomainRecord {
   domain: string;
@@ -92,11 +51,13 @@ export interface DomainRecord {
   rootDomain?: string;
   owner?: string;
   nginxConfig?: string;
-  /** Wildcard cert requested, and which certbot DNS-01 plugin to use to
-   * provision/renew it unattended. Matches certbotProvision.ts's
-   * DnsProvider union — kept as a plain string here (not imported) so the
-   * kernel-backed store has no dependency on the SSL provisioning module. */
   dnsProvider?: string;
+  /** Absolute kernel path for this record (`users.<owner>.domains.<key>`,
+   * dots in the domain name escaped) — lets a GUI node's `provenance` point
+   * Explain/Inspect straight at the real value, computed once here so
+   * frontend code never needs to re-derive netget's owner/escaping
+   * convention itself. See escapeDomainKey/sanitizeOwnerLabel below. */
+  semanticPath?: string;
 }
 
 export interface DomainConfigResult {
@@ -107,38 +68,117 @@ export interface DomainConfigResult {
   target: string;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Owner / namespace helpers ───────────────────────────────────────────────
+
+const NETGET_OWNER_FALLBACK = 'netget';
+
+const DOMAIN_FIELDS = [
+  'target', 'type', 'subdomain', 'email', 'sslMode', 'sslCertificate',
+  'sslCertificateKey', 'projectPath', 'rootDomain', 'owner', 'nginxConfig',
+  'dnsProvider', 'registered',
+] as const;
+type DomainField = typeof DOMAIN_FIELDS[number];
 
 function domainKey(domain: string): string {
-  // Dots in domain names are valid .me path separators only if we escape them.
-  // We store domains as indexed entries: domains[<domain>]
   return domain.toLowerCase().trim();
 }
 
-function readDomainRecord(me: InstanceType<typeof ME>, domain: string): DomainRecord | undefined {
-  const key = domainKey(domain);
-  const target   = (me as any)(`domains.${key}.target`);
-  const type     = (me as any)(`domains.${key}.type`);
-  // If neither target nor type exists, this domain isn't registered
-  if (target === undefined && type === undefined) {
-    // Check if any field exists
-    const owner = (me as any)(`domains.${key}.owner`);
-    if (owner === undefined) return undefined;
+/**
+ * The monad's write/read wire protocol takes `expression`/path as a plain
+ * string and splits it on `.` to build/walk a nested tree (see modules/monad's
+ * memoryStore.ts setDeepValue/getDeepValue) — there's no bracket/proxy escape
+ * hatch like the old embedded-kernel version of this file used
+ * (`me.domains[key].field`, which bypassed path-string parsing entirely).
+ * A real domain name contains dots ("example.com"), so it can't be used
+ * verbatim as one path segment — confirmed by testing: writing
+ * `domains.example.com.target` silently splits into 4 nested levels
+ * instead of one domain key with a `target` field. Escape dots before using
+ * a key in any expression/path string sent over the wire; unescape when
+ * reading a key back out of an index.
+ */
+function escapeDomainKey(key: string): string {
+  return key.replace(/\./g, '__DOT__');
+}
+
+function unescapeDomainKey(escaped: string): string {
+  return escaped.replace(/__DOT__/g, '.');
+}
+
+export function sanitizeOwnerLabel(raw: string | undefined): string {
+  const safe = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return safe || NETGET_OWNER_FALLBACK;
+}
+
+function ownerNamespace(owner: string): string {
+  return `${sanitizeOwnerLabel(owner)}.${getGatewayRootNamespace()}`;
+}
+
+function indexNamespace(): string {
+  return ownerNamespace(NETGET_OWNER_FALLBACK);
+}
+
+async function writeField(owner: string, key: string, field: DomainField, value: unknown): Promise<void> {
+  if (value === undefined) return;
+  await writeToMonad(await getNetgetMonadOrigin(), ownerNamespace(owner), `domains.${escapeDomainKey(key)}.${field}`, value);
+}
+
+async function writeDefinedFields(owner: string, key: string, fields: Partial<Record<DomainField, unknown>>): Promise<void> {
+  await Promise.all(
+    (Object.entries(fields) as [DomainField, unknown][])
+      .filter(([, value]) => value !== undefined)
+      .map(([field, value]) => writeField(owner, key, field, value)),
+  );
+}
+
+type DomainIndex = Record<string, { owner?: string }>;
+
+async function readIndex(): Promise<DomainIndex> {
+  const { value } = await readFromMonad<Record<string, { owner?: string }>>(await getNetgetMonadOrigin(), indexNamespace(), 'domainIndex');
+  if (!value || typeof value !== 'object') return {};
+  const out: DomainIndex = {};
+  for (const [escapedKey, entry] of Object.entries(value)) {
+    out[unescapeDomainKey(escapedKey)] = entry;
   }
+  return out;
+}
+
+async function writeIndexEntry(key: string, owner: string): Promise<void> {
+  await writeToMonad(await getNetgetMonadOrigin(), indexNamespace(), `domainIndex.${escapeDomainKey(key)}`, { owner });
+}
+
+async function deleteIndexEntry(key: string): Promise<void> {
+  // value is a placeholder, never read back — operator:'-' is what tombstones
+  // this path on later branch reads; the underlying kernel write rejects a
+  // null/undefined body outright, so this can't be `null`.
+  await writeToMonad(await getNetgetMonadOrigin(), indexNamespace(), `domainIndex.${escapeDomainKey(key)}`, true, '-');
+}
+
+async function resolveOwnerForKey(key: string): Promise<string | undefined> {
+  const index = await readIndex();
+  return index[key]?.owner;
+}
+
+async function readRecordBranch(owner: string, key: string): Promise<Partial<Record<DomainField, unknown>> | undefined> {
+  const { value } = await readFromMonad<Record<string, unknown>>(await getNetgetMonadOrigin(), ownerNamespace(owner), `domains.${escapeDomainKey(key)}`);
+  return (value && typeof value === 'object') ? value as Partial<Record<DomainField, unknown>> : undefined;
+}
+
+function toDomainRecord(key: string, owner: string, branch: Partial<Record<DomainField, unknown>>): DomainRecord {
   return {
     domain: key,
-    target:          (me as any)(`domains.${key}.target`),
-    type:            (me as any)(`domains.${key}.type`),
-    subdomain:       (me as any)(`domains.${key}.subdomain`),
-    email:           (me as any)(`domains.${key}.email`),
-    sslMode:         (me as any)(`domains.${key}.sslMode`),
-    sslCertificate:  (me as any)(`domains.${key}.sslCertificate`),
-    sslCertificateKey: (me as any)(`domains.${key}.sslCertificateKey`),
-    projectPath:     (me as any)(`domains.${key}.projectPath`),
-    rootDomain:      (me as any)(`domains.${key}.rootDomain`),
-    owner:           (me as any)(`domains.${key}.owner`),
-    nginxConfig:     (me as any)(`domains.${key}.nginxConfig`),
-    dnsProvider:     (me as any)(`domains.${key}.dnsProvider`),
+    target: branch.target as string | undefined,
+    type: branch.type as string | undefined,
+    subdomain: branch.subdomain as string | undefined,
+    email: branch.email as string | undefined,
+    sslMode: branch.sslMode as string | undefined,
+    sslCertificate: branch.sslCertificate as string | undefined,
+    sslCertificateKey: branch.sslCertificateKey as string | undefined,
+    projectPath: branch.projectPath as string | undefined,
+    rootDomain: branch.rootDomain as string | undefined,
+    owner: branch.owner as string | undefined,
+    nginxConfig: branch.nginxConfig as string | undefined,
+    dnsProvider: branch.dnsProvider as string | undefined,
+    semanticPath: `users.${sanitizeOwnerLabel(owner)}.domains.${escapeDomainKey(key)}`,
   };
 }
 
@@ -151,7 +191,7 @@ async function regenerateMap(): Promise<void> {
   }
 }
 
-// ── Public API (mirrors utils_sqlite3.ts) ─────────────────────────────────────
+// ── Public API (mirrors the pre-migration embedded-kernel version) ─────────
 
 export async function registerDomain(
   domain: string,
@@ -165,103 +205,37 @@ export async function registerDomain(
   projectPath?: string,
   owner?: string,
 ): Promise<void> {
-  const me = getKernel();
   const key = domainKey(domain);
-  const existing = readDomainRecord(me, key);
-  if (existing) throw new Error(`The domain ${domain} already exists.`);
+  const existingOwner = await resolveOwnerForKey(key);
+  if (existingOwner) throw new Error(`The domain ${domain} already exists.`);
 
-  const d = (me as any).domains[key];
-  if (subdomain)       d.subdomain(subdomain);
-  if (email)           d.email(email);
-  if (sslMode)         d.sslMode(sslMode);
-  if (sslCertificate)  d.sslCertificate(sslCertificate);
-  if (sslCertificateKey) d.sslCertificateKey(sslCertificateKey);
-  if (target)          d.target(target);
-  if (type)            d.type(type);
-  if (projectPath)     d.projectPath(projectPath);
-  if (owner)           d.owner(owner);
-  // Write a sentinel so the domain is "registered" even with minimal fields
-  d.registered(true);
+  const resolvedOwner = sanitizeOwnerLabel(owner);
+  await writeIndexEntry(key, resolvedOwner);
+  await writeDefinedFields(resolvedOwner, key, {
+    subdomain, email, sslMode, sslCertificate, sslCertificateKey,
+    target, type, projectPath, owner: resolvedOwner, registered: true,
+  });
 
-  saveKernel();
   await regenerateMap();
 }
 
-/**
- * Collect candidate domain keys ("domains.<name>") from every source that
- * might know about them: the live in-memory index (populated by writes made
- * in this process) AND the on-disk snapshot's raw memory log (covers domains
- * registered in a previous process — hydrate() should rebuild `.index` from
- * this too, but we scan it directly as a robust fallback in case it doesn't).
- */
-function collectDomainKeys(me: InstanceType<typeof ME>): Set<string> {
-  const domainFieldNames = [
-    'sslCertificateKey',
-    'sslCertificate',
-    'projectPath',
-    'rootDomain',
-    'nginxConfig',
-    'registered',
-    'subdomain',
-    'sslMode',
-    'dnsProvider',
-    'target',
-    'owner',
-    'email',
-    'type',
-  ];
-
-  const domainPartFromPath = (p: string): string | undefined => {
-    if (!p.startsWith('domains.')) return undefined;
-    const rest = p.slice('domains.'.length);
-    for (const field of domainFieldNames) {
-      const suffix = `.${field}`;
-      if (rest.endsWith(suffix)) {
-        const domainPart = rest.slice(0, -suffix.length);
-        return domainPart || undefined;
-      }
-    }
-    return undefined;
-  };
-
-  const seen = new Set<string>();
-
-  const index: Record<string, unknown> = (me as any).index || {};
-  for (const k of Object.keys(index)) {
-    const d = domainPartFromPath(k);
-    if (d) seen.add(d);
-  }
-
-  try {
-    const snapshotPath = path.join(getKernelStateDir(), SNAPSHOT_FILENAME);
-    if (existsSync(snapshotPath)) {
-      const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8'));
-      const memories: Array<{ path?: string }> = snapshot?.memories || [];
-      for (const m of memories) {
-        const d = m?.path ? domainPartFromPath(m.path) : undefined;
-        if (d) seen.add(d);
-      }
-    }
-  } catch {
-    // best-effort fallback only
-  }
-
-  return seen;
-}
-
 export async function getDomains(): Promise<DomainRecord[]> {
-  const me = getKernel();
-  const results: DomainRecord[] = [];
-
-  for (const domainPart of collectDomainKeys(me)) {
-    const rec = readDomainRecord(me, domainPart);
-    if (rec) results.push(rec);
-  }
-  return results;
+  const index = await readIndex();
+  const entries = Object.entries(index);
+  const records = await Promise.all(entries.map(async ([key, entry]) => {
+    const owner = entry?.owner || NETGET_OWNER_FALLBACK;
+    const branch = await readRecordBranch(owner, key);
+    return branch ? toDomainRecord(key, owner, branch) : null;
+  }));
+  return records.filter((r): r is DomainRecord => r !== null);
 }
 
 export async function getDomainByName(domain: string): Promise<DomainRecord | undefined> {
-  return readDomainRecord(getKernel(), domain);
+  const key = domainKey(domain);
+  const owner = await resolveOwnerForKey(key);
+  if (!owner) return undefined;
+  const branch = await readRecordBranch(owner, key);
+  return branch ? toDomainRecord(key, owner, branch) : undefined;
 }
 
 export async function updateDomain(
@@ -276,33 +250,35 @@ export async function updateDomain(
   projectPath?: string,
   owner?: string,
 ): Promise<void> {
-  const me = getKernel();
   const key = domainKey(domain);
-  const d = (me as any).domains[key];
-  if (subdomain !== undefined)       d.subdomain(subdomain);
-  if (email !== undefined)           d.email(email);
-  if (sslMode !== undefined)         d.sslMode(sslMode);
-  if (sslCertificate !== undefined)  d.sslCertificate(sslCertificate);
-  if (sslCertificateKey !== undefined) d.sslCertificateKey(sslCertificateKey);
-  if (target !== undefined)          d.target(target);
-  if (type !== undefined)            d.type(type);
-  if (projectPath !== undefined)     d.projectPath(projectPath);
-  if (owner !== undefined)           d.owner(owner);
-  saveKernel();
+  const currentOwner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  // Reassigning `owner` moves this domain's *newly written* fields to the
+  // new owner's namespace and updates the index. Fields not passed in this
+  // call that already existed under the old owner are left there (a narrow,
+  // accepted gap — full owner-reassignment migration isn't in scope here).
+  const targetOwner = owner !== undefined ? sanitizeOwnerLabel(owner) : currentOwner;
+  if (targetOwner !== currentOwner) {
+    await writeIndexEntry(key, targetOwner);
+  }
+
+  await writeDefinedFields(targetOwner, key, {
+    subdomain, email, sslMode, sslCertificate, sslCertificateKey,
+    target, type, projectPath, owner: owner !== undefined ? targetOwner : undefined,
+  });
   await regenerateMap();
 }
 
 export async function updateDomainTarget(domain: string, target: string): Promise<void> {
-  const me = getKernel();
-  (me as any).domains[domainKey(domain)].target(target);
-  saveKernel();
+  const key = domainKey(domain);
+  const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  await writeField(owner, key, 'target', target);
   await regenerateMap();
 }
 
 export async function updateDomainType(domain: string, type: string): Promise<void> {
-  const me = getKernel();
-  (me as any).domains[domainKey(domain)].type(type);
-  saveKernel();
+  const key = domainKey(domain);
+  const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  await writeField(owner, key, 'type', type);
   await regenerateMap();
 }
 
@@ -311,28 +287,33 @@ export async function updateDomainRoute(
   type: string | null,
   target: string | null,
 ): Promise<void> {
-  const me = getKernel();
-  const d = (me as any).domains[domainKey(domain)];
-  if (type !== null)   d.type(type);
-  if (target !== null) d.target(target);
-  saveKernel();
+  const key = domainKey(domain);
+  const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  if (type !== null) await writeField(owner, key, 'type', type);
+  if (target !== null) await writeField(owner, key, 'target', target);
   await regenerateMap();
 }
 
 export async function getDomainTarget(domain: string): Promise<string | undefined> {
-  return (getKernel() as any)(`domains.${domainKey(domain)}.target`);
+  const key = domainKey(domain);
+  const owner = await resolveOwnerForKey(key);
+  if (!owner) return undefined;
+  const { value } = await readFromMonad<string>(await getNetgetMonadOrigin(), ownerNamespace(owner), `domains.${escapeDomainKey(key)}.target`);
+  return value;
 }
 
 export async function deleteDomain(domain: string): Promise<void> {
-  const me = getKernel();
   const key = domainKey(domain);
-  // Tombstone all known fields under this domain
-  const fields = ['target','type','subdomain','email','sslMode','sslCertificate',
-                  'sslCertificateKey','projectPath','rootDomain','owner','nginxConfig','registered','dnsProvider'];
-  for (const f of fields) {
-    try { (me as any).domains[key]['-'](f); } catch { /* field may not exist */ }
-  }
-  saveKernel();
+  const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  const origin = await getNetgetMonadOrigin();
+  await Promise.all(
+    DOMAIN_FIELDS.map((field) =>
+      // value is a placeholder (see deleteIndexEntry) — never null, the
+      // kernel write rejects a null/undefined body regardless of operator.
+      writeToMonad(origin, ownerNamespace(owner), `domains.${escapeDomainKey(key)}.${field}`, true, '-'),
+    ),
+  );
+  await deleteIndexEntry(key);
   await regenerateMap();
 }
 
@@ -347,27 +328,20 @@ export async function storeConfigInDB(
   projectPath?: string,
   owner?: string,
 ): Promise<void> {
-  const me = getKernel();
   const key = domainKey(domain);
-  const d = (me as any).domains[key];
-  const domainOwner = owner || domain.split('.').slice(-2).join('.');
-  if (subdomain !== undefined)       d.subdomain(subdomain);
-  if (sslMode !== undefined)         d.sslMode(sslMode);
-  if (sslCertificate !== undefined)  d.sslCertificate(sslCertificate);
-  if (sslCertificateKey !== undefined) d.sslCertificateKey(sslCertificateKey);
-  if (target !== undefined)          d.target(target);
-  if (type !== undefined)            d.type(type);
-  if (projectPath !== undefined)     d.projectPath(projectPath);
-  d.owner(domainOwner);
-  d.registered(true);
-  saveKernel();
+  const domainOwner = sanitizeOwnerLabel(owner || domain.split('.').slice(-2).join('.'));
+  await writeIndexEntry(key, domainOwner);
+  await writeDefinedFields(domainOwner, key, {
+    subdomain, sslMode, sslCertificate, sslCertificateKey,
+    target, type, projectPath, owner: domainOwner, registered: true,
+  });
   await regenerateMap();
 }
 
 export async function updateDnsProvider(domain: string, dnsProvider: string): Promise<void> {
-  const me = getKernel();
-  (me as any).domains[domainKey(domain)].dnsProvider(dnsProvider);
-  saveKernel();
+  const key = domainKey(domain);
+  const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  await writeField(owner, key, 'dnsProvider', dnsProvider);
 }
 
 export async function updateSSLCertificatePaths(
@@ -375,28 +349,25 @@ export async function updateSSLCertificatePaths(
   certPath: string,
   keyPath: string,
 ): Promise<void> {
-  const me = getKernel();
-  const d = (me as any).domains[domainKey(domain)];
-  d.sslMode('letsencrypt');
-  d.sslCertificate(certPath);
-  d.sslCertificateKey(keyPath);
-  saveKernel();
+  const key = domainKey(domain);
+  const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  await writeDefinedFields(owner, key, {
+    sslMode: 'letsencrypt',
+    sslCertificate: certPath,
+    sslCertificateKey: keyPath,
+  });
   await regenerateMap();
 }
 
 // getConfig — kept for backward compat with getConfig.ts (nginx module bridge)
-function getConfig(domain: string): Promise<DomainConfigResult | undefined> {
-  return Promise.resolve().then(() => {
-    const me = getKernel();
-    const key = domainKey(domain);
-    const rec = readDomainRecord(me, key);
-    if (rec) return { domain: rec.domain, type: rec.type || '', target: rec.target || '', sslCertificate: rec.sslCertificate };
-    // Try wildcard: *.parent.com
-    const wildcard = '*.' + domain.split('.').slice(1).join('.');
-    const wRec = readDomainRecord(me, wildcard);
-    if (wRec) return { domain: wRec.domain, type: wRec.type || '', target: wRec.target || '', sslCertificate: wRec.sslCertificate };
-    return undefined;
-  });
+async function getConfig(domain: string): Promise<DomainConfigResult | undefined> {
+  const rec = await getDomainByName(domain);
+  if (rec) return { domain: rec.domain, type: rec.type || '', target: rec.target || '', sslCertificate: rec.sslCertificate };
+  // Try wildcard: *.parent.com
+  const wildcard = '*.' + domain.split('.').slice(1).join('.');
+  const wRec = await getDomainByName(wildcard);
+  if (wRec) return { domain: wRec.domain, type: wRec.type || '', target: wRec.target || '', sslCertificate: wRec.sslCertificate };
+  return undefined;
 }
 
 const domainStoreDefault = { getConfig };

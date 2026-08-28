@@ -20,7 +20,10 @@ import {
     registerDomain,
     updateDomain,
     deleteDomain,
+    sanitizeOwnerLabel,
 } from "../../../../kernel/domainStore.ts";
+import { getNetgetMonadOrigin, getGatewayRootNamespace } from "../../../../kernel/netgetMonadProcess.ts";
+import { resolveSurface } from "../../../../kernel/topologyResolver.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -83,6 +86,93 @@ function runNetgetCommand(args) {
 
 const router = express.Router();
 
+// ─── cleaker identity-handle resolution (local.cleaker/@handle) ──────────────
+// Path form, not subdomain — matches the convention this.gui's
+// useCleakerAuth.ts already uses against the machine's own hostname
+// (`https://${hostname}/@${username}/`, "mDNS only resolves the machine
+// hostname, not subdomains") and that monad's own resolveChainNamespace()/
+// getAtSelectorFromPath() (modules/monad/Typescript/src/http/namespace.ts)
+// already parse. A subdomain form (<handle>.local.cleaker, this route's
+// first cut) tested fine under curl's Host-header override but isn't
+// reachable by a real browser/phone at all — /etc/hosts has no wildcard
+// syntax, only one static entry per host is possible, and per-handle
+// entries don't scale or travel to another device scanning a QR.
+//
+// Two shapes:
+//   GET /@handle         → identity + surface JSON (unchanged from before)
+//   GET /@handle/<path>  → proxied read through to the resolved surface,
+//                          reusing monad's already-correct disclosure
+//                          envelope (public/closed/404, pathResolver.ts)
+//                          as-is. No new classification logic here, this
+//                          is a plain reverse-proxy hop.
+//
+// The upstream shape is NOT "GET /@handle/<path>" on the monad — tested
+// that directly first and it hits the ledger/blockchain-history endpoint
+// instead (same response for a real path and a made-up one, not a
+// disclosure envelope at all). The real shape monad's own path resolver
+// expects: the handle goes in X-Forwarded-Host as the full canonical
+// namespace (so namespaceToKernelPrefix() composes users.<handle>
+// server-side), and the URL path is just the field path relative to that
+// user's own tree — confirmed live: GET /domains.x.target with
+// x-forwarded-host: netget.local.cleaker returns
+// {"disclosure":"public","value":...}; a made-up path correctly 404s.
+// Writes are deliberately NOT proxied here — they go through the existing,
+// separately-protected monad write path (isNamespaceWriteAuthorized),
+// untouched by this route.
+//
+// nginx's "location ~ ^/@" is what routes here (see
+// setNginxConfigRoutes.ts) — the admin block's bare "/" is a static
+// try_files location serving index.html straight from disk, which never
+// reaches Express at all, so /@handle needed its own explicit location the
+// same way /cleaker/resolve did.
+router.use((req, res, next) => {
+    const match = req.path.match(/^\/@([^/]+)(\/.*)?$/);
+    if (!match) return next();
+    if (req.method !== "GET") {
+        return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    }
+
+    const handle = sanitizeOwnerLabel(match[1]);
+    const subPath = match[2] && match[2] !== "/" ? match[2] : "";
+    const canonicalNamespace = `${handle}.${getGatewayRootNamespace()}`;
+
+    if (!subPath) {
+        resolveSurface({ namespace: canonicalNamespace })
+            .then((surface) => {
+                res.json({
+                    ok: true,
+                    handle,
+                    namespace: canonicalNamespace,
+                    semanticPath: `users.${handle}`,
+                    surface: surface || null,
+                });
+            })
+            .catch((error) => {
+                res.status(500).json({ ok: false, error: "RESOLVE_FAILED", detail: String(error?.message || error) });
+            });
+        return;
+    }
+
+    resolveSurface({ namespace: canonicalNamespace })
+        .then(async (surface) => {
+            if (!surface?.url) {
+                return res.status(404).json({ ok: false, error: "SURFACE_NOT_FOUND" });
+            }
+            const upstream = await fetch(`${surface.url}${subPath}`, {
+                method: "GET",
+                headers: {
+                    accept: "application/json",
+                    "x-forwarded-host": canonicalNamespace,
+                },
+            });
+            const payload = await upstream.json().catch(() => ({}));
+            res.status(upstream.status).json(payload);
+        })
+        .catch((error) => {
+            res.status(502).json({ ok: false, error: "SURFACE_UNREACHABLE", detail: String(error?.message || error) });
+        });
+});
+
 // ─── OpenResty gateway control ────────────────────────────────────────────────
 // Status is read-only (port checks + launchctl/systemctl queries) — no sudo,
 // safe to poll. Restart/stop shell out through `netget`'s own sudo path
@@ -121,6 +211,138 @@ router.post("/frontend-mode", async (req, res) => {
     }
     const result = await runNetgetCommand(["frontend-mode", mode, "--json"]);
     res.status(result.ok ? 200 : 502).json(result);
+});
+
+// ─── Per-app frontend mode (dev / dist) ───────────────────────────────────────
+// Same generalization pattern as /frontend-mode above, but scoped to a
+// registered app instead of netget's own panel — the HTTP door onto
+// `netget app-frontend-mode`. Not the route a scaffolded app's own
+// FrontendModeLauncher bubble calls (that hits the gateway directly at
+// /apps/<name>/__frontend-mode, via apps.lua — see setNginxConfigRoutes.ts);
+// this one is for netget's own admin panel to drive the same toggle.
+router.get("/apps/:name/frontend-mode", async (req, res) => {
+    const name = String(req.params.name || "").trim();
+    if (!name) return res.status(400).json({ ok: false, message: "App name is required." });
+    const result = await runNetgetCommand(["app-frontend-mode", name, "--json"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
+
+router.post("/apps/:name/frontend-mode", async (req, res) => {
+    const name = String(req.params.name || "").trim();
+    if (!name) return res.status(400).json({ ok: false, message: "App name is required." });
+    const mode = String(req.body?.mode || "").trim();
+    if (mode !== "dev" && mode !== "dist") {
+        return res.status(400).json({ ok: false, message: `Invalid mode: "${mode}". Use dev or dist.` });
+    }
+    const result = await runNetgetCommand(["app-frontend-mode", name, mode, "--json"]);
+    res.status(result.ok ? 200 : 502).json(result);
+});
+
+// ─── Semantic Inspector: Explain / Inspect ────────────────────────────────────
+// Passthrough to netget's own monad (see kernel/netgetMonadProcess.ts) — the
+// browser never talks to the monad's port directly, it goes through this
+// same-origin route like every other panel feature. `me.explain`/`me.execute`
+// in main.jsx's `mount()` option call these; this.gui's Inspector
+// (hasKernelExplain in runtime/inspector.tsx) lights up once they respond.
+//
+// `path` is expected to be a fully-qualified, ALREADY-PREFIXED kernel path
+// (e.g. "users.jabellae.domains.example-com" — see domainStore.ts's
+// toDomainRecord(), which computes this per-record as `semanticPath` so a
+// GUI node's provenance can point straight at it without the frontend
+// needing to know netget's owner/escaping convention itself). Sending the
+// bare root namespace (no owner prefix) as x-forwarded-host makes
+// namespaceToKernelPrefix() resolve to "" (kernel root) server-side, so the
+// path is used as-is instead of getting a second prefix layered on top —
+// confirmed by testing (a real per-owner path here would otherwise only
+// ever resolve under the "netget" identity, not each domain's real owner).
+router.post("/explain", async (req, res) => {
+    const path = String(req.body?.path || "").trim();
+    if (!path) return res.status(400).json({ ok: false, error: "PATH_REQUIRED" });
+    try {
+        const origin = await getNetgetMonadOrigin();
+        const upstream = await fetch(`${origin}/explain`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "x-forwarded-host": getGatewayRootNamespace(),
+            },
+            body: JSON.stringify({ path }),
+        });
+        const payload = await upstream.json();
+        res.status(upstream.status).json(payload);
+    } catch (error) {
+        res.status(502).json({ ok: false, error: "MONAD_UNREACHABLE", detail: String(error?.message || error) });
+    }
+});
+
+router.post("/inspect", async (req, res) => {
+    try {
+        const origin = await getNetgetMonadOrigin();
+        const upstream = await fetch(`${origin}/inspect`, {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "x-forwarded-host": getGatewayRootNamespace(),
+            },
+            body: JSON.stringify(req.body || {}),
+        });
+        const payload = await upstream.json();
+        res.status(upstream.status).json(payload);
+    } catch (error) {
+        res.status(502).json({ ok: false, error: "MONAD_UNREACHABLE", detail: String(error?.message || error) });
+    }
+});
+
+// ─── cleaker TopologyResolver ─────────────────────────────────────────────────
+// netget's implementation of cleaker's own TopologyResolver interface
+// (modules/cleaker/Typescript/src/topology/resolver.ts) — see
+// kernel/topologyResolver.ts for the full explanation. Addressed at
+// local.cleaker (added alongside local.netget in setNginxConfigRoutes.ts's
+// admin server_name block) so cleaker's resolver has its own name, distinct
+// from local.netget's admin/control-plane surface, even though today both
+// resolve to this same backend process.
+router.get("/cleaker/resolve", async (req, res) => {
+    const namespace = String(req.query?.namespace || "").trim();
+    if (!namespace) return res.status(400).json({ ok: false, error: "NAMESPACE_REQUIRED" });
+    try {
+        const endpoint = await resolveSurface({ namespace, selector: req.query?.selector });
+        if (!endpoint) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+        res.json({ ok: true, endpoint });
+    } catch (error) {
+        res.status(500).json({ ok: false, error: "RESOLVE_FAILED", detail: String(error?.message || error) });
+    }
+});
+
+// ─── this.gui SeedSessionProvider passthrough (dev-mode only) ────────────────
+// In production, this.gui's monad client reaches netget's own monad through
+// nginx's generic /apps/:name mesh proxy (monad_proxy.lua) — see
+// resolveNetgetSeed.js's netgetMonadTransportOrigin(). Vite's dev server
+// blindly forwards all of /apps/* here (vite.config.js), so this dev server
+// needs its own equivalent of that same generic reverse proxy — unlike
+// /explain and /inspect above (fixed request shapes), claim/open/write/read
+// each hit a different sub-path with a different method, and the client
+// sets its own x-forwarded-host (the claimed namespace, e.g.
+// "jabellae.suis-macbook-air.local") — that header must pass through
+// unmodified, not be overwritten with getGatewayRootNamespace() like
+// /explain and /inspect do for their own fully-qualified paths.
+router.all(/^\/apps\/netget(\/.*)?$/, async (req, res) => {
+    try {
+        const origin = await getNetgetMonadOrigin();
+        const tail = req.params[0] || "";
+        const upstream = await fetch(`${origin}${tail}`, {
+            method: req.method,
+            headers: {
+                "content-type": req.headers["content-type"] || "application/json",
+                accept: req.headers["accept"] || "application/json",
+                "x-forwarded-host": req.headers["x-forwarded-host"] || req.headers["host"] || "",
+            },
+            body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(req.body || {}),
+        });
+        const payload = await upstream.json().catch(() => ({}));
+        res.status(upstream.status).json(payload);
+    } catch (error) {
+        res.status(502).json({ ok: false, error: "MONAD_UNREACHABLE", detail: String(error?.message || error) });
+    }
 });
 
 // ─── Gateway identity ────────────────────────────────────────────────────────

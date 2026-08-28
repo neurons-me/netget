@@ -37,10 +37,40 @@ const spec = {
   },
 };
 
+// Thin `me`-shaped adapter for the Semantic Inspector's Explain feature
+// (hasKernelExplain() in this.gui's runtime/inspector.tsx just needs
+// .explain/.execute to exist as functions). Not a real .me kernel in the
+// browser — netget's own monad (kernel/netgetMonadProcess.ts) holds the
+// real state; these two calls go through same-origin passthrough routes
+// in localNetget.js, which forward to that monad's /explain and /inspect.
+const me = {
+  explain: async (path) => {
+    const res = await fetch('/explain', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload?.ok === false) throw new Error(payload?.error || 'Explain failed');
+    return payload.explanation;
+  },
+  execute: async (path, args) => {
+    const res = await fetch('/inspect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path, ...args }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload?.ok === false) throw new Error(payload?.error || 'Inspect failed');
+    return payload.inspection;
+  },
+};
+
 mount(spec, '#root', {
   gui: {},
   React,
   ReactDOM,
+  me,
   // inspectorToggleVisible: false — the LeftBar's own Dev Tools popover
   // (wrench icon, bottom of the rail) already has a Semantic Inspector
   // on/off toggle; this floating bottom-right button duplicated it.

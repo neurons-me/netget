@@ -381,6 +381,54 @@ program
     }
   });
 
+// Lifecycle for local.netget's own Express backend (proxy.js) — replaces
+// PM2 (ecosystem.config.cjs) with the same PID-file pattern already used for
+// the GUI dev server above. Read-only status is safe to poll.
+program
+  .command('backend-status')
+  .description('Report the local.netget backend status as one JSON line: { ok, running, pid, port, url, message }.')
+  .action(async () => {
+    try {
+      const { getBackendStatus } = await import('./htmls/Netget-REACT/backend/backendProcess.ts');
+      console.log(JSON.stringify(await getBackendStatus()));
+      process.exit(0);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('backend-start')
+  .description('Start the local.netget backend (proxy.js) if not already running. Pass --production for production env. Prints one JSON line.')
+  .option('--production', 'Start with NODE_ENV=production, USE_HTTPS=true')
+  .action(async (opts: { production?: boolean }) => {
+    try {
+      const { startBackend } = await import('./htmls/Netget-REACT/backend/backendProcess.ts');
+      const result = await startBackend({ production: Boolean(opts.production) });
+      console.log(JSON.stringify(result));
+      process.exit(result.ok ? 0 : 1);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('backend-stop')
+  .description('Stop the local.netget backend. Prints one JSON line: { ok, message }.')
+  .action(async () => {
+    try {
+      const { stopBackend } = await import('./htmls/Netget-REACT/backend/backendProcess.ts');
+      const result = await stopBackend();
+      console.log(JSON.stringify(result));
+      process.exit(result.ok ? 0 : 1);
+    } catch (err: any) {
+      console.log(JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+      process.exit(1);
+    }
+  });
+
 // Non-interactive cert provisioning — the piece the interactive Domains menu
 // (domainsOptions.ts addNewDomain) previously had exclusively. Exists so the
 // /provision-cert HTTP endpoint (lua/handlers/domains.lua) can trigger real
@@ -529,6 +577,107 @@ program
         process.exit(1);
       }
       console.error(chalk.red(`frontend-mode failed: ${message}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('app-frontend-mode <name> [mode]')
+  .description('Switch a registered app between dev (live proxy through /apps/<name>) and dist (its own built dist/ served directly) — the same toggle frontend-mode gives netget\'s own panel, generalized to any app.')
+  .option('--json', 'Print a single JSON line instead of colored text (for scripted/HTTP callers)')
+  .action(async (name: string, mode: string | undefined, opts: { json?: boolean }) => {
+    try {
+      // apps.json has exactly one writer today — apps.lua's atomic
+      // tmp+rename, racing the app's own ~3s heartbeat. Routing this
+      // through the running gateway (instead of the CLI read-modify-writing
+      // apps.json directly) keeps that true; it does mean OpenResty must
+      // already be running, which is fine — toggling a live app's routing
+      // is inherently a live-gateway operation.
+      const base = process.env.NETGET_LOCAL || 'http://127.0.0.1';
+
+      if (!mode) {
+        const res = await fetch(`${base}/apps/${encodeURIComponent(name)}/__frontend-mode`);
+        const data = await res.json().catch(() => null);
+        if (opts.json) {
+          console.log(JSON.stringify(data ?? { success: false, error: `HTTP ${res.status}` }));
+          return;
+        }
+        if (!res.ok || !data?.success) {
+          console.error(chalk.red(data?.error || `Could not read frontend mode for '${name}' (HTTP ${res.status}).`));
+          process.exit(1);
+        }
+        console.log(chalk.cyan(`Current mode: ${data.frontendMode}`));
+        console.log(chalk.gray(`  dist dir: ${data.distDir || '(not reported)'}`));
+        return;
+      }
+
+      if (mode !== 'dev' && mode !== 'dist') {
+        const message = `Invalid mode: ${mode}. Use dev or dist.`;
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: false, message }));
+          process.exit(1);
+        }
+        console.error(chalk.red(message));
+        process.exit(1);
+      }
+
+      const setRes = await fetch(`${base}/apps/${encodeURIComponent(name)}/__frontend-mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const setData = await setRes.json().catch(() => null);
+      if (!setRes.ok || !setData?.success) {
+        const message = setData?.error || `Could not set frontend mode (HTTP ${setRes.status}).`;
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: false, message }));
+          process.exit(1);
+        }
+        console.error(chalk.red(message));
+        process.exit(1);
+      }
+
+      const { getNetgetAppConfContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
+      const { writeFileWithFallback } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
+      const { detectOpenRestyLayout } = await import('./modules/NetGetX/OpenResty/platformDetect.ts');
+      const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+
+      const layout = detectOpenRestyLayout();
+      if (!layout.isSupported) {
+        const message = `Mode set to ${mode}, but this platform has no OpenResty layout to reload — regenerate config manually.`;
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: true, name, mode, reloaded: false, message }));
+          return;
+        }
+        console.log(chalk.yellow(message));
+        return;
+      }
+
+      const nodePath = (await import('path')).default;
+      const destConf = nodePath.join(layout.confDDir, 'netget_app.conf');
+      await writeFileWithFallback(destConf, getNetgetAppConfContent(), `write netget_app.conf at ${destConf}`);
+      const reloaded = await startOpenRestyOnce(true);
+
+      if (opts.json) {
+        console.log(JSON.stringify({
+          ok: true,
+          name,
+          mode,
+          reloaded,
+          message: reloaded ? `Frontend mode for '${name}' set to ${mode}.` : `Frontend mode set to ${mode}, but reload may have failed — check OpenResty logs.`,
+        }));
+        return;
+      }
+
+      console.log(chalk.green(`✔ Frontend mode for '${name}' set to ${mode}.`));
+      console.log(reloaded ? chalk.green('✔ Gateway reloaded.') : chalk.yellow('⚠ Reload may have failed — check OpenResty logs.'));
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: false, message }));
+        process.exit(1);
+      }
+      console.error(chalk.red(`app-frontend-mode failed: ${message}`));
       process.exit(1);
     }
   });

@@ -101,6 +101,10 @@ export default defineConfig({
       '/delete-domain':    'http://127.0.0.1:3000',
       '/provision-cert':   'http://127.0.0.1:3000',
       '/check-auth':       'http://127.0.0.1:3000',
+      '/explain':          'http://127.0.0.1:3000',
+      '/inspect':          'http://127.0.0.1:3000',
+      '/cleaker':          'http://127.0.0.1:3000',
+      '/@':                'http://127.0.0.1:3000',
     },
   },
 });

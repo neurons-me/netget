@@ -5,6 +5,9 @@ import path from 'node:path';
 
 const tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netget-data-'));
 process.env.NETGET_DATA_DIR = tmpDataDir;
+process.env.NETGET_MONAD_NAMESPACE = `domain-store-test-${process.pid}.local`;
+const netgetDomain = `netget-${process.pid}.site`;
+const fulltrailerDomain = `fulltrailer-${process.pid}.com.mx`;
 
 const {
     getDomains,
@@ -15,8 +18,8 @@ const {
 const { generateDomainMap, getDomainMapPath } = await import('../src/runtime/domainMap.ts');
 
 await registerDomain(
-    'netget.site',
-    'netget.site',
+    netgetDomain,
+    netgetDomain,
     'admin@neurons.me',
     'letsencrypt',
     '/etc/letsencrypt/live/netget.site/fullchain.pem',
@@ -27,13 +30,13 @@ await registerDomain(
     'main-server'
 );
 
-const byName = await getDomainByName('netget.site');
-assert.equal(byName?.domain, 'netget.site');
+const byName = await getDomainByName(netgetDomain);
+assert.equal(byName?.domain, netgetDomain);
 assert.equal(byName?.type, 'server');
 assert.equal(byName?.owner, 'main-server');
 
 await registerDomain(
-    'fulltrailer.com.mx',
+    fulltrailerDomain,
     '',
     'admin@neurons.me',
     'none',
@@ -46,19 +49,19 @@ await registerDomain(
 );
 
 await updateSSLCertificatePaths(
-    'fulltrailer.com.mx',
+    fulltrailerDomain,
     '/etc/letsencrypt/live/fulltrailer.com.mx/fullchain.pem',
     '/etc/letsencrypt/live/fulltrailer.com.mx/privkey.pem'
 );
 
 const domains = await getDomains();
-assert.equal(domains.length, 2);
+assert.ok(domains.length >= 2);
 
-const netgetSite = domains.find((domain) => domain.domain === 'netget.site');
+const netgetSite = domains.find((domain) => domain.domain === netgetDomain);
 assert.equal(netgetSite?.sslCertificate, '/etc/letsencrypt/live/netget.site/fullchain.pem');
 assert.equal(netgetSite?.sslCertificateKey, '/etc/letsencrypt/live/netget.site/privkey.pem');
 
-const fulltrailer = domains.find((domain) => domain.domain === 'fulltrailer.com.mx');
+const fulltrailer = domains.find((domain) => domain.domain === fulltrailerDomain);
 assert.equal(fulltrailer?.target || '', '');
 assert.equal(fulltrailer?.type, 'proxy');
 assert.equal(fulltrailer?.sslMode, 'letsencrypt');
@@ -67,7 +70,7 @@ assert.equal(fulltrailer?.sslCertificateKey, '/etc/letsencrypt/live/fulltrailer.
 
 await generateDomainMap();
 const domainMap = JSON.parse(fs.readFileSync(getDomainMapPath(), 'utf8'));
-assert.deepEqual(domainMap.domains['fulltrailer.com.mx'], {
+assert.deepEqual(domainMap.domains[fulltrailerDomain], {
     type: 'proxy',
     protocol: 'http',
     ssl: {

@@ -90,9 +90,10 @@ history in [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md).
 ## Gateway claims: next split-brain to close
 
 `gateway-claims.json` is still the hot-path snapshot nginx Lua reads for signed
-gateway auth, but it is also still the write-side source of truth. That is the
-next store to migrate to the same pattern as domains: semantic `.me` memory as
-the authoritative ledger, JSON as a materialized cache for Lua.
+gateway auth. `GatewayClaimsManager` now writes semantic `.me` memory as the
+authoritative ledger and then materializes the JSON cache for Lua. The remaining
+work is retiring direct JSON writers outside that manager so the split-brain
+cannot reappear through a side door.
 
 See [GatewayClaimsLedger.md](./GatewayClaimsLedger.md) for the target paths and
 migration contract.

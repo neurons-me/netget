@@ -16,9 +16,10 @@
  *      to the monad ledger under the canonical path `netget.*`.  This is the
  *      intended durable source of truth for who administers this gateway.
  *
- *      Current implementation note: this migration is not complete yet.  The
- *      local JSON snapshot below is still the write-side source of truth until
- *      docs/GatewayClaimsLedger.md is implemented.
+ *      Current implementation note: this class now writes the ledger first and
+ *      then refreshes the local JSON snapshot.  The migration is not globally
+ *      complete until legacy direct JSON writers are retired too; see
+ *      docs/GatewayClaimsLedger.md.
  *
  *   3. **Local claims snapshot** — `~/.netget/runtime/gateway-claims.json`.
  *      A materialised, atomically-written JSON derived from the ledger.
@@ -29,7 +30,7 @@
  * ## Ledger paths
  *
  * ```
- * netget.owner                     → <identityHash>   (string)
+ * netget.owner.identityHash        → <identityHash>   (string)
  * netget.owner.username            → username         (string)
  * netget.admins.<identityHash>     → true             (boolean)
  * netget.grants.<identityHash>     → string[]
@@ -42,7 +43,8 @@
  * On first `netget ON`:
  *   1. CLI detects `needsBootstrap() === true` (no owner in snapshot).
  *   2. Operator proves `.me` identity → `identityHash` obtained.
- *   3. `bootstrapOwner(identityHash)` writes owner + admin + full scopes.
+ *   3. `bootstrapOwner(identityHash)` writes owner + admin + full scopes to
+ *      the semantic ledger and materialised snapshot.
  *   4. Snapshot is flushed → nginx picks it up automatically.
  *   5. All subsequent admin grants go through an existing admin's session.
  *
@@ -60,6 +62,8 @@ import crypto from 'crypto';
 import fs     from 'fs';
 import os     from 'os';
 import path   from 'path';
+import { getGatewayRootNamespace, getNetgetMonadOrigin } from '../../../kernel/netgetMonadProcess.js';
+import { readFromMonad, writeToMonad } from '../../../kernel/monadHttpClient.js';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 
 // ---------------------------------------------------------------------------
@@ -102,7 +106,8 @@ export type GatewayScope =
     | 'domains:read'  | 'domains:write'
     | 'apps:read'     | 'apps:write'
     | 'routes:read'   | 'routes:write'
-    | 'gateway:read'  | 'gateway:write';
+    | 'gateway:read'  | 'gateway:write'
+    | 'gateway:write:domain-metadata';
 
 /**
  * Full set of scopes granted to the gateway owner.
@@ -114,6 +119,19 @@ export const FULL_ADMIN_SCOPES: GatewayScope[] = [
     'routes:read',   'routes:write',
     'gateway:read',  'gateway:write',
 ];
+
+export interface GatewayClaimsLedgerClient {
+    read(path: string): Promise<unknown>;
+    write(path: string, value: unknown, operator?: '-'): Promise<void>;
+}
+
+export interface GatewayClaimsManagerOptions {
+    /**
+     * Semantic ledger backend. Omit for the real netget-owned monad, pass
+     * `false` only for isolated snapshot tests.
+     */
+    ledger?: GatewayClaimsLedgerClient | false;
+}
 
 // ---------------------------------------------------------------------------
 // Snapshot schema
@@ -183,6 +201,185 @@ export interface GatewayClaimsSnapshot {
     updatedAt: number;
 }
 
+interface GatewayClaimsLedgerOwnerBranch {
+    identityHash?: unknown;
+    username?: unknown;
+}
+
+interface GatewayClaimsLedgerBranch {
+    owner?: GatewayClaimsLedgerOwnerBranch;
+    admins?: Record<string, unknown>;
+    grants?: Record<string, unknown>;
+    pubkeys?: Record<string, unknown>;
+    usernames?: Record<string, unknown>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSnapshotPayload(
+    snapshot: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'>,
+): Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> {
+    return {
+        gatewayId: snapshot.gatewayId,
+        owner: snapshot.owner ?? null,
+        admins: snapshot.admins ?? {},
+        grants: snapshot.grants ?? {},
+        pubkeys: snapshot.pubkeys ?? {},
+        usernames: snapshot.usernames ?? {},
+    };
+}
+
+function materializeSnapshot(
+    payload: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'>,
+    updatedAt = Date.now(),
+): GatewayClaimsSnapshot {
+    const normalized = normalizeSnapshotPayload(payload);
+    return {
+        ...normalized,
+        version: GatewayClaimsManager.computeVersion(normalized),
+        updatedAt,
+    };
+}
+
+function validScopes(value: unknown): GatewayScope[] {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter((scope): scope is GatewayScope => typeof scope === 'string' && scope.trim().length > 0)
+        .map((scope) => scope.trim() as GatewayScope);
+}
+
+function readBooleanMap(input: unknown): Record<string, true> {
+    if (!isRecord(input)) return {};
+    const out: Record<string, true> = {};
+    for (const [key, value] of Object.entries(input)) {
+        if (value === true) out[key] = true;
+    }
+    return out;
+}
+
+function readScopeMap(input: unknown): Record<string, GatewayScope[]> {
+    if (!isRecord(input)) return {};
+    const out: Record<string, GatewayScope[]> = {};
+    for (const [key, value] of Object.entries(input)) {
+        out[key] = validScopes(value);
+    }
+    return out;
+}
+
+function readStringMap(input: unknown): Record<string, string> {
+    if (!isRecord(input)) return {};
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input)) {
+        if (typeof value === 'string' && value.trim()) out[key] = value;
+    }
+    return out;
+}
+
+export function snapshotFromGatewayClaimsLedgerBranch(
+    gatewayId: string,
+    branch: unknown,
+    updatedAt = Date.now(),
+): GatewayClaimsSnapshot {
+    const root = isRecord(branch) ? branch as GatewayClaimsLedgerBranch : {};
+    const ownerBranch = isRecord(root.owner) ? root.owner : {};
+    const owner = typeof ownerBranch.identityHash === 'string' && ownerBranch.identityHash.trim()
+        ? ownerBranch.identityHash
+        : null;
+    const usernames = readStringMap(root.usernames);
+    if (owner && typeof ownerBranch.username === 'string' && ownerBranch.username.trim()) {
+        usernames[owner] = ownerBranch.username;
+    }
+
+    return materializeSnapshot({
+        gatewayId,
+        owner,
+        admins: readBooleanMap(root.admins),
+        grants: readScopeMap(root.grants),
+        pubkeys: readStringMap(root.pubkeys),
+        usernames,
+    }, updatedAt);
+}
+
+export interface GatewayClaimsLedgerEntry {
+    path: string;
+    value: unknown;
+    operator?: '-';
+}
+
+function removedKeys(previous: Record<string, unknown>, next: Record<string, unknown>): string[] {
+    return Object.keys(previous).filter((key) => !(key in next));
+}
+
+export function gatewayClaimsSnapshotToLedgerEntries(
+    nextSnapshot: GatewayClaimsSnapshot,
+    previousSnapshot?: GatewayClaimsSnapshot | null,
+): GatewayClaimsLedgerEntry[] {
+    const next = normalizeSnapshotPayload(nextSnapshot);
+    const previous = previousSnapshot ? normalizeSnapshotPayload(previousSnapshot) : null;
+    const entries: GatewayClaimsLedgerEntry[] = [];
+
+    if (next.owner) {
+        entries.push({ path: 'netget.owner.identityHash', value: next.owner });
+        const ownerUsername = next.usernames[next.owner];
+        if (ownerUsername) {
+            entries.push({ path: 'netget.owner.username', value: ownerUsername });
+        } else if (previous?.owner && previous.usernames[previous.owner]) {
+            entries.push({ path: 'netget.owner.username', value: true, operator: '-' });
+        }
+    } else if (previous?.owner) {
+        entries.push({ path: 'netget.owner.identityHash', value: true, operator: '-' });
+        entries.push({ path: 'netget.owner.username', value: true, operator: '-' });
+    }
+
+    for (const [identityHash, enabled] of Object.entries(next.admins)) {
+        if (enabled === true) entries.push({ path: `netget.admins.${identityHash}`, value: true });
+    }
+    for (const identityHash of removedKeys(previous?.admins ?? {}, next.admins)) {
+        entries.push({ path: `netget.admins.${identityHash}`, value: true, operator: '-' });
+    }
+
+    for (const [identityHash, scopes] of Object.entries(next.grants)) {
+        entries.push({ path: `netget.grants.${identityHash}`, value: scopes });
+    }
+    for (const identityHash of removedKeys(previous?.grants ?? {}, next.grants)) {
+        entries.push({ path: `netget.grants.${identityHash}`, value: true, operator: '-' });
+    }
+
+    for (const [identityHash, pubkey] of Object.entries(next.pubkeys)) {
+        entries.push({ path: `netget.pubkeys.${identityHash}`, value: pubkey });
+    }
+    for (const identityHash of removedKeys(previous?.pubkeys ?? {}, next.pubkeys)) {
+        entries.push({ path: `netget.pubkeys.${identityHash}`, value: true, operator: '-' });
+    }
+
+    for (const [identityHash, username] of Object.entries(next.usernames)) {
+        entries.push({ path: `netget.usernames.${identityHash}`, value: username });
+    }
+    for (const identityHash of removedKeys(previous?.usernames ?? {}, next.usernames)) {
+        entries.push({ path: `netget.usernames.${identityHash}`, value: true, operator: '-' });
+    }
+
+    return entries;
+}
+
+function createDefaultLedgerClient(): GatewayClaimsLedgerClient {
+    return {
+        async read(pathInput: string): Promise<unknown> {
+            const origin = await getNetgetMonadOrigin();
+            const namespace = getGatewayRootNamespace();
+            const { value } = await readFromMonad(origin, namespace, pathInput);
+            return value;
+        },
+        async write(pathInput: string, value: unknown, operator?: '-'): Promise<void> {
+            const origin = await getNetgetMonadOrigin();
+            const namespace = getGatewayRootNamespace();
+            await writeToMonad(origin, namespace, pathInput, value, operator);
+        },
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
@@ -219,7 +416,7 @@ export function getGatewayClaimsVersionPath(): string {
  * const mgr = new GatewayClaimsManager();
  *
  * if (mgr.needsBootstrap()) {
- *     mgr.bootstrapOwner(identityHashFromMeProof);
+ *     await mgr.bootstrapOwner(identityHashFromMeProof);
  * }
  *
  * if (mgr.isAdmin(incomingIdentityHash)) {
@@ -230,9 +427,13 @@ export function getGatewayClaimsVersionPath(): string {
  */
 export class GatewayClaimsManager {
     readonly gatewayId: string;
+    private readonly ledger: GatewayClaimsLedgerClient | null;
 
-    constructor(gatewayId?: string) {
+    constructor(gatewayId?: string, options: GatewayClaimsManagerOptions = {}) {
         this.gatewayId = gatewayId ?? GatewayClaimsManager.normalizeGatewayId(os.hostname());
+        this.ledger = options.ledger === false
+            ? null
+            : (options.ledger ?? createDefaultLedgerClient());
     }
 
     // ── Static helpers ────────────────────────────────────────────────────
@@ -277,11 +478,7 @@ export class GatewayClaimsManager {
      */
     static empty(gatewayId: string): GatewayClaimsSnapshot {
         const base = { gatewayId, owner: null, admins: {}, grants: {}, pubkeys: {}, usernames: {} };
-        return {
-            ...base,
-            version: GatewayClaimsManager.computeVersion(base),
-            updatedAt: Date.now(),
-        };
+        return materializeSnapshot(base);
     }
 
     // ── Read ──────────────────────────────────────────────────────────────
@@ -324,6 +521,40 @@ export class GatewayClaimsManager {
 
         // Version bump — Lua workers detect the change and hot-reload the table.
         fs.writeFileSync(versionPath, snapshot.version, 'utf8');
+    }
+
+    async writeLedger(snapshot: GatewayClaimsSnapshot, previousSnapshot: GatewayClaimsSnapshot | null = this.read()): Promise<void> {
+        if (!this.ledger) return;
+        const entries = gatewayClaimsSnapshotToLedgerEntries(snapshot, previousSnapshot);
+        for (const entry of entries) {
+            await this.ledger.write(entry.path, entry.value, entry.operator);
+        }
+    }
+
+    async readLedgerSnapshot(): Promise<GatewayClaimsSnapshot | null> {
+        if (!this.ledger) return null;
+        const branch = await this.ledger.read('netget');
+        const snapshot = snapshotFromGatewayClaimsLedgerBranch(this.gatewayId, branch);
+        return snapshot.owner ? snapshot : null;
+    }
+
+    async materializeFromLedger(fallback?: GatewayClaimsSnapshot | null): Promise<GatewayClaimsSnapshot> {
+        const fromLedger = await this.readLedgerSnapshot();
+        const snapshot = fromLedger ?? fallback ?? GatewayClaimsManager.empty(this.gatewayId);
+        this.write(snapshot);
+        return snapshot;
+    }
+
+    async reset(): Promise<void> {
+        const current = this.read() ?? await this.readLedgerSnapshot();
+        const empty = GatewayClaimsManager.empty(this.gatewayId);
+        if (current) await this.writeLedger(empty, current);
+        this.write(empty);
+    }
+
+    private async commitSnapshot(snapshot: GatewayClaimsSnapshot, previousSnapshot: GatewayClaimsSnapshot | null): Promise<void> {
+        await this.writeLedger(snapshot, previousSnapshot);
+        await this.materializeFromLedger(snapshot);
     }
 
     // ── Bootstrap detection ───────────────────────────────────────────────
@@ -416,12 +647,12 @@ export class GatewayClaimsManager {
      *
      * @throws If bootstrap has already been performed.
      */
-    bootstrapOwner(
+    async bootstrapOwner(
         identityHash: string,
         pubkey:    string | null  = null,
         scopes:    GatewayScope[] = FULL_ADMIN_SCOPES,
         username?: string,
-    ): void {
+    ): Promise<void> {
         if (this.hasOwner()) {
             throw new Error(
                 `Gateway "${this.gatewayId}" already has an owner. ` +
@@ -438,11 +669,7 @@ export class GatewayClaimsManager {
             pubkeys,
             usernames,
         };
-        this.write({
-            ...base,
-            version:   GatewayClaimsManager.computeVersion(base),
-            updatedAt: Date.now(),
-        });
+        await this.commitSnapshot(materializeSnapshot(base), null);
     }
 
     /**
@@ -466,12 +693,12 @@ export class GatewayClaimsManager {
      *
      * @throws If the gateway has not been bootstrapped yet.
      */
-    grantAdmin(
+    async grantAdmin(
         identityHash: string,
         pubkeyOrScopes: string | null | GatewayScope[] = null,
         scopes:   GatewayScope[] = FULL_ADMIN_SCOPES,
         username?: string,
-    ): void {
+    ): Promise<void> {
         // Backward compat: if second arg is an array it's the old (hash, scopes) form.
         let pubkey: string | null;
         let resolvedScopes: GatewayScope[];
@@ -498,11 +725,7 @@ export class GatewayClaimsManager {
             pubkeys:   nextPubkeys,
             usernames: nextUsernames,
         };
-        this.write({
-            ...base,
-            version:   GatewayClaimsManager.computeVersion(base),
-            updatedAt: Date.now(),
-        });
+        await this.commitSnapshot(materializeSnapshot(base), current);
     }
 
     /**
@@ -515,7 +738,7 @@ export class GatewayClaimsManager {
      *
      * @throws If `identityHash` is the current gateway owner.
      */
-    revokeAdmin(identityHash: string): void {
+    async revokeAdmin(identityHash: string): Promise<void> {
         const current = this.read();
         if (!current) return;
         if (current.owner === identityHash) {
@@ -540,11 +763,7 @@ export class GatewayClaimsManager {
             pubkeys,
             usernames,
         };
-        this.write({
-            ...base,
-            version:   GatewayClaimsManager.computeVersion(base),
-            updatedAt: Date.now(),
-        });
+        await this.commitSnapshot(materializeSnapshot(base), current);
     }
 
     /**
@@ -557,7 +776,7 @@ export class GatewayClaimsManager {
      *
      * @throws If `newOwnerIdentityHash` is not a current admin.
      */
-    transferOwner(newOwnerIdentityHash: string): void {
+    async transferOwner(newOwnerIdentityHash: string): Promise<void> {
         const current = this.read();
         if (!current?.owner) {
             throw new Error('Gateway has no owner. Call bootstrapOwner() first.');
@@ -576,10 +795,6 @@ export class GatewayClaimsManager {
             pubkeys:   current.pubkeys   ?? {},
             usernames: current.usernames ?? {},
         };
-        this.write({
-            ...base,
-            version:   GatewayClaimsManager.computeVersion(base),
-            updatedAt: Date.now(),
-        });
+        await this.commitSnapshot(materializeSnapshot(base), current);
     }
 }

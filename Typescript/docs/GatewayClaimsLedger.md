@@ -1,7 +1,9 @@
 # Gateway Claims Ledger
 
-**Status: Designed, not migrated yet.** This note records the current split-brain in
-gateway authorization and the intended migration path. It mirrors the shape of
+**Status: Partially built (2026-08-28).** `GatewayClaimsManager` mutations now
+write the semantic ledger first and then materialize `gateway-claims.json` for
+nginx Lua. This note records the remaining split-brain in gateway authorization
+and the intended closure path. It mirrors the shape of
 [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md), but for `gateway-claims.json`.
 
 ---
@@ -32,10 +34,10 @@ the namespace because it was started with `getGatewayRootNamespace()`.
 
 ---
 
-## The current gap
+## The gap
 
-`GatewayClaimsManager.ts` currently treats the local JSON snapshot as the real
-source of truth:
+Historically, `GatewayClaimsManager.ts` treated the local JSON snapshot as the
+real source of truth:
 
 ```txt
 ~/.get/runtime/gateway-claims.json
@@ -46,7 +48,7 @@ That JSON file is important and should stay, because nginx Lua reads it on the h
 path for `X-Me-Proof` verification and scope lookup. Lua needs a local, synchronous,
 cheap materialized view.
 
-The problem is that the JSON is not only a materialized view today. It is the
+The problem was that the JSON was not only a materialized view. It was the
 authoritative store. The mutation methods:
 
 ```txt
@@ -56,8 +58,14 @@ revokeAdmin()
 transferOwner()
 ```
 
-mutate the JSON directly and never write to `.me` semantic memory. That makes
+mutated the JSON directly and never wrote to `.me` semantic memory. That made
 `gateway-claims.json` a second ledger parallel to the kernel.
+
+The `GatewayClaimsManager` path is now corrected: those four methods write
+`netget.*` semantic paths first and then refresh the local snapshot from that
+ledger. The remaining split-brain is any legacy writer that still updates
+`gateway-claims.json` directly, especially Lua handlers such as
+`claim_identity.lua`.
 
 This is the same class of failure that the domain store migration closed: a local
 file exists for speed, but it must not be the durable source of truth.
@@ -70,7 +78,7 @@ Gateway authorization should live under netget's namespace as ordinary semantic
 paths:
 
 ```txt
-netget.owner                    -> identityHash
+netget.owner.identityHash       -> identityHash
 netget.owner.username           -> username
 netget.admins.<identityHash>    -> true
 netget.grants.<identityHash>    -> GatewayScope[]
@@ -114,17 +122,20 @@ cache.
 
 ## Migration plan
 
-1. Add semantic write helpers to `GatewayClaimsManager` using `writeToMonad()` and
-   `readFromMonad()` from `src/kernel/monadHttpClient.ts`.
-2. Change the four mutation methods so they first update the semantic ledger, then
-   regenerate and flush the local JSON snapshot.
-3. Add `migrateGatewayClaimsToMonad.ts` to import an existing
+1. ✅ Add semantic write helpers to `GatewayClaimsManager` using `writeToMonad()`
+   and `readFromMonad()` from `src/kernel/monadHttpClient.ts`.
+2. ✅ Change the four mutation methods so they first update the semantic ledger,
+   then regenerate and flush the local JSON snapshot.
+3. ✅ Add `migrateGatewayClaimsToMonad.ts` to import an existing
    `gateway-claims.json` into the semantic ledger once.
-4. Keep all read-side Lua behavior pointed at the JSON snapshot.
-5. Add tests proving both layers stay aligned.
+4. ✅ Keep all read-side Lua behavior pointed at the JSON snapshot.
+5. ✅ Add tests proving both layers stay aligned for `GatewayClaimsManager`.
+6. 🔲 Move or retire legacy direct JSON writers (`claim_identity.lua`,
+   `/api/v1/commit`, and other unauthenticated semantic commit paths) so every
+   external write is attributable to a verified caller.
 
-The first release can preserve the existing synchronous read API. The write API may
-need async variants because monad writes are HTTP calls.
+The synchronous read API is preserved. The mutation API is now async because monad
+writes are HTTP calls.
 
 ---
 
@@ -132,16 +143,18 @@ need async variants because monad writes are HTTP calls.
 
 The migration should not be considered closed until these pass:
 
-- Bootstrap writes `netget.owner`, `netget.admins.<owner>`,
+- Bootstrap writes `netget.owner.identityHash`, `netget.admins.<owner>`,
   `netget.grants.<owner>`, and the JSON snapshot.
 - `grantAdmin()` writes semantic memory and updates the JSON snapshot.
 - `revokeAdmin()` tombstones the semantic admin/grant/pubkey/username paths and
   removes them from the JSON snapshot.
 - The owner cannot be revoked.
-- `transferOwner()` changes `netget.owner` without deleting the previous owner's
+- `transferOwner()` changes `netget.owner.identityHash` without deleting the previous owner's
   admin grant.
 - A regenerated snapshot from semantic memory matches the current JSON shape.
 - Lua-visible auth still reads only `gateway-claims.json`.
+- `reset()` tombstones owner/admin/grant/pubkey/username paths instead of only
+  deleting the local JSON snapshot.
 
 The important invariant:
 

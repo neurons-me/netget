@@ -102,7 +102,7 @@ assert.doesNotMatch(namespaceBlock, new RegExp(publicIP.replaceAll('.', '\\.')))
 assert.doesNotMatch(namespaceBlock, new RegExp(localIP.replaceAll('.', '\\.')));
 assert.match(namespaceBlock, /rewrite_by_lua_file lua\/handlers\/surface_proxy\.lua;/);
 
-const localDashboardBlock = serverBlockFor(`local.netget ${machineHostname.replace(/\.local$/, '')}.netget localhost 127.0.0.1 ${localIP} ${publicIP}`);
+const localDashboardBlock = serverBlockFor(`local.netget local.host local.cleaker ${machineHostname.replace(/\.local$/, '')}.netget localhost 127.0.0.1 ${localIP} ${publicIP}`);
 assert.match(localDashboardBlock, /try_files \$uri \$uri\/ \/index\.html;/);
 assert.match(localDashboardBlock, /content_by_lua_file lua\/handlers\/apps\.lua;/);
 assert.doesNotMatch(localDashboardBlock, /surface_proxy\.lua/);

@@ -16,7 +16,7 @@
  * 4. deriveIdentityFromCredentials(username, secret)
  *    → same double-keccak256 path that Cleaker uses in the browser
  * 5. Confirm prompt
- * 6. mgr.bootstrapOwner(identityHash)  →  atomic write to gateway-claims.json
+ * 6. mgr.bootstrapOwner(identityHash)  →  semantic ledger + gateway-claims.json
  * 7. chmod 600 on gateway-claims.json  →  OS-level access control
  * 8. Success summary
  * ```
@@ -163,7 +163,7 @@ export async function runBootstrapWizard(): Promise<string | null> {
         //   - companion .version file bump
         // proofPublicKey is stored in claims.pubkeys — enables Ed25519 challenge-response.
         // normalizedWho is stored in claims.usernames — shows human-readable name in admin panel.
-        mgr.bootstrapOwner(identityHash, proofPublicKey, undefined, normalizedWho);
+        await mgr.bootstrapOwner(identityHash, proofPublicKey, undefined, normalizedWho);
     } catch (err) {
         console.error(chalk.red(`\n  ✖ Could not write gateway claims: ${(err as Error).message}`));
         return null;

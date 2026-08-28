@@ -53,38 +53,40 @@ process.exit(r.status ?? 1);
 process.env.PATH = `${tmpBin}${path.delimiter}${process.env.PATH}`;
 process.env.NETGET_TEST_LOG = logPath;
 process.env.NETGET_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'netget-data-dns-'));
+process.env.NETGET_MONAD_NAMESPACE = `certbot-dns-google-test-${process.pid}.local`;
 process.env.NETGET_LETSENCRYPT_LIVE_DIR = path.join(tmpBin, 'le-live');
 process.env.NETGET_LETSENCRYPT_ARCHIVE_DIR = path.join(tmpBin, 'le-archive');
+const wildDomain = `wild-${process.pid}.example`;
 
 const { provisionCert, getLetsEncryptCertPath, getLetsEncryptKeyPath } =
     await import('../src/modules/NetGetX/Domains/SSL/Certbot/certbotProvision.ts');
 const { registerDomain, getDomainByName } = await import('../src/kernel/domainStore.ts');
 
-await registerDomain('wild.example', 'wild.example', 'admin@neurons.me', 'none', '', '', '127.0.0.1:9002', 'server', '', 'test-owner');
+await registerDomain(wildDomain, wildDomain, 'admin@neurons.me', 'none', '', '', '127.0.0.1:9002', 'server', '', 'test-owner');
 
 // ── wildcard without dnsProvider is rejected before touching certbot ──────
-const missingProvider = await provisionCert('wild.example', 'admin@neurons.me', { wildcard: true });
+const missingProvider = await provisionCert(wildDomain, 'admin@neurons.me', { wildcard: true });
 assert.equal(missingProvider.ok, false);
 assert.match(missingProvider.message, /requires a dnsProvider/i);
 assert.equal(fs.readFileSync(logPath, 'utf8').trim(), '', 'must not shell out at all when the options are invalid');
 
 // ── wildcard + google: correct certbot invocation ──────────────────────────
-const result = await provisionCert('wild.example', 'admin@neurons.me', { wildcard: true, dnsProvider: 'google' });
+const result = await provisionCert(wildDomain, 'admin@neurons.me', { wildcard: true, dnsProvider: 'google' });
 assert.equal(result.ok, true, result.message);
-assert.equal(result.certPath, getLetsEncryptCertPath('wild.example'));
-assert.equal(result.keyPath, getLetsEncryptKeyPath('wild.example'));
+assert.equal(result.certPath, getLetsEncryptCertPath(wildDomain));
+assert.equal(result.keyPath, getLetsEncryptKeyPath(wildDomain));
 
 const certbotCalls = fs.readFileSync(logPath, 'utf8').trim().split('\n').filter((l) => l.startsWith('certbot '));
 assert.equal(certbotCalls.length, 1);
 assert.equal(
     certbotCalls[0],
-    'certbot certonly --dns-google -d wild.example -d *.wild.example --non-interactive --agree-tos -m admin@neurons.me --expand',
+    `certbot certonly --dns-google -d ${wildDomain} -d *.${wildDomain} --non-interactive --agree-tos -m admin@neurons.me --expand`,
 );
 assert.doesNotMatch(certbotCalls[0], /--manual/, 'must never fall back to the unattended-incapable manual/dns wizard invocation');
 assert.doesNotMatch(certbotCalls[0], /--webroot/, 'DNS-01 must not also pass --webroot');
 
-const record = await getDomainByName('wild.example');
-assert.equal(record?.sslCertificate, getLetsEncryptCertPath('wild.example'), 'domain store must be updated on success, same as the webroot path');
+const record = await getDomainByName(wildDomain);
+assert.equal(record?.sslCertificate, getLetsEncryptCertPath(wildDomain), 'domain store must be updated on success, same as the webroot path');
 assert.equal(record?.sslMode, 'letsencrypt');
 
 console.log('certbot-dns-google ok');

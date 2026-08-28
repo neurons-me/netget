@@ -23,6 +23,7 @@ import {
     FULL_ADMIN_SCOPES,
     getGatewayClaimsPath,
     getGatewayClaimsVersionPath,
+    type GatewayClaimsLedgerClient,
 } from '../src/modules/NetGetX/Auth/GatewayClaimsManager.ts';
 
 // ---------------------------------------------------------------------------
@@ -36,9 +37,66 @@ process.env['NETGET_DATA_DIR'] = tmpDir;
 // Helpers
 // ---------------------------------------------------------------------------
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function setDeepValue(target: Record<string, unknown>, pathInput: string, value: unknown): void {
+    const parts = pathInput.split('.').filter(Boolean);
+    let cursor = target;
+    for (let i = 0; i < parts.length; i += 1) {
+        const key = parts[i]!;
+        if (i === parts.length - 1) {
+            cursor[key] = value;
+            return;
+        }
+        if (!isRecord(cursor[key])) cursor[key] = {};
+        cursor = cursor[key] as Record<string, unknown>;
+    }
+}
+
+function deleteDeepValue(target: Record<string, unknown>, pathInput: string): void {
+    const parts = pathInput.split('.').filter(Boolean);
+    let cursor = target;
+    for (let i = 0; i < parts.length - 1; i += 1) {
+        const key = parts[i]!;
+        if (!isRecord(cursor[key])) return;
+        cursor = cursor[key] as Record<string, unknown>;
+    }
+    delete cursor[parts[parts.length - 1]!];
+}
+
+function getDeepValue(target: unknown, pathInput: string): unknown {
+    const parts = pathInput.split('.').filter(Boolean);
+    let cursor = target;
+    for (const part of parts) {
+        if (!isRecord(cursor)) return undefined;
+        cursor = cursor[part];
+    }
+    return cursor;
+}
+
+class InMemoryClaimsLedger implements GatewayClaimsLedgerClient {
+    readonly writes: Array<{ path: string; value: unknown; operator?: '-' }> = [];
+    readonly tree: Record<string, unknown> = {};
+
+    async read(pathInput: string): Promise<unknown> {
+        return JSON.parse(JSON.stringify(getDeepValue(this.tree, pathInput) ?? null));
+    }
+
+    async write(pathInput: string, value: unknown, operator?: '-'): Promise<void> {
+        this.writes.push({ path: pathInput, value, operator });
+        if (operator === '-') {
+            deleteDeepValue(this.tree, pathInput);
+        } else {
+            setDeepValue(this.tree, pathInput, value);
+        }
+    }
+}
+
 /** Fresh manager pointing at the isolated temp dir. */
-function mgr(gatewayId = 'test.local') {
-    return new GatewayClaimsManager(gatewayId);
+function mgr(gatewayId = 'test.local', ledger: GatewayClaimsLedgerClient | false = false) {
+    return new GatewayClaimsManager(gatewayId, { ledger });
 }
 
 const OWNER   = 'aabbcc001122deadbeef0000000000000000000000000000000000000000000001';
@@ -96,7 +154,7 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 
 {
     const m = mgr();
-    m.bootstrapOwner(OWNER);
+    await m.bootstrapOwner(OWNER);
 
     assert.equal(m.needsBootstrap(), false, 'no longer needs bootstrap after owner set');
     assert.equal(m.hasOwner(),       true);
@@ -109,7 +167,7 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
     assert.ok(fs.existsSync(getGatewayClaimsVersionPath()), 'gateway-claims.version created');
 
     // Double-bootstrap must throw
-    assert.throws(
+    await assert.rejects(
         () => m.bootstrapOwner(ADMIN_2),
         /already has an owner/,
         'bootstrapOwner throws on already-bootstrapped gateway'
@@ -134,7 +192,7 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 
 {
     const m = mgr();
-    m.grantAdmin(ADMIN_2, ['domains:read', 'apps:read']);
+    await m.grantAdmin(ADMIN_2, ['domains:read', 'apps:read']);
 
     assert.equal(m.isAdmin(ADMIN_2), true);
     assert.equal(m.isOwner(ADMIN_2), false, 'grantAdmin does not make owner');
@@ -150,7 +208,7 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 
 {
     const m = mgr();
-    m.revokeAdmin(ADMIN_2);
+    await m.revokeAdmin(ADMIN_2);
 
     assert.equal(m.isAdmin(ADMIN_2),       false, 'admin revoked');
     assert.deepEqual(m.getScopes(ADMIN_2), [],    'no scopes after revocation');
@@ -166,7 +224,7 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 
 {
     const m = mgr();
-    assert.throws(
+    await assert.rejects(
         () => m.revokeAdmin(OWNER),
         /Cannot revoke the gateway owner/,
         'revokeAdmin on owner throws'
@@ -180,18 +238,69 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 {
     const m = mgr();
     // transferOwner requires target to already be an admin
-    assert.throws(
+    await assert.rejects(
         () => m.transferOwner(STRANGER),
         /not an admin/,
         'transferOwner to non-admin throws'
     );
 
-    m.grantAdmin(ADMIN_2);
-    m.transferOwner(ADMIN_2);
+    await m.grantAdmin(ADMIN_2);
+    await m.transferOwner(ADMIN_2);
 
     assert.equal(m.isOwner(ADMIN_2), true,  'new owner after transfer');
     assert.equal(m.isOwner(OWNER),   false, 'previous owner no longer owner');
     assert.equal(m.isAdmin(OWNER),   true,  'previous owner retains admin access');
+}
+
+// ---------------------------------------------------------------------------
+// Semantic ledger write + snapshot materialisation
+// ---------------------------------------------------------------------------
+
+{
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const ledger = new InMemoryClaimsLedger();
+    const m = mgr('ledger.local', ledger);
+
+    await m.bootstrapOwner(OWNER, 'pub-owner', ['domains:read'], 'suign');
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), OWNER);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.username'), 'suign');
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${OWNER}`), true);
+    assert.deepEqual(getDeepValue(ledger.tree, `netget.grants.${OWNER}`), ['domains:read']);
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${OWNER}`), 'pub-owner');
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${OWNER}`), 'suign');
+    assert.equal(m.read()?.owner, OWNER, 'snapshot materialised after bootstrap');
+
+    await m.grantAdmin(ADMIN_2, 'pub-admin-2', ['apps:read'], 'ana');
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${ADMIN_2}`), true);
+    assert.deepEqual(getDeepValue(ledger.tree, `netget.grants.${ADMIN_2}`), ['apps:read']);
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${ADMIN_2}`), 'pub-admin-2');
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${ADMIN_2}`), 'ana');
+
+    await m.revokeAdmin(ADMIN_2);
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${ADMIN_2}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.grants.${ADMIN_2}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${ADMIN_2}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${ADMIN_2}`), undefined);
+
+    await m.grantAdmin(ADMIN_2, 'pub-admin-2', ['gateway:read', 'gateway:write:domain-metadata'], 'ana');
+    await m.transferOwner(ADMIN_2);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), ADMIN_2);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.username'), 'ana');
+
+    const materialised = await m.materializeFromLedger();
+    assert.equal(materialised.owner, ADMIN_2);
+    assert.equal(materialised.admins[OWNER], true, 'previous owner remains admin');
+    assert.deepEqual(materialised.grants[ADMIN_2], ['gateway:read', 'gateway:write:domain-metadata']);
+    assert.equal(materialised.usernames[ADMIN_2], 'ana');
+
+    await m.reset();
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), undefined);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.username'), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${OWNER}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.grants.${ADMIN_2}`), undefined);
+    assert.equal(m.needsBootstrap(), true, 'reset materialises an unowned snapshot');
 }
 
 // ---------------------------------------------------------------------------

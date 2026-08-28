@@ -705,9 +705,7 @@ program
       }
 
       if (opts.reset && !mgr.needsBootstrap()) {
-        // Remove the claims file so bootstrapOwner() treats this as a fresh gateway.
-        const { unlinkSync } = await import('fs');
-        try { unlinkSync(getGatewayClaimsPath()); } catch { /* already gone */ }
+        await mgr.reset();
         console.log(chalk.yellow('  Previous claim cleared. Re-claiming…\n'));
       }
 

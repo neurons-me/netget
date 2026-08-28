@@ -1,0 +1,1 @@
+import{_ as a,o as t,c as i,a0 as s}from"./chunks/framework.CgT150Kp.js";const m=JSON.parse('{"title":"netget","description":"","frontmatter":{},"headers":[],"relativePath":"index.md","filePath":"index.md"}'),n={name:"index.md"};function l(r,e,o,h,c,d){return t(),i("div",null,[...e[0]||(e[0]=[s("",9)])])}const g=a(n,[["render",l]]);export{m as __pageData,g as default};

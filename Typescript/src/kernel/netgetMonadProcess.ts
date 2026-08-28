@@ -77,22 +77,35 @@ export async function loadGatewayRootNamespaceCache(): Promise<void> {
  * an explicit NETGET_MONAD_NAMESPACE env override, the operator's
  * configured mainServerName (xConfig — the same "choose your own domain"
  * field netget's own dashboard already exposes, e.g. "local.cleaker" or a
- * public "cleaker.me"), or the plain machine hostname as the original
- * default. Hostname/mainServerName both need the same 2-label shape every
- * monad on this host uses for ME_NAMESPACE (confirmed by testing: cleaker's
- * parseNamespaceExpression only cleanly parses "<prefix>.<constant>" where
- * constant is a normal hostname-shaped root — an invented 3-label root like
- * "netget-gateway.<hostname>" plus a "<owner>." prefix on top of it silently
- * failed to round-trip: namespaceToKernelPrefix() returned no prefix at
- * all, and writes landed unprefixed at kernel root instead of
- * users.<owner>.*). This monad is a separate process/port/kernel from any
- * other monad on the machine, so reusing the same namespace *string* isn't
+ * public "cleaker.me"), or the literal string "local.cleaker" as the
+ * default — NOT the machine hostname. A bare `os.hostname()` fallback was
+ * the same host/namespace category error this stack spent real effort
+ * naming and ruling out elsewhere (see cleaker/typedocs/
+ * Namespace-Is-Context.md): a namespace must be a *designated* context,
+ * never silently derived from whatever physical host happens to answer.
+ * "local.cleaker" is the correct unconfigured default specifically because
+ * it already IS a designated local namespace in this system's own model —
+ * not a stand-in for one — and once an operator runs mainServer.cli.ts to
+ * pick "cleaker.me" or another public domain, that choice always wins over
+ * this default. Hostname-shaped strings/mainServerName both need the same
+ * 2-label shape every monad on this host uses for ME_NAMESPACE (confirmed
+ * by testing: cleaker's parseNamespaceExpression only cleanly parses
+ * "<prefix>.<constant>" where constant is a normal hostname-shaped root —
+ * an invented 3-label root like "netget-gateway.<hostname>" plus a
+ * "<owner>." prefix on top of it silently failed to round-trip:
+ * namespaceToKernelPrefix() returned no prefix at all, and writes landed
+ * unprefixed at kernel root instead of users.<owner>.*) — "local.cleaker"
+ * satisfies that shape too. This monad is a separate process/port/kernel
+ * from any other monad on the machine, so reusing the same namespace
+ * *string* isn't
  * a collision — nothing else routes traffic to it by that name. */
+const UNCONFIGURED_DEFAULT_NAMESPACE = 'local.cleaker';
+
 export function getGatewayRootNamespace(): string {
   const explicit = String(process.env.NETGET_MONAD_NAMESPACE || '').trim();
   if (explicit) return explicit;
   if (_mainServerNameCache) return _mainServerNameCache;
-  return os.hostname().toLowerCase();
+  return UNCONFIGURED_DEFAULT_NAMESPACE;
 }
 
 function toNetgetStatus(status: Awaited<ReturnType<typeof getMonadStatus>>): NetgetMonadStatus {

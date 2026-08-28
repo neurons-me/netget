@@ -24,6 +24,7 @@ export default defineConfig({
           { text: 'Architecture', link: '/Architecture' },
           { text: 'Domain Map', link: '/DomainMap' },
           { text: 'Domain Store Split-Brain', link: '/DomainStoreSplitBrain' },
+          { text: 'Gateway Claims Ledger', link: '/GatewayClaimsLedger' },
           { text: 'Placement', link: '/Placement' },
           { text: 'Custom Domains', link: '/custom-domains' },
           { text: 'Apps Over Netget', link: '/AppsOverNetget' },

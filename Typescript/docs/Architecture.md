@@ -87,6 +87,18 @@ history in [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md).
 
 ---
 
+## Gateway claims: next split-brain to close
+
+`gateway-claims.json` is still the hot-path snapshot nginx Lua reads for signed
+gateway auth, but it is also still the write-side source of truth. That is the
+next store to migrate to the same pattern as domains: semantic `.me` memory as
+the authoritative ledger, JSON as a materialized cache for Lua.
+
+See [GatewayClaimsLedger.md](./GatewayClaimsLedger.md) for the target paths and
+migration contract.
+
+---
+
 ## NRP integration (2026-05-08)
 
 | Feature | Status |

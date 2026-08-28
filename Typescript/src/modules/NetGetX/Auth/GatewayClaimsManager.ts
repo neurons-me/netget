@@ -12,9 +12,13 @@
  *      of a namespace with an Ed25519 challenge-response (`me.prove()`).
  *      Monad verifies the proof via `POST /claims/signIn`.
  *
- *   2. **Gateway claims ledger** — semantic entries written to the monad ledger
- *      under the canonical path `netget.<gatewayId>.*`.  This is the durable
- *      source of truth for who administers this gateway.
+ *   2. **Gateway claims ledger** — target architecture: semantic entries written
+ *      to the monad ledger under the canonical path `netget.*`.  This is the
+ *      intended durable source of truth for who administers this gateway.
+ *
+ *      Current implementation note: this migration is not complete yet.  The
+ *      local JSON snapshot below is still the write-side source of truth until
+ *      docs/GatewayClaimsLedger.md is implemented.
  *
  *   3. **Local claims snapshot** — `~/.netget/runtime/gateway-claims.json`.
  *      A materialised, atomically-written JSON derived from the ledger.
@@ -25,9 +29,12 @@
  * ## Ledger paths
  *
  * ```
- * netget.<gatewayId>.meta.owner                 → <identityHash>   (string)
- * netget.<gatewayId>.admins.<identityHash>       → true             (boolean)
- * netget.<gatewayId>.grants.<identityHash>.scope → string[]
+ * netget.owner                     → <identityHash>   (string)
+ * netget.owner.username            → username         (string)
+ * netget.admins.<identityHash>     → true             (boolean)
+ * netget.grants.<identityHash>     → string[]
+ * netget.pubkeys.<identityHash>    → Ed25519 pubkey   (string)
+ * netget.usernames.<identityHash>  → username         (string)
  * ```
  *
  * ## Bootstrap sequence

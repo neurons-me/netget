@@ -1,9 +1,10 @@
 # Gateway Claims Ledger
 
-**Status: Partially built (2026-08-28).** `GatewayClaimsManager` mutations now
-write the semantic ledger first and then materialize `gateway-claims.json` for
-nginx Lua. This note records the remaining split-brain in gateway authorization
-and the intended closure path. It mirrors the shape of
+**Status: Built (2026-08-29).** `GatewayClaimsManager` mutations write the
+semantic ledger first and then materialize `gateway-claims.json` for nginx Lua.
+The legacy `/me/claim` Lua handler now verifies the signed proof and delegates
+state mutation to the ledger-backed backend instead of writing JSON directly.
+This note mirrors the shape of
 [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md), but for `gateway-claims.json`.
 
 ---
@@ -63,9 +64,10 @@ mutated the JSON directly and never wrote to `.me` semantic memory. That made
 
 The `GatewayClaimsManager` path is now corrected: those four methods write
 `netget.*` semantic paths first and then refresh the local snapshot from that
-ledger. The remaining split-brain is any legacy writer that still updates
-`gateway-claims.json` directly, especially Lua handlers such as
-`claim_identity.lua`.
+ledger. The legacy browser signup path is corrected too: `claim_identity.lua`
+still verifies nonce/timestamp/signature at the OpenResty edge, but delegates
+the mutation through an internal backend route that calls
+`GatewayClaimsManager.registerIdentity()`.
 
 This is the same class of failure that the domain store migration closed: a local
 file exists for speed, but it must not be the durable source of truth.
@@ -130,9 +132,10 @@ cache.
    `gateway-claims.json` into the semantic ledger once.
 4. ✅ Keep all read-side Lua behavior pointed at the JSON snapshot.
 5. ✅ Add tests proving both layers stay aligned for `GatewayClaimsManager`.
-6. 🔲 Move or retire legacy direct JSON writers (`claim_identity.lua`,
-   `/api/v1/commit`, and other unauthenticated semantic commit paths) so every
-   external write is attributable to a verified caller.
+6. ✅ Move legacy `/me/claim` off direct JSON writes: `claim_identity.lua`
+   verifies the proof and delegates to `GatewayClaimsManager.registerIdentity()`.
+7. ✅ Close monad `/api/v1/commit`: external semantic commits require a real
+   claim signature and honest attribution.
 
 The synchronous read API is preserved. The mutation API is now async because monad
 writes are HTTP calls.

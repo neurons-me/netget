@@ -65,6 +65,8 @@ assert.match(devBlock, /proxy_pass http:\/\/127\.0\.0\.1:5173;/);
 assert.match(devBlock, /proxy_intercept_errors on;\s*\n\s*error_page 502 503 504 = @netget_panel_unavailable;/);
 assert.match(devBlock, /location @netget_panel_unavailable \{/);
 assert.match(devBlock, /render_gateway_status and _G\.render_gateway_status\(4, host, "http:\/\/127\.0\.0\.1:5173", true\)/);
+assert.match(devBlock, /location = \/__netget\/internal\/gateway-claim \{\s*\n\s*internal;/);
+assert.match(devBlock, /proxy_pass http:\/\/127\.0\.0\.1:3000\/__gateway\/claim;/);
 
 // Dist mode: local.netget serves static files directly — no proxy, so no
 // need for the proxy-error fallback location.

@@ -25,6 +25,7 @@ import {
 import { getNetgetMonadOrigin, getGatewayRootNamespace } from "../../../../kernel/netgetMonadProcess.ts";
 import { resolveSurface } from "../../../../kernel/topologyResolver.ts";
 import { loadOrCreateXConfig } from "../../../../modules/NetGetX/config/xConfig.ts";
+import { GatewayClaimsManager } from "../../../../modules/NetGetX/Auth/GatewayClaimsManager.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -343,6 +344,48 @@ router.all(/^\/apps\/netget(\/.*)?$/, async (req, res) => {
         res.status(upstream.status).json(payload);
     } catch (error) {
         res.status(502).json({ ok: false, error: "MONAD_UNREACHABLE", detail: String(error?.message || error) });
+    }
+});
+
+// ─── Internal OpenResty bridge: /me/claim materialization ────────────────────
+// Public claim proof verification stays in Lua (`claim_identity.lua`) because
+// it already owns nonce freshness and OpenResty-facing response shape. Once the
+// proof is verified, Lua delegates the state mutation here through an nginx
+// `internal` location. This route is the only place that writes gateway claim
+// state: GatewayClaimsManager persists semantic `netget.*` memory first, then
+// materializes gateway-claims.json for Lua's hot path.
+const IDENTITY_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const RAW_ED25519_B64URL_PATTERN = /^[A-Za-z0-9_-]{40,60}$/;
+
+router.post("/__gateway/claim", async (req, res) => {
+    const body = req.body || {};
+    const identityHash = String(body.identityHash || "").trim();
+    const publicKey = String(body.publicKey || "").trim();
+    const username = sanitizeOwnerLabel(String(body.username || ""));
+
+    if (!IDENTITY_HASH_PATTERN.test(identityHash)) {
+        return res.status(400).json({ success: false, error: "IDENTITY_HASH_INVALID" });
+    }
+    if (!RAW_ED25519_B64URL_PATTERN.test(publicKey)) {
+        return res.status(400).json({ success: false, error: "PUBLIC_KEY_INVALID" });
+    }
+
+    try {
+        const mgr = new GatewayClaimsManager();
+        const snapshot = await mgr.registerIdentity(identityHash, publicKey, username || undefined);
+        return res.json({
+            success: true,
+            isOwner: snapshot.owner === identityHash,
+            identityHash,
+            gatewayId: snapshot.gatewayId,
+            scopes: snapshot.grants?.[identityHash] ?? [],
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            error: "CLAIM_PERSIST_FAILED",
+            message: String(error?.message || error),
+        });
     }
 });
 

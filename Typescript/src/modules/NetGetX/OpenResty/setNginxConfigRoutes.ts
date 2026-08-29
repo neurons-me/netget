@@ -584,6 +584,17 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+    # Internal bridge used only by claim_identity.lua after it has verified
+    # the signed .me proof. The state mutation itself lives in the Node
+    # backend so GatewayClaimsManager can write the semantic ledger first and
+    # materialize gateway-claims.json afterwards. This endpoint is not public.
+    location = /__netget/internal/gateway-claim {
+        internal;
+        proxy_pass http://127.0.0.1:3000/__gateway/claim;
+        proxy_set_header Content-Type application/json;
+        proxy_set_header X-NetGet-Internal claim_identity.lua;
+    }
+
     # .me claims list — GET → { claimed, owner, admins } with usernames
     location /me/claims {
         if ($request_method = OPTIONS) { return 204; }

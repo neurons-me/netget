@@ -16,9 +16,9 @@
  *      to the monad ledger under the canonical path `netget.*`.  This is the
  *      intended durable source of truth for who administers this gateway.
  *
- *      Current implementation note: this class now writes the ledger first and
- *      then refreshes the local JSON snapshot.  The migration is not globally
- *      complete until legacy direct JSON writers are retired too; see
+ *      Current implementation note: this class writes the ledger first and
+ *      then refreshes the local JSON snapshot. Browser `/me/claim` now
+ *      delegates here after OpenResty verifies the signed proof; see
  *      docs/GatewayClaimsLedger.md.
  *
  *   3. **Local claims snapshot** — `~/.netget/runtime/gateway-claims.json`.
@@ -670,6 +670,56 @@ export class GatewayClaimsManager {
             usernames,
         };
         await this.commitSnapshot(materializeSnapshot(base), null);
+    }
+
+    /**
+     * Registers a proven identity on this gateway.
+     *
+     * This is the ledger-backed replacement for OpenResty's old
+     * `claim_identity.lua` JSON mutation. First identity bootstraps the
+     * gateway owner; later identities only anchor their public key and
+     * username. Admin capabilities still require an explicit grant.
+     */
+    async registerIdentity(
+        identityHash: string,
+        pubkey: string,
+        username?: string,
+    ): Promise<GatewayClaimsSnapshot> {
+        const safeIdentityHash = String(identityHash || '').trim();
+        const safePubkey = String(pubkey || '').trim();
+        const safeUsername = String(username || '').trim().toLowerCase();
+        if (!safeIdentityHash) throw new Error('identityHash is required');
+        if (!safePubkey) throw new Error('pubkey is required');
+
+        const current = this.read() ?? await this.readLedgerSnapshot();
+        if (!current?.owner) {
+            const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
+                gatewayId: this.gatewayId,
+                owner:     safeIdentityHash,
+                admins:    { [safeIdentityHash]: true },
+                grants:    { [safeIdentityHash]: FULL_ADMIN_SCOPES },
+                pubkeys:   { [safeIdentityHash]: safePubkey },
+                usernames: safeUsername ? { [safeIdentityHash]: safeUsername } : {},
+            };
+            const snapshot = materializeSnapshot(base);
+            await this.commitSnapshot(snapshot, current);
+            return this.read() ?? snapshot;
+        }
+
+        const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
+            gatewayId: current.gatewayId,
+            owner:     current.owner,
+            admins:    { ...current.admins },
+            grants:    { ...current.grants },
+            pubkeys:   { ...(current.pubkeys ?? {}), [safeIdentityHash]: safePubkey },
+            usernames: {
+                ...(current.usernames ?? {}),
+                ...(safeUsername ? { [safeIdentityHash]: safeUsername } : {}),
+            },
+        };
+        const snapshot = materializeSnapshot(base);
+        await this.commitSnapshot(snapshot, current);
+        return this.read() ?? snapshot;
     }
 
     /**

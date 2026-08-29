@@ -13,7 +13,9 @@
 -- The proof challenge must encode the request fingerprint:
 --   canonicalJson({ method: "POST", nonce: "...", path: "/me/claim", timestamp: <ms> })
 --
--- On success: writes gateway-claims.json, returns { success: true, isOwner, identityHash }
+-- On success: delegates the state mutation to the Node backend, which writes
+-- the .me semantic ledger first and then materializes gateway-claims.json for
+-- Lua's hot path. This Lua handler verifies proof only; it is not a ledger.
 
 local cjson = require "cjson.safe"
 local ffi   = require "ffi"
@@ -94,40 +96,6 @@ local function deny(status, code, msg)
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
   ngx.say(cjson.encode({ success = false, error = code, message = msg }))
   ngx.exit(status)
-end
-
-local function get_claims_path()
-  local d = (ngx.var.NETGET_DATA_DIR or "")
-  if d == "" then d = os.getenv("NETGET_DATA_DIR") or "" end
-  if d == "" then d = (os.getenv("HOME") or "") .. "/.get" end
-  return d .. "/runtime/gateway-claims.json"
-end
-
-local function read_file(path)
-  local f = io.open(path, "r"); if not f then return nil end
-  local d = f:read("*a"); f:close(); return d
-end
-
-local function write_file(path, content)
-  local f = io.open(path, "w"); if not f then return false end
-  f:write(content); f:close(); return true
-end
-
-local function load_claims()
-  local raw = read_file(get_claims_path())
-  if not raw or raw == "" then return nil end
-  local t = cjson.decode(raw)
-  return type(t) == "table" and t or nil
-end
-
-local function save_claims(claims)
-  local path = get_claims_path()
-  local json = cjson.encode(claims)
-  if not write_file(path, json) then return false end
-  -- bump version file so me_sig.lua cache invalidates
-  local ver = tostring(ngx.now() * 1000)
-  write_file(path:gsub("%.json$", ".version"), ver)
-  return true
 end
 
 local function is_valid_hash(v)
@@ -239,60 +207,23 @@ if not verify_ed25519(public_key, message_str, signature) then
   deny(401, "SIGNATURE_INVALID", "Ed25519 signature verification failed.")
 end
 
--- 5. Load current claims and determine access
-local claims = load_claims()
-local is_first_claim = (claims == nil or claims.owner == nil or claims.owner == cjson.null)
-
--- 6. Write updated claims
-if is_first_claim then
-  claims = {
-    gatewayId = ngx.var.hostname or os.getenv("HOSTNAME") or "unknown",
-    owner     = identity_hash,
-    admins    = {},
-    grants    = {},
-    pubkeys   = {},
-    usernames = {},
-    version   = tostring(ngx.now() * 1000),
-    updatedAt = ngx.time() * 1000,
-  }
-end
-
-claims.admins  = type(claims.admins)  == "table" and claims.admins  or {}
-claims.grants  = type(claims.grants)  == "table" and claims.grants  or {}
-claims.pubkeys = type(claims.pubkeys) == "table" and claims.pubkeys or {}
-
-if is_first_claim then
-  claims.admins[identity_hash] = true
-end
-
-claims.pubkeys[identity_hash] = public_key
-if body_username then
-  if type(claims.usernames) ~= "table" then claims.usernames = {} end
-  claims.usernames[identity_hash] = body_username
-end
-
-if is_first_claim and not claims.grants[identity_hash] then
-  claims.grants[identity_hash] = {
-    "domains:read", "domains:write",
-    "apps:read",    "apps:write",
-    "routes:read",  "routes:write",
-    "gateway:read", "gateway:write",
-  }
-end
-claims.updatedAt = ngx.time() * 1000
-claims.version   = tostring(ngx.now() * 1000)
-
-if not save_claims(claims) then
-  deny(500, "CLAIMS_WRITE_FAILED",
-    "Could not write gateway-claims.json. Check file permissions.")
-end
-
--- 7. Return success
-ngx.header["Content-Type"] = "application/json; charset=utf-8"
-ngx.say(cjson.encode({
-  success      = true,
-  isOwner      = (claims.owner == identity_hash),
+-- 5. Delegate the verified claim to the ledger-backed backend.
+local delegate_body = cjson.encode({
   identityHash = identity_hash,
-  gatewayId    = claims.gatewayId,
-  scopes       = claims.grants[identity_hash] or cjson.empty_array,
-}))
+  publicKey = public_key,
+  username = body_username,
+})
+
+local upstream = ngx.location.capture("/__netget/internal/gateway-claim", {
+  method = ngx.HTTP_POST,
+  body = delegate_body,
+})
+
+if not upstream then
+  deny(502, "CLAIMS_BACKEND_UNAVAILABLE", "Could not reach the gateway claims backend.")
+end
+
+ngx.status = upstream.status
+ngx.header["Content-Type"] = "application/json; charset=utf-8"
+ngx.say(upstream.body or "")
+ngx.exit(upstream.status)

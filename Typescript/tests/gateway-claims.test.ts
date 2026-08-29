@@ -304,6 +304,34 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 }
 
 // ---------------------------------------------------------------------------
+// registerIdentity — ledger-backed replacement for claim_identity.lua writes
+// ---------------------------------------------------------------------------
+
+{
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const ledger = new InMemoryClaimsLedger();
+    const m = mgr('claim.local', ledger);
+
+    const bootstrapped = await m.registerIdentity(OWNER, 'pub-owner', 'suign');
+    assert.equal(bootstrapped.owner, OWNER, 'first registered identity becomes owner');
+    assert.equal(bootstrapped.admins[OWNER], true, 'first registered identity becomes admin');
+    assert.deepEqual(bootstrapped.grants[OWNER], FULL_ADMIN_SCOPES);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), OWNER);
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${OWNER}`), 'pub-owner');
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${OWNER}`), 'suign');
+
+    const later = await m.registerIdentity(ADMIN_2, 'pub-admin-2', 'ana');
+    assert.equal(later.owner, OWNER, 'later registered identity does not replace owner');
+    assert.equal(later.admins[ADMIN_2], undefined, 'later registered identity is not an admin');
+    assert.deepEqual(later.grants[ADMIN_2] ?? [], [], 'later registered identity gets no scopes');
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${ADMIN_2}`), 'pub-admin-2');
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${ADMIN_2}`), 'ana');
+    assert.equal(m.read()?.pubkeys[ADMIN_2], 'pub-admin-2', 'snapshot is materialized');
+}
+
+// ---------------------------------------------------------------------------
 // Version stability — identical payload → identical version hash
 // ---------------------------------------------------------------------------
 

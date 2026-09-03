@@ -237,6 +237,23 @@ end
 
 ngx.var.monad_proxy_target = target
 
+-- Monads resolve which namespace's data to serve from the inbound Host
+-- header (see monad/Typescript's resolveHostNamespace()), not from how
+-- they were addressed. Left unchanged, this route forwards the client's
+-- original Host (e.g. "local.netget", the gateway's own hostname) straight
+-- through — so a request explicitly routed BY NAME to a specific monad
+-- gets answered using the gateway's Host as the namespace instead of the
+-- monad's own claimed one, silently returning empty/wrong data instead of
+-- what that monad actually holds. Overriding Host to the resolved app's own
+-- registered namespace makes /apps/:name and /monads/:name equivalent to
+-- addressing the monad directly with its own identity as Host — exactly
+-- the behavior a name-based route should have.
+local metadata = type(app.metadata) == "table" and app.metadata or {}
+local target_namespace = metadata.namespace or metadata.identity
+if target_namespace and target_namespace ~= "" then
+  ngx.req.set_header("Host", tostring(target_namespace))
+end
+
 local tail = ngx.var.monad_proxy_tail
 if not tail or tail == "" then tail = "/" end
 ngx.req.set_uri(tail, false)

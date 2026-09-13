@@ -83,6 +83,51 @@ export async function deriveGatewayProofKey(
     return proof.publicKey as string;
 }
 
+/**
+ * Produces a REAL signed claim proof — same kernel/cleaker construction as
+ * {@link deriveGatewayProofKey} above, but with an actual server-issued
+ * `challenge` (from gatewaySetupSession.ts's issueClaimChallenge()) instead
+ * of `null`. This is the CLI half of the gateway-claim signature; the
+ * browser half is netgetSetupClient.ts, using the exact same `.me`
+ * `prove()` API via signedRequest.ts's `deriveCleakerNode` — same
+ * derivation, same signing call, two callers, so a CLI-signed and a
+ * browser-signed claim for the same credentials are indistinguishable to
+ * the verifier.
+ *
+ * Returns the full proof object (not just `.publicKey`, unlike
+ * deriveGatewayProofKey) — the caller needs every field to submit to
+ * gatewaySetupSession.ts's commitSignedClaim(), which reconstructs and
+ * checks the signed message itself rather than trusting any field at
+ * face value.
+ */
+export async function signGatewayClaimChallenge(
+    who: string,
+    secret: string,
+    hostname: string,
+    challenge: string,
+): Promise<{
+    identityHash: string;
+    expression: string | null;
+    namespace: string;
+    rootNamespace: string;
+    publicKey: string;
+    message: string;
+    signature: string;
+    timestamp: number;
+}> {
+    const me = new (ME as any)();
+    me[ME_RESEED](who, secret);
+
+    const seedHex = String(me[ME_SEED] ?? '').trim();
+    if (!seedHex) {
+        throw new Error('.me kernel did not expose a compound seed after ME_RESEED.');
+    }
+
+    const node = cleaker(me, `${who}.${hostname}`);
+    const proof = await (node as any).prove({ rootNamespace: hostname, challenge });
+    return proof;
+}
+
 // ── Legacy SEED-env path (kept for backward compat) ──────────────────────────
 const GATEWAY_SEED_ENV = 'SEED';
 

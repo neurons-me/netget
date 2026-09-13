@@ -719,6 +719,28 @@ program
     }
   });
 
+// xConfig.mainServerName is overloaded (see netgetMonadProcess.ts's own
+// comment on the same ambiguity): it can hold a local mesh surface name
+// picked for namespace-fallback purposes, where a local.* value is a
+// perfectly valid answer. For "what address does a human open in a
+// browser" it never is — a local.* value there almost always means it
+// was set for the OTHER purpose, not deliberately as this gateway's own
+// public name. Same check as MainServerView.tsx's isLocalMeshValue,
+// duplicated here (a few lines, not worth importing a browser package
+// into the CLI for).
+function isLocalMeshValue(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v === 'localhost' || v === '127.0.0.1' || v === 'local' || v.startsWith('local.');
+}
+
+function resolveSetupAddress(mainServerName: string | null | undefined): { address: string; isLocalOnly: boolean } {
+  const configured = String(mainServerName || '').trim();
+  if (configured && !isLocalMeshValue(configured)) {
+    return { address: configured, isLocalOnly: false };
+  }
+  return { address: 'local.netget', isLocalOnly: true };
+}
+
 program
   .command('init')
   .alias('initialize')
@@ -732,9 +754,12 @@ program
       const { syncNginxConfigFile } = await import('./modules/NetGetX/OpenResty/setNginxConfigFile.ts');
       const { installOpenRestyService, waitForOpenRestyGateway, getOpenRestyServiceStatus } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
       const { GatewayClaimsManager } = await import('./modules/NetGetX/Auth/GatewayClaimsManager.ts');
+      const { startNetgetMonad } = await import('./kernel/netgetMonadProcess.ts');
+      const { resolveLedgerIdentity } = await import('./kernel/ledgerIdentity.ts');
+      const { createSetupSession } = await import('./modules/NetGetX/Auth/gatewaySetupSession.ts');
 
       console.log(chalk.cyan('\n⚡ netget init\n'));
-      await loadOrCreateXConfig();
+      const xConfig = await loadOrCreateXConfig();
 
       // ── Step 1: Gateway ──────────────────────────────────────────────────────
       const service = await getOpenRestyServiceStatus();
@@ -775,15 +800,45 @@ program
         console.log(chalk.green('✔'));
       }
 
-      // ── Step 2: Claim ────────────────────────────────────────────────────────
+      // ── Step 2: Ledger identity + monad ───────────────────────────────────────
+      // Resolved/generated BEFORE claim status is checked: commitSignedClaim()
+      // (gatewaySetupSession.ts) refuses to claim while the ledger isn't
+      // confirmed running, and the setup session below is bound to this
+      // ledger's own persistent id (ledgerIdentity.ts), not the hostname.
+      console.log(chalk.cyan('\n── Ledger ──'));
+      const ledgerIdentity = resolveLedgerIdentity();
+      if (ledgerIdentity.requiresMigration) {
+        console.log(chalk.yellow(`⚠  Legacy installation — ledger identity migration pending (id: ${ledgerIdentity.id}).`));
+      } else {
+        console.log(chalk.green(`✔ Ledger identity ready (id: ${ledgerIdentity.id}).`));
+      }
+
+      process.stdout.write(chalk.cyan('Starting monad… '));
+      const monadStatus = await startNetgetMonad();
+      console.log(monadStatus.running ? chalk.green('✔') : chalk.red(`✗ ${monadStatus.message}`));
+      if (!monadStatus.running) {
+        console.error(chalk.red('\nCannot continue without netget\'s own ledger running.'));
+        process.exit(1);
+      }
+
+      // ── Step 3: Claim ────────────────────────────────────────────────────────
       const mgr = new GatewayClaimsManager();
       if (mgr.needsBootstrap()) {
-        console.log(chalk.cyan('\n── Establish gateway identity ──'));
-        console.log(chalk.gray('Your credentials are never stored — only the resulting hash.\n'));
+        const { address, isLocalOnly } = resolveSetupAddress(xConfig.mainServerName);
+        const session = createSetupSession(ledgerIdentity.id);
+
+        console.log(chalk.cyan('\n── Setup ──'));
+        console.log(chalk.bold('\nNetget is ready to set up.\n'));
+        console.log(`  ${chalk.bold('Open:')}        ${chalk.underline(`https://${address}`)}`);
+        console.log(`  ${chalk.bold('Setup code:')}  ${chalk.yellow.bold(session.code)}`);
+        if (isLocalOnly) {
+          console.log(chalk.gray('\n  (Reachable from this machine only. For LAN/remote access, configure'));
+          console.log(chalk.gray('   a public domain first — see `netget main-server`.)'));
+        }
         const { runBootstrapWizard } = await import('./modules/NetGetX/Auth/bootstrapWizard.cli.ts');
-        const ownerHash = await runBootstrapWizard();
+        const ownerHash = await runBootstrapWizard({ setupCode: session.code });
         if (!ownerHash) {
-          console.log(chalk.yellow('\nClaim skipped. Run netget init again to claim later.'));
+          console.log(chalk.yellow('\nClaim skipped. The setup code above stays valid — open the address in a browser, or run netget claim again.'));
           return;
         }
         console.log(chalk.green('\n✔ Gateway claimed.'));
@@ -791,12 +846,7 @@ program
         console.log(chalk.green('✔ Gateway already claimed.'));
       }
 
-      // ── Step 3: Monad ────────────────────────────────────────────────────────
-      console.log(chalk.cyan('\n── Start monad ──'));
-      console.log(chalk.gray('Install and start a monad to serve this gateway:\n'));
-      console.log(chalk.white('  npm install -g monad.ai'));
-      console.log(chalk.white('  monads start local\n'));
-      console.log(chalk.green('✔ Init complete. Refresh your browser after starting the monad.\n'));
+      console.log(chalk.green('\n✔ Init complete.\n'));
 
     } catch (err: any) {
       const chalk = (await import('chalk')).default;

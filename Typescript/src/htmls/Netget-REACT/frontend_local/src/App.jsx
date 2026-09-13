@@ -1,8 +1,7 @@
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
-import { Layout, ThemeLauncher, LauncherPopoverProvider } from 'this.gui';
+import { Layout, ThemeLauncher, LauncherPopoverProvider, GatewaySetup, createNetgetSetupClient } from 'this.gui';
 import { SeedSessionProvider, MeLauncher, CleakerLanding, HostSurface } from 'this.gui/react';
 import { DevToolsLauncher, SpecBoundary } from 'this.gui/devtools';
-import WelcomeNetget from './pages/WelcomeMedia/WelcomeNetget.jsx';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
 import Domains from './pages/Domains.jsx';
@@ -11,6 +10,27 @@ import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
+
+// One client for this tab's lifetime, at module scope — NOT inside a
+// render, and NOT re-created per navigation. Holds nothing secret: no
+// identity, no key, no passphrase — signing happens entirely on the
+// Cleaker origin that actually holds the claimant's keychain (see
+// CleakerNetgetClaimView in CleakerLanding.tsx). This client only talks
+// to netget's own backend (verify code, issue challenge, resolve where to
+// redirect, submit whatever signed proof comes back).
+const netgetSetupClient = createNetgetSetupClient('');
+
+function GatewayEntry() {
+  return (
+    <GatewaySetup
+      endpoint=""
+      onSubmitSetupCode={netgetSetupClient.onSubmitSetupCode}
+      onVerifySetupCode={netgetSetupClient.onVerifySetupCode}
+      resolveCleakerClaimUrl={netgetSetupClient.resolveCleakerClaimUrl}
+      onCommitClaim={netgetSetupClient.onCommitClaim}
+    />
+  );
+}
 
 // Home/Domains/Logs are plain components that take no props, so they never
 // forward data-gui-node-id to any DOM element — a SpecBoundary spec'd
@@ -120,7 +140,12 @@ function NetGetShell() {
       }}
     >
       <Routes>
-        <Route path="/" element={<WelcomeNetget />} />
+        {/* GatewaySetup owns "/" now — it resolves the real setup phase
+            itself (checking/unreachable/dependencies/unclaimed/claimed)
+            and hands off to whatever comes after claiming. WelcomeNetget.jsx
+            is left on disk, un-routed, not deleted — its fate (retire vs.
+            merge its still-useful pieces) is a separate decision. */}
+        <Route path="/" element={<GatewayEntry />} />
         <Route
           path="/home"
           element={<SpecBoundary registry={PAGE_WRAPPER_REGISTRY} spec={HOME_SPEC} />}

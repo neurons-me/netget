@@ -87,16 +87,22 @@ history in [DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md).
 
 ---
 
-## Gateway claims: next split-brain to close
+## Gateway claims: authority now derived from the namespace, not a separate ledger
 
 `gateway-claims.json` is still the hot-path snapshot nginx Lua reads for signed
-gateway auth. `GatewayClaimsManager` now writes semantic `.me` memory as the
-authoritative ledger and then materializes the JSON cache for Lua. The remaining
-work is retiring direct JSON writers outside that manager so the split-brain
-cannot reappear through a side door.
-
-See [GatewayClaimsLedger.md](./GatewayClaimsLedger.md) for the target paths and
-migration contract.
+gateway auth. As of 2026-09-12 the base claim (`gatewaySetupSession.ts`'s
+`commitSignedClaim`, used by both `netget init`/`netget claim` and the
+browser `GatewaySetup` flow) no longer bootstraps a separate netget-owned
+ledger entry at all: it resolves which live monad serves the signer's own
+`.me` namespace (`resolveSurface()`), verifies a real active keychain key +
+Ed25519 signature there, and caches the result locally via
+`GatewayClaimsManager.materializeFromNamespaceClaim()` — no `.me` write for
+the base claim. `grantAdmin()`/`revokeAdmin()`/`transferOwner()` still use
+the older semantic-ledger-then-materialize model described in
+[GatewayClaimsLedger.md](./GatewayClaimsLedger.md) — that file's own status
+note explains the split. Retiring direct JSON writers outside
+`GatewayClaimsManager` (this section's original concern) is unaffected by
+this change and still open.
 
 ---
 

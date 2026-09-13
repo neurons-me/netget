@@ -278,7 +278,7 @@ export default async function NetGetX_CLI(x?: XStateData): Promise<void> {
                         const { runBootstrapWizard } = await import('./Auth/bootstrapWizard.cli.ts');
                         const ownerHash = await runBootstrapWizard();
                         if (!ownerHash) {
-                            lastMessage = chalk.yellow('Bootstrap cancelled. NetGet was not started.');
+                            lastMessage = chalk.yellow('Gateway not yet claimed — finish setup in your browser, then try again. NetGet was not started.');
                             break;
                         }
                         console.log('');

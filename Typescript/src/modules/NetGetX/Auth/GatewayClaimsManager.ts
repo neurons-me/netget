@@ -65,6 +65,7 @@ import path   from 'path';
 import { getGatewayRootNamespace, getNetgetMonadOrigin } from '../../../kernel/netgetMonadProcess.js';
 import { readFromMonad, writeToMonad } from '../../../kernel/monadHttpClient.js';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
+import { pemToRawEd25519PublicKeyBase64Url } from './keychainKeyVerification.js';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -545,6 +546,65 @@ export class GatewayClaimsManager {
         return snapshot;
     }
 
+    /**
+     * Reads the CANONICAL, signed owner/admins/grants state from
+     * monad.ai's own `claim/gatewayAuthority.ts` branch (`GET
+     * /api/v1/gateway/:gatewayId/authority`) and materialises it into the
+     * local snapshot Lua consumes. This is the read half of the E+A
+     * signed-delegation model: authority lives in `.me`, mutated only via
+     * signed grant/revoke/transfer/bootstrap calls to that same surface
+     * (see `gatewaySetupSession.ts`'s `commitSignedClaim` for bootstrap,
+     * and the new `gatewayAdminActions.ts` for grant/revoke/transfer).
+     * Netget needs read access here, never write permission — this is a
+     * plain, unauthenticated GET, same as the keychain's own public key
+     * listing.
+     *
+     * A record with no owner (never bootstrapped on this surface, or the
+     * surface unreachable) materialises the same empty snapshot
+     * `needsBootstrap()` already expects — this must never look like "an
+     * owner exists" just because the request itself succeeded.
+     */
+    async materializeFromGatewayAuthority(surfaceUrl: string): Promise<GatewayClaimsSnapshot> {
+        const url = `${surfaceUrl.replace(/\/+$/, '')}/api/v1/gateway/${encodeURIComponent(this.gatewayId)}/authority`;
+        let record: {
+            owner?: string | null;
+            admins?: Record<string, true>;
+            grants?: Record<string, string[]>;
+            pubkeys?: Record<string, string>;
+            usernames?: Record<string, string>;
+        } | null = null;
+        try {
+            const res = await fetch(url);
+            const body = await res.json().catch(() => null) as { ok?: boolean; record?: typeof record } | null;
+            record = body?.ok ? (body.record ?? null) : null;
+        } catch {
+            record = null;
+        }
+
+        // monad.ai stores gateway-authority pubkeys as PEM (its own keychain
+        // convention); this snapshot's own pubkeys map has always been raw
+        // base64url (see GatewayClaimsSnapshot's own doc comment) — convert
+        // here rather than changing that established local contract.
+        const rawPubkeys: Record<string, string> = {};
+        for (const [identityHash, pem] of Object.entries(record?.pubkeys ?? {})) {
+            const raw = pemToRawEd25519PublicKeyBase64Url(pem);
+            if (raw) rawPubkeys[identityHash] = raw;
+        }
+
+        const snapshot = record?.owner
+            ? materializeSnapshot({
+                gatewayId: this.gatewayId,
+                owner: record.owner,
+                admins: record.admins ?? {},
+                grants: (record.grants ?? {}) as Record<string, GatewayScope[]>,
+                pubkeys: rawPubkeys,
+                usernames: record.usernames ?? {},
+            })
+            : GatewayClaimsManager.empty(this.gatewayId);
+        this.write(snapshot);
+        return snapshot;
+    }
+
     async reset(): Promise<void> {
         const current = this.read() ?? await this.readLedgerSnapshot();
         const empty = GatewayClaimsManager.empty(this.gatewayId);
@@ -552,6 +612,48 @@ export class GatewayClaimsManager {
         this.write(empty);
     }
 
+    /**
+     * `previousSnapshot` here is always the LOCAL file (`this.read()`), never
+     * the ledger's own branch — and `gatewayClaimsSnapshotToLedgerEntries()`
+     * is not a true diff against the ledger: it unconditionally re-asserts
+     * every field of `snapshot` and uses `previousSnapshot` only to compute
+     * deletions. Consequence, relied upon rather than accidental: when a
+     * gateway was bootstrapped via {@link materializeFromNamespaceClaim}
+     * (local-file-only, no ledger write), the FIRST call to `grantAdmin`,
+     * `revokeAdmin`, or `transferOwner` afterwards silently backfills the
+     * ledger with the bootstrapped owner's full state (identity, admin
+     * entry, scopes, pubkey, username) alongside whatever that call itself
+     * changes. This keeps the ledger and local file coherent without a
+     * separate reconciliation step. See the
+     * "materializeFromNamespaceClaim bootstrap + grantAdmin/revokeAdmin/
+     * transferOwner ledger coherence" block in `tests/gateway-claims.test.ts`
+     * for the locked-in TRANSFORMATION behavior, including the case where a
+     * delegated admin's deletion path never existed in the ledger at all
+     * (silent no-op, not a throw).
+     *
+     * CONFIRMED, UNRESOLVED GAP (2026-09-12, found in review, reproduced
+     * live): that same test uses an in-memory fake ledger client with no
+     * authorization enforcement, so it never exercises the REAL
+     * `writeToMonad()` HTTP call this method makes via the default ledger
+     * client. `writeToMonad()` sends an UNSIGNED write — correct under the
+     * OLD model where netget exclusively owned an unclaimed monad, but the
+     * namespace-derived model's whole premise is that the underlying monad
+     * now genuinely has a `.me` claim, and `commandHandler.ts`'s write path
+     * requires `isNamespaceWriteAuthorized()` (a real signature) whenever
+     * `getClaim(namespace)` is truthy. `tests/gateway-claims-live-write-
+     * integration.test.ts` proves this end-to-end against a real disposable
+     * monad: after `materializeFromNamespaceClaim()`, `grantAdmin()` throws
+     * `NAMESPACE_WRITE_FORBIDDEN`. So on a gateway bootstrapped via the new
+     * flow, `grantAdmin`/`revokeAdmin`/`transferOwner` are currently BROKEN
+     * in real runtime, not merely untested — closing this needs a real
+     * decision about how netget obtains signing authority for an ongoing
+     * ledger write without holding the operator's private key (e.g. a
+     * session-scoped delegated signature, or re-signing each action live in
+     * the browser and threading that signature through), which is a new
+     * authorization mechanism, not a bug fix — out of scope to invent here
+     * without the user's sign-off. Do not treat this class as "done" until
+     * that integration test's CONFIRMED GAP log line goes away.
+     */
     private async commitSnapshot(snapshot: GatewayClaimsSnapshot, previousSnapshot: GatewayClaimsSnapshot | null): Promise<void> {
         await this.writeLedger(snapshot, previousSnapshot);
         await this.materializeFromLedger(snapshot);
@@ -653,7 +755,39 @@ export class GatewayClaimsManager {
         scopes:    GatewayScope[] = FULL_ADMIN_SCOPES,
         username?: string,
     ): Promise<void> {
-        if (this.hasOwner()) {
+        // Ledger-authoritative, not local-file-only, and not merely a
+        // fallback for when the local file happens to be ABSENT: a
+        // present-but-empty local snapshot (fresh checkout, deleted
+        // runtime dir, a second install pointed at the same ledger) is
+        // just as wrong to trust as a missing one — `this.read() ??
+        // readLedgerSnapshot()` only ever falls through to the ledger
+        // when `read()` returns exactly `null`, never when it returns a
+        // parsed-but-owner-less snapshot object, which is the more likely
+        // real failure mode. So when a ledger is configured, it is always
+        // consulted directly, never conditionally on the local file's
+        // state — and a ledger that can't be read is treated as "can't
+        // verify," refusing to proceed, never as "must mean no owner."
+        // Only in the deliberate local-only mode (`options.ledger ===
+        // false`, no ledger configured at all) does this fall back to the
+        // local snapshot alone, matching registerIdentity()'s own
+        // behavior in that same mode.
+        if (this.ledger) {
+            let ledgerSnapshot: GatewayClaimsSnapshot | null;
+            try {
+                ledgerSnapshot = await this.readLedgerSnapshot();
+            } catch (error) {
+                throw new Error(
+                    `Could not verify against the ledger whether gateway "${this.gatewayId}" already has an owner — refusing to bootstrap. ` +
+                    `(${error instanceof Error ? error.message : String(error)})`
+                );
+            }
+            if (ledgerSnapshot?.owner) {
+                throw new Error(
+                    `Gateway "${this.gatewayId}" already has an owner. ` +
+                    'Use grantAdmin() to add additional admins.'
+                );
+            }
+        } else if (this.hasOwner()) {
             throw new Error(
                 `Gateway "${this.gatewayId}" already has an owner. ` +
                 'Use grantAdmin() to add additional admins.'
@@ -670,6 +804,72 @@ export class GatewayClaimsManager {
             usernames,
         };
         await this.commitSnapshot(materializeSnapshot(base), null);
+    }
+
+    /**
+     * Caches, locally only, that `identityHash` administers this gateway
+     * because they hold `namespace`'s own real .me claim — proven by the
+     * CALLER before this is ever invoked (gatewaySetupSession.ts's
+     * commitSignedClaim: resolves which monad serves `namespace`, fetches
+     * the REAL active keychain key for it, and verifies a real Ed25519
+     * signature against that key). This method does no proving of its
+     * own and touches no monad or ledger — it is a pure local write of
+     * `gateway-claims.json`, the same file `bootstrapOwner()` writes, in
+     * the same shape nginx/Lua already expects (owner/admins/grants/
+     * pubkeys/usernames).
+     *
+     * Why this exists instead of reusing `bootstrapOwner()`: that method
+     * treats ownership as something THIS gateway independently bootstraps
+     * and persists to its OWN ledger via an unauthenticated write —
+     * correct only when netget owns a dedicated, never-otherwise-claimed
+     * monad. The moment `namespace` is served by a monad that already has
+     * ANY claim in it (the normal case — an operator's own identity
+     * namespace), that unauthenticated write is rightly rejected
+     * (NAMESPACE_WRITE_FORBIDDEN). There is nothing to bootstrap here:
+     * `namespace`'s claim already IS the authority; this just caches it
+     * where nginx can read it fast. `bootstrapOwner()` is left in place,
+     * unused by the real claim flow going forward, for whatever legacy
+     * callers (tests, a hostname-only install with no `.me` layer at all)
+     * still want a self-contained, netget-owned ledger.
+     *
+     * Rejects rebinding to a DIFFERENT identity once already bound: unlike
+     * `bootstrapOwner()`, there is no remote ledger to consult, but the
+     * local cache itself is still the one record of "who this gateway is
+     * already bound to" — checked here, locally, every time, so a second
+     * caller who genuinely owns some OTHER namespace's claim (proven
+     * exactly as validly as the first) still can't silently take over an
+     * already-bound gateway. The only way to change a genuinely-bound
+     * gateway's identity is to remove `gateway-claims.json` yourself, on
+     * the actual machine — a real filesystem action, not something a
+     * network caller can trigger.
+     */
+    materializeFromNamespaceClaim(input: {
+        identityHash: string;
+        publicKey: string;
+        username?: string | null;
+        scopes?: GatewayScope[];
+    }): void {
+        const identityHash = String(input.identityHash || '').trim();
+        if (!identityHash) throw new Error('identityHash is required.');
+        const existing = this.read();
+        if (existing?.owner && existing.owner !== identityHash) {
+            throw new Error(`This gateway is already bound to a different identity (${existing.owner}).`);
+        }
+        const publicKey = String(input.publicKey || '').trim();
+        const username = input.username ? String(input.username).trim() : '';
+        const scopes = input.scopes ?? FULL_ADMIN_SCOPES;
+
+        const pubkeys:   Record<string, string> = publicKey ? { [identityHash]: publicKey } : {};
+        const usernames: Record<string, string> = username  ? { [identityHash]: username }  : {};
+        const base: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> = {
+            gatewayId: this.gatewayId,
+            owner:     identityHash,
+            admins:    { [identityHash]: true },
+            grants:    { [identityHash]: scopes },
+            pubkeys,
+            usernames,
+        };
+        this.write(materializeSnapshot(base));
     }
 
     /**
@@ -724,6 +924,17 @@ export class GatewayClaimsManager {
 
     /**
      * Grants admin access to an additional identity.
+     *
+     * LEGACY / self-owned-ledger installs only (same status as
+     * {@link bootstrapOwner}): writes through the OLD, unsigned
+     * `writeToMonad()` ledger path, which a monad holding a real `.me`
+     * claim for `getGatewayRootNamespace()` will reject with
+     * `NAMESPACE_WRITE_FORBIDDEN` (confirmed live —
+     * `tests/gateway-claims-live-write-integration.test.ts`'s history, now
+     * fixed by the E+A mechanism below). On a namespace-derived gateway,
+     * use `gatewayAdminActions.ts`'s `grantGatewayAdmin()` instead, which
+     * calls monad.ai's own signed `claim/gatewayAuthority.ts` and then
+     * `materializeFromGatewayAuthority()` to refresh this snapshot.
      *
      * The current snapshot is read, mutated, and atomically re-written.
      * Idempotent: calling with an already-granted identity updates its scopes.
@@ -784,6 +995,10 @@ export class GatewayClaimsManager {
      * The gateway owner cannot be revoked through this method — attempting to
      * do so throws to prevent accidental lockout.
      *
+     * LEGACY / self-owned-ledger installs only — see {@link grantAdmin}'s
+     * doc comment. On a namespace-derived gateway use
+     * `gatewayAdminActions.ts`'s `revokeGatewayAdmin()` instead.
+     *
      * @param identityHash - Identity to demote.
      *
      * @throws If `identityHash` is the current gateway owner.
@@ -818,6 +1033,13 @@ export class GatewayClaimsManager {
 
     /**
      * Transfers ownership to a different admin identity.
+     *
+     * LEGACY / self-owned-ledger installs only — see {@link grantAdmin}'s
+     * doc comment. On a namespace-derived gateway use
+     * `gatewayAdminActions.ts`'s `transferGatewayOwner()` instead, which
+     * (unlike this method) also requires the ACTING identity to be the
+     * current owner — a check this old, unsigned path never had, since it
+     * trusted whoever the local process was regardless of who called it.
      *
      * The previous owner retains admin access (remains in `admins` / `grants`)
      * unless explicitly removed via {@link revokeAdmin} afterwards.

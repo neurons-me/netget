@@ -13,7 +13,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { execFile, execFileSync } from "child_process";
-import { parseLogLine } from "../proxy.js";
+import { parseLogLine } from "../logParsers.js";
 import {
     getDomains,
     getDomainByName,
@@ -26,6 +26,7 @@ import { getNetgetMonadOrigin, getGatewayRootNamespace } from "../../../../kerne
 import { resolveSurface } from "../../../../kernel/topologyResolver.ts";
 import { loadOrCreateXConfig } from "../../../../modules/NetGetX/config/xConfig.ts";
 import { GatewayClaimsManager } from "../../../../modules/NetGetX/Auth/GatewayClaimsManager.ts";
+import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSession.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -443,7 +444,48 @@ router.get("/apps", (req, res) => {
 });
 
 // ─── Nginx logs ──────────────────────────────────────────────────────────────
-router.get("/logs", (req, res) => {
+// This route used to be unreachable through the real gateway at all — nginx's
+// /logs location goes straight to lua/handlers/logs.lua (content_by_lua_file,
+// no proxy_pass here), never into Express. It's live now for a second caller:
+// monad.ai's pathResolver.ts proxies `logs`/`logs.*` NRP reads here (see
+// LOG_SOURCE_URL in netgetMonadProcess.ts) so `me.<namespace>.logs.access` can
+// resolve against these same rotating files without copying every line into
+// the kernel's permanent memory log — see me/Typescript/typedocs/
+// Plurality-Is-Grammar.md for why that distinction matters. This route is
+// the ONE real implementation (structured, parsed log entries); logs.lua's
+// own copy returns raw unparsed lines and has its own separate (currently
+// unsatisfiable — nothing sets that cookie) auth check, not this one.
+//
+// Never had a per-route auth check before (this file's own header comment:
+// "nginx enforces loopback-only... the caller IS the operator") — but this
+// route is now also reachable indirectly through monad.ai's HTTP surface
+// AND directly against this bootstrap port, not just loopback-only nginx.
+// Deliberately does NOT use the X-Netget-Identity/X-Netget-Scopes header
+// pattern /domains/metadata below uses: those headers are only genuine
+// when nginx's own me_sig.lua verified a signature and forwarded them,
+// which is not guaranteed for either of this route's other two callers —
+// a caller hitting this port directly, or monad.ai's proxy, could set any
+// header value it wants. This instead requires a real admin-session
+// bearer token (adminSession.ts) — minted only after a real Ed25519
+// signature, verified against the admin's CURRENT, LIVE keychain key
+// (never a frozen claim-time snapshot), was checked server-side. See
+// adminSession.ts's own header for the full reasoning.
+const SERVER_LOG_PATH = process.env.SERVER_LOG_PATH || './server.log';
+
+router.get("/logs", async (req, res) => {
+    const authHeader = String(req.header('Authorization') || '');
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
+    if (!token) {
+        return res.status(401).json({ ok: false, error: 'SESSION_TOKEN_REQUIRED' });
+    }
+    const session = await resolveAdminSession(token);
+    if (!session) {
+        return res.status(401).json({ ok: false, error: 'SESSION_INVALID_OR_EXPIRED' });
+    }
+    if (!session.scopes.includes('gateway:read')) {
+        return res.status(403).json({ ok: false, error: 'CAPABILITY_DENIED', required: 'gateway:read' });
+    }
+
     try {
         const logType = req.query.type || 'access';
         const limit = parseInt(req.query.limit) || 100;
@@ -462,8 +504,11 @@ router.get("/logs", (req, res) => {
                 path.join(NGINX_LOGS_PATH, 'error.log'),
             ]);
             logStructure = 'nginx_error';
+        } else if (logType === 'server') {
+            targetLogPath = SERVER_LOG_PATH;
+            logStructure = 'server';
         } else {
-            return res.status(400).json({ error: "Invalid log type. Use 'access' or 'error'." });
+            return res.status(400).json({ error: "Invalid log type. Use 'access', 'error', or 'server'." });
         }
 
         if (!fs.existsSync(targetLogPath)) {

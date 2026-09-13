@@ -74,6 +74,40 @@ export function isOpenRestyGatewayOnline(service: Pick<OpenRestyServiceStatus, '
     return service.httpListening || service.httpsListening;
 }
 
+export interface HomebrewInstallAvailability {
+    available: boolean;
+    reason: string;
+}
+
+// Whether "Install" can be a real, clickable action right now — deliberately
+// narrower than "is this platform darwin": installing the OpenResty BINARY
+// via `brew install` needs no sudo (Homebrew owns its own prefix), which is
+// what makes this safe to trigger from an HTTP-originated request at all.
+// Starting OpenResty (installOpenRestyService()/startOpenRestyOnce() above)
+// is a completely different question — both of those already call
+// runSudoShell() because binding :80/:443 needs root regardless of
+// platform, so no amount of checking here ever makes that safe to click;
+// that stays a terminal step until a genuinely privileged helper exists.
+export function canInstallOpenRestyViaHomebrew(): HomebrewInstallAvailability {
+    if (process.platform !== 'darwin') {
+        return { available: false, reason: `No unattended install path for ${process.platform} yet — apt and source builds both require sudo.` };
+    }
+    const brew = run('which', ['brew']);
+    if (!brew.ok || !brew.output) {
+        return { available: false, reason: 'Homebrew is not installed. See the terminal instructions below.' };
+    }
+    const prefix = run('brew', ['--prefix']);
+    if (!prefix.ok || !prefix.output) {
+        return { available: false, reason: 'Could not determine the Homebrew prefix.' };
+    }
+    try {
+        fs.accessSync(prefix.output, fs.constants.W_OK);
+    } catch {
+        return { available: false, reason: `The Homebrew prefix (${prefix.output}) is not writable by this process's user — installing would need sudo.` };
+    }
+    return { available: true, reason: 'Homebrew is installed and writable by this user.' };
+}
+
 export async function waitForOpenRestyGateway(timeoutMs = 4000): Promise<OpenRestyServiceStatus> {
     const startedAt = Date.now();
     let status = await getOpenRestyServiceStatus();

@@ -1,11 +1,57 @@
 # Gateway Claims Ledger
 
-**Status: Built (2026-08-29).** `GatewayClaimsManager` mutations write the
-semantic ledger first and then materialize `gateway-claims.json` for nginx Lua.
-The legacy `/me/claim` Lua handler now verifies the signed proof and delegates
-state mutation to the ledger-backed backend instead of writing JSON directly.
-This note mirrors the shape of
-[DomainStoreSplitBrain.md](./DomainStoreSplitBrain.md), but for `gateway-claims.json`.
+**Status: Superseded entirely by the E+A signed-delegation mechanism
+(2026-09-13).** Everything this doc describes below — the `netget.*`
+semantic ledger model, `writeToMonad()`-based mutation, the whole
+"ledger is authoritative" invariant — was the OLD design for
+`bootstrapOwner()`/`grantAdmin()`/`revokeAdmin()`/`transferOwner()`, and it
+is now confirmed BROKEN for a namespace-derived gateway: those methods
+wrote an UNSIGNED `writeToMonad()` call, which a monad holding a real
+`.me` claim correctly rejects (`NAMESPACE_WRITE_FORBIDDEN` —
+`commandHandler.ts`'s `isNamespaceWriteAuthorized()` gate). Proven live in
+`modules/netget/Typescript/tests/gateway-claims-live-write-integration.test.ts`'s
+own history (it originally caught this failing, before the fix below).
+
+**The real model now**: canonical owner/admins/grants state lives in
+`.me` itself, in monad.ai's new `claim/gatewayAuthority.ts` — a kernel-root,
+namespace-**independent** branch (`daemon.gateways.<gatewayId>`,
+deliberately not nested under any user's `users.<handle>` tree, so
+transferring ownership never requires moving state into a different
+user's personal branch), mutated only via SIGNED grant/revoke/transfer/
+bootstrap calls, each independently re-verified by whichever monad holds
+that branch (never trusting netget's own prior check). Two checks per
+mutation, never conflated: "vigencia" (is the signing keychain key
+currently active — `getKeychainKey`) and "autorización" (does that
+identity currently hold gateway authority, per the branch's OWN
+`admins` map — never the keychain's own `admin` bit, which means
+something narrower: "can administer THAT keychain," not "can administer
+this gateway"). `GatewayClaimsManager.materializeFromGatewayAuthority()`
+is netget's ONLY remaining role: a plain, unauthenticated read that
+refreshes the local `gateway-claims.json` cache — netget needs read
+access here, never write permission.
+
+`bootstrapOwner()`/`grantAdmin()`/`revokeAdmin()`/`transferOwner()` (the
+methods this whole doc originally described) are kept, doc-commented
+LEGACY in `GatewayClaimsManager.ts`, for `gateway-claims.test.ts`'s own
+self-owned-ledger model coverage only (a real, distinct scenario: netget
+exclusively owning an unclaimed monad) — not the real namespace-derived
+flow anymore. `materializeFromNamespaceClaim()` (the base-claim-only,
+local-file-only method the 2026-09-12 revision of this doc described) is
+similarly superseded in the real flow by a real bootstrap call to
+`claim/gatewayAuthority.ts`'s own endpoint.
+
+**Behavior change worth knowing**: deleting `gateway-claims.json` locally
+no longer means "unbound" (true under the OLD local-file-only base-claim
+model, and under this doc's OLD ledger model too) — the canonical branch
+on the monad is the real source of truth now, and survives a local cache
+wipe. See `gateway-setup-session.test.ts`'s case 7h.
+
+See session memory `project_mesh_announce_trust_hardening.md`'s "RESOLVED"
+section for the full design rationale (options A-E considered, why E+A was
+chosen over a local-file bridge or a daemon-held delegation key), and
+`claim/gatewayAuthority.ts`'s own header comment for the mechanism itself.
+Everything below this point describes the OLD, now-replaced ledger model —
+kept for historical context, not as current guidance.
 
 ---
 
@@ -159,12 +205,25 @@ The migration should not be considered closed until these pass:
 - `reset()` tombstones owner/admin/grant/pubkey/username paths instead of only
   deleting the local JSON snapshot.
 
-The important invariant:
+The important invariant (as originally written — still true for
+`grantAdmin`/`revokeAdmin`/`transferOwner`; **not** how the base claim
+works anymore, see the status note at the top of this file):
 
 ```txt
 semantic ledger is authoritative
 gateway-claims.json is materialized
 Lua consumes the materialized view
+```
+
+For the base claim specifically, the invariant is now:
+
+```txt
+namespace's own .me claim is authoritative (verified via live keychain +
+  Ed25519 signature at claim time, not stored again by netget)
+gateway-claims.json is a local cache of that verification's result —
+  losing it is a real local reset (another identity CAN then bind), not a
+  silently-recoverable cache miss
+Lua consumes the same materialized view, unchanged
 ```
 
 ---

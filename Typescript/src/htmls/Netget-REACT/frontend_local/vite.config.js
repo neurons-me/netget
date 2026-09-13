@@ -79,8 +79,23 @@ export default defineConfig({
     // "localhost", leaving 127.0.0.1 unreachable and nginx's proxy_pass 502ing.
     host: '127.0.0.1',
     allowedHosts: ['local.netget', 'local.host', 'local.cleaker', 'suis-macbook-air.local', 'suis-macbook-air.netget'],
+    fs: {
+      // Vite's default fs.allow root is wherever it detects THIS project's
+      // workspace boundary (nearest package.json/lockfile upward) — for
+      // this dev server that stops at modules/netget, a SIBLING of
+      // packages/GUI/Typescript, not an ancestor. `this.gui` resolves
+      // through a symlink into that sibling directory (confirmed live:
+      // every /@fs/.../packages/GUI/Typescript/dist/* request 404'd even
+      // though the files existed on disk — Vite blocked serving them as
+      // outside the allowed root, not a missing-file 404). Allowing the
+      // whole monorepo root once here covers this.gui's dist AND any
+      // other cross-package dev import the same way.
+      allow: [path.resolve(__dirname, '../../../../../../../')],
+    },
     proxy: {
-      '/gateway-identity': 'http://127.0.0.1:3000',
+      '/gateway-identity':      'http://127.0.0.1:3000',
+      '/setup':                 'http://127.0.0.1:3000',
+      '/main-server-namespace': 'http://127.0.0.1:3000',
       '/apps':             'http://127.0.0.1:3000',
       '/logs':             'http://127.0.0.1:3000',
       '/ip-info':          'http://127.0.0.1:3000',
@@ -104,7 +119,26 @@ export default defineConfig({
       '/explain':          'http://127.0.0.1:3000',
       '/inspect':          'http://127.0.0.1:3000',
       '/cleaker':          'http://127.0.0.1:3000',
-      '/@':                'http://127.0.0.1:3000',
+      // Real NRP-style addresses (typed straight into the browser's URL
+      // bar, e.g. local.netget/@someuser/profile) need this so the backend
+      // resolves them instead of falling through to the SPA shell — but a
+      // bare "/@" prefix match ALSO swallows Vite's OWN reserved internal
+      // paths, which share that exact prefix: /@vite/client (its HMR
+      // client), /@fs/... (cross-package file serving — this.gui's dist,
+      // symlinked from packages/GUI/Typescript), /@id/..., /@react-refresh.
+      // Proxying those to the Express backend instead of letting Vite
+      // serve them itself is what was producing a fully blank page —
+      // confirmed live: the backend's own NRP resolver 404'd every one of
+      // them (reinterpreting e.g. "@vite/client" as the NRP address
+      // "vite.local.cleaker:read/client"), so none of this.gui's ESM
+      // imports (mount, Theme, styles.css, the runtime/react/devtools
+      // subpaths) ever actually loaded.
+      '/@': {
+        target: 'http://127.0.0.1:3000',
+        bypass(req) {
+          if (/^\/@(vite|fs|id|react-refresh)\b/.test(req.url)) return req.url;
+        },
+      },
     },
   },
 });

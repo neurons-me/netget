@@ -304,6 +304,74 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
 }
 
 // ---------------------------------------------------------------------------
+// bootstrapOwner is ledger-authoritative -- not merely "local file happens
+// to be absent". `this.read() ?? await this.readLedgerSnapshot()` (the
+// pattern registerIdentity() still uses) only ever falls through to the
+// ledger when read() returns exactly `null` -- never when it returns a
+// parsed-but-owner-less snapshot object, which is the more realistic
+// failure mode (a stale runtime dir, a fresh reinstall pointed at the same
+// ledger). Both must be rejected identically whenever the ledger already
+// shows an owner, and a ledger that can't even be read must fail closed
+// (refuse to bootstrap), never be treated as "must mean no owner".
+// ---------------------------------------------------------------------------
+
+{
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const ledger = new InMemoryClaimsLedger();
+    const seeded = mgr('locked.local', ledger);
+    await seeded.bootstrapOwner(OWNER, 'pub-owner', undefined, 'first-owner');
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), OWNER, 'ledger seeded with an owner');
+
+    // Case A: local snapshot file is genuinely ABSENT (fresh install, or a
+    // wiped runtime dir pointed back at the same already-owned ledger).
+    fs.rmSync(getGatewayClaimsPath(), { force: true });
+    fs.rmSync(getGatewayClaimsVersionPath(), { force: true });
+    const freshInstall = mgr('locked.local', ledger);
+    assert.equal(freshInstall.read(), null, 'local snapshot file must be genuinely gone for this case');
+    await assert.rejects(
+        () => freshInstall.bootstrapOwner(ADMIN_2, 'pub-attacker', undefined, 'second-claimant'),
+        /already has an owner/,
+        'bootstrapOwner must consult the ledger and reject even with no local snapshot at all'
+    );
+
+    // Case B: local snapshot file EXISTS but is owner-less -- a stale or
+    // hand-emptied file. This is the exact case the `??` pattern would
+    // have silently trusted instead of ever checking the ledger.
+    const staleEmpty = GatewayClaimsManager.empty('locked.local');
+    fs.mkdirSync(path.dirname(getGatewayClaimsPath()), { recursive: true });
+    fs.writeFileSync(getGatewayClaimsPath(), JSON.stringify(staleEmpty, null, 2), 'utf8');
+    const staleInstall = mgr('locked.local', ledger);
+    assert.equal(staleInstall.read()?.owner, null, 'local snapshot exists but genuinely has no owner');
+    await assert.rejects(
+        () => staleInstall.bootstrapOwner(ADMIN_2, 'pub-attacker', undefined, 'second-claimant'),
+        /already has an owner/,
+        'bootstrapOwner must reject even when a present local snapshot merely lacks an owner'
+    );
+
+    // Both rejected attempts must leave the ledger itself untouched.
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), OWNER, 'ledger owner unchanged after rejected re-bootstrap attempts');
+}
+
+{
+    class ThrowingLedger implements GatewayClaimsLedgerClient {
+        async read(): Promise<unknown> { throw new Error('simulated ledger outage'); }
+        async write(): Promise<void> { throw new Error('should not be reached — bootstrapOwner must fail before any write'); }
+    }
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const m = mgr('outage.local', new ThrowingLedger());
+    await assert.rejects(
+        () => m.bootstrapOwner(OWNER),
+        /Could not verify against the ledger/,
+        'bootstrapOwner fails closed when the ledger itself cannot be read, never treating an unreadable ledger as "no owner"'
+    );
+}
+
+// ---------------------------------------------------------------------------
 // registerIdentity — ledger-backed replacement for claim_identity.lua writes
 // ---------------------------------------------------------------------------
 
@@ -329,6 +397,119 @@ assert.ok(typeof empty.version === 'string' && empty.version.length === 32,
     assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${ADMIN_2}`), 'pub-admin-2');
     assert.equal(getDeepValue(ledger.tree, `netget.usernames.${ADMIN_2}`), 'ana');
     assert.equal(m.read()?.pubkeys[ADMIN_2], 'pub-admin-2', 'snapshot is materialized');
+}
+
+// ---------------------------------------------------------------------------
+// materializeFromNamespaceClaim bootstrap + grantAdmin/revokeAdmin/
+// transferOwner ledger coherence.
+//
+// materializeFromNamespaceClaim() is deliberately ledger-free (see its own
+// doc comment) — it only ever writes the local snapshot file. Every other
+// mutation (grantAdmin/revokeAdmin/transferOwner) still goes through the
+// OLD ledger-first model: commitSnapshot() -> writeLedger() ->
+// materializeFromLedger(). gatewayClaimsSnapshotToLedgerEntries() is NOT a
+// true diff against the ledger's own state — it unconditionally re-asserts
+// every field of the NEXT snapshot, using the passed `previousSnapshot`
+// (always the LOCAL file, never the ledger's own branch) only to compute
+// deletions. So the first ledger-touching call after a
+// materializeFromNamespaceClaim()-only bootstrap silently backfills the
+// ledger with the bootstrapped identity's full state as a side effect —
+// this is relied upon, not accidental (see the doc comment added on
+// commitSnapshot() in GatewayClaimsManager.ts). This block locks that in.
+// ---------------------------------------------------------------------------
+
+{
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const ledger = new InMemoryClaimsLedger();
+    const m = mgr('namespace-claim.local', ledger);
+
+    // Bootstrap via the namespace-derived path: local file only, ledger
+    // genuinely untouched — this is the whole point of that method.
+    m.materializeFromNamespaceClaim({ identityHash: OWNER, publicKey: 'pub-owner', username: 'suign' });
+    assert.equal(m.read()?.owner, OWNER, 'local snapshot bound to OWNER');
+    assert.equal(Object.keys(ledger.tree).length, 0, 'materializeFromNamespaceClaim never touches the ledger');
+
+    // grantAdmin is the first ledger-touching call. It must backfill the
+    // ORIGINAL (namespace-derived) owner's full state into the ledger, not
+    // just write the new grant in isolation.
+    await m.grantAdmin(ADMIN_2, 'pub-admin-2', ['apps:read'], 'ana');
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), OWNER, 'ledger backfilled with the namespace-derived owner');
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.username'), 'suign', "ledger backfilled with the owner's username");
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${OWNER}`), true, 'ledger backfilled with the owner admin entry');
+    assert.deepEqual(getDeepValue(ledger.tree, `netget.grants.${OWNER}`), FULL_ADMIN_SCOPES, "ledger backfilled with the owner's full scopes");
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${OWNER}`), 'pub-owner', 'ledger backfilled with the owner pubkey');
+    // ...alongside the actual new grant.
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${ADMIN_2}`), true);
+    assert.deepEqual(getDeepValue(ledger.tree, `netget.grants.${ADMIN_2}`), ['apps:read']);
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${ADMIN_2}`), 'ana');
+    assert.equal(m.read()?.admins[ADMIN_2], true, 'local file stays consistent with the ledger');
+
+    // The owner-cannot-be-revoked invariant must hold under this bootstrap
+    // path too — not just the old bootstrapOwner()-seeded one.
+    await assert.rejects(
+        () => m.revokeAdmin(OWNER),
+        /Cannot revoke the gateway owner/,
+        'owner cannot be revoked even when bootstrapped via materializeFromNamespaceClaim'
+    );
+
+    await m.revokeAdmin(ADMIN_2);
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${ADMIN_2}`), undefined, 'revoke removes the admin entry from the ledger');
+    assert.equal(getDeepValue(ledger.tree, `netget.grants.${ADMIN_2}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.pubkeys.${ADMIN_2}`), undefined);
+    assert.equal(m.read()?.admins[ADMIN_2], undefined, 'local file consistent after revoke');
+
+    // transferOwner: re-grant ADMIN_2, then transfer. The ledger's owner
+    // fields must reflect the transfer, and the namespace-derived original
+    // owner (long since backfilled above) remains an admin in the ledger.
+    await m.grantAdmin(ADMIN_2, 'pub-admin-2', ['gateway:read'], 'ana');
+    await m.transferOwner(ADMIN_2);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), ADMIN_2);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.username'), 'ana');
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${OWNER}`), true, 'namespace-derived original owner remains admin in the ledger after transfer');
+    assert.equal(m.read()?.owner, ADMIN_2);
+    assert.equal(m.read()?.admins[OWNER], true);
+}
+
+// ---------------------------------------------------------------------------
+// revokeAdmin as the very FIRST ledger-touching call after a
+// materializeFromNamespaceClaim() bootstrap: the target identity is present
+// in the LOCAL file (seeded directly, simulating a legacy/restored local
+// snapshot) but the ledger has never heard of this gateway at all — so the
+// deletion path (`netget.admins.<id>`, `netget.grants.<id>`, ...) does not
+// exist anywhere in the ledger tree yet. The delete must be a silent no-op,
+// never a throw, and the backfill of the surviving owner data must still
+// happen in the same call.
+// ---------------------------------------------------------------------------
+
+{
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    const ledger = new InMemoryClaimsLedger();
+    const m = mgr('legacy-local.local', ledger);
+
+    // Seed the local file directly (not through grantAdmin) so the ledger
+    // is left completely empty — the extra admin exists ONLY locally.
+    m.write({
+        ...GatewayClaimsManager.empty('legacy-local.local'),
+        owner: OWNER,
+        admins: { [OWNER]: true, [ADMIN_2]: true },
+        grants: { [OWNER]: FULL_ADMIN_SCOPES, [ADMIN_2]: ['apps:read'] },
+        pubkeys: { [OWNER]: 'pub-owner' },
+        usernames: { [OWNER]: 'suign', [ADMIN_2]: 'ana' },
+    });
+    assert.equal(Object.keys(ledger.tree).length, 0, 'ledger has never been written to for this gateway');
+
+    await m.revokeAdmin(ADMIN_2);
+
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${ADMIN_2}`), undefined, 'deleting a path the ledger never had is a silent no-op');
+    assert.equal(getDeepValue(ledger.tree, `netget.grants.${ADMIN_2}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, `netget.usernames.${ADMIN_2}`), undefined);
+    assert.equal(getDeepValue(ledger.tree, 'netget.owner.identityHash'), OWNER, 'the surviving owner is backfilled in the same call');
+    assert.equal(getDeepValue(ledger.tree, `netget.admins.${OWNER}`), true);
+    assert.equal(m.read()?.admins[ADMIN_2], undefined, 'local file no longer has the revoked admin');
 }
 
 // ---------------------------------------------------------------------------

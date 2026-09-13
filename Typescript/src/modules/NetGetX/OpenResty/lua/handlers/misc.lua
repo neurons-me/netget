@@ -52,11 +52,42 @@ local function test_endpoint()
   ngx.say(cjson.encode({ message = "Test endpoint", identity = claims.username, context = claims }))
 end
 
+-- Very small IPv4-shape check -- xConfig.json's publicIP/localIP fields are
+-- meant to hold real addresses (written by i_DefaultNetGetX.ts's init-time
+-- getPublicIP()/getLocalIP() detection), but never trust an on-disk value
+-- blindly: an older or manually-edited config could carry a placeholder
+-- string instead of an address, and this handler must never forward one of
+-- those as if it were real.
+local function looks_like_ipv4(value)
+  return type(value) == "string" and value:match("^%d+%.%d+%.%d+%.%d+$") ~= nil
+end
+
 local function ip_info()
   set_json()
-  -- Public IP discovery naive (external call disabled for performance); return placeholders.
-  local publicIP = "Not available"
-  local localIP = ngx.var.server_addr or "Not available"
+  -- xConfig.json is the same file the Node-side config module
+  -- (modules/NetGetX/config/xConfig.ts) reads and writes -- this handler
+  -- previously never read it at all and returned a hardcoded "Not
+  -- available" placeholder for publicIP unconditionally (a stale
+  -- performance shortcut from before that detection existed). Reading the
+  -- real file here means /ip-info answers the same way regardless of
+  -- whether OpenResty (this handler) or the Node backend answers it.
+  local publicIP = ""
+  local localIP = ""
+  local f = io.open(netgetDir .. "/xConfig.json", "r")
+  if f then
+    local raw = f:read("*a")
+    f:close()
+    local ok, parsed = pcall(cjson.decode, raw)
+    if ok and type(parsed) == "table" then
+      if looks_like_ipv4(parsed.publicIP) then publicIP = parsed.publicIP end
+      if looks_like_ipv4(parsed.localIP) then localIP = parsed.localIP end
+    end
+  end
+  -- Fall back to what this connection itself arrived on if xConfig had
+  -- nothing usable -- still real, just less stable than the stored value.
+  if localIP == "" and looks_like_ipv4(ngx.var.server_addr) then
+    localIP = ngx.var.server_addr
+  end
   ngx.say(cjson.encode({ success = true, publicIP = publicIP, localIP = localIP }))
 end
 

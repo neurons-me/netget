@@ -23,12 +23,27 @@
  * does — netget's own `/apps/report` Lua handler is already fully generic.
  */
 
-import os from 'os';
 import { startMonadProcess, stopMonadProcess, getMonadStatus, readMonadRecord } from 'monad.ai';
 import { loadOrCreateXConfig } from '../modules/NetGetX/config/xConfig.ts';
+import { resolveLedgerIdentity } from './ledgerIdentity.ts';
 
-const MONAD_NAME = 'netget';
 const GATEWAY_SEED_ENV = 'NETGET_GATEWAY_SEED';
+// Override-only escape hatch for test isolation — a test that needs a
+// real, running monad (e.g. exercising gatewaySetupSession.ts's actual
+// commit path) must NEVER touch the real 'netget'-named monad process on
+// whatever machine happens to be running the test; that process, if one
+// exists, is a real gateway with a real ledger (confirmed the hard way —
+// see the 2026-09 incident this env var exists to prevent recurring:
+// an earlier test's success-path assertion wrote a throwaway identity
+// into the real ambient monad's real ledger, because nothing scoped
+// which monad process "netget" resolved to). Production code paths never
+// set this; it exists purely so a test can point every function in this
+// file at an isolated, disposable monad instance instead. Read fresh on
+// every call, not frozen at import time, matching getNetgetDataDir()'s
+// own pattern for the same reason.
+function getMonadName(): string {
+  return String(process.env.NETGET_MONAD_NAME || '').trim() || 'netget';
+}
 
 export interface NetgetMonadStatus {
   ok: boolean;
@@ -40,12 +55,26 @@ export interface NetgetMonadStatus {
 }
 
 /** netget's own kernel identity seed — independent of the machine's
- * hostname-derived namespace so its domain data isn't tied to any human
- * user's identity. "Not sensitive" — gateway config, not user secrets. */
+ * hostname, whatever public domain an operator later chooses, and whoever
+ * currently administers the gateway (see GatewayClaimsManager.ts's
+ * `owner` — a deliberately separate concept: the owner administers this
+ * ledger, the owner is not this ledger). "Not sensitive" in the sense
+ * that it's gateway config, not a human user's own `.me` secret — but it
+ * IS this service's actual private identity now (see ledgerIdentity.ts),
+ * not the old hostname-derivable placeholder this comment used to
+ * describe.
+ *
+ * Priority: an explicit NETGET_GATEWAY_SEED env override (unchanged —
+ * still wins over everything), then the persisted ledger identity
+ * (generated once on a fresh install, reused forever after, or the old
+ * hostname-derived value unchanged if this installation already has
+ * state and hasn't been migrated to a persisted identity yet — see
+ * ledgerIdentity.ts's resolveLedgerIdentity() for exactly how that's
+ * decided). */
 export function resolveGatewaySeed(): string {
   const explicit = String(process.env[GATEWAY_SEED_ENV] || '').trim();
   if (explicit) return explicit;
-  return `netget-gateway:${os.hostname().toLowerCase()}`;
+  return resolveLedgerIdentity().seedHex;
 }
 
 // Cached synchronously so getGatewayRootNamespace() itself can stay a plain
@@ -122,19 +151,29 @@ function toNetgetStatus(status: Awaited<ReturnType<typeof getMonadStatus>>): Net
 }
 
 export async function getNetgetMonadStatus(): Promise<NetgetMonadStatus> {
-  const record = await readMonadRecord(MONAD_NAME);
+  const record = await readMonadRecord(getMonadName());
   if (!record) {
     return { ok: true, running: false, origin: '', message: "netget's own monad is not running." };
   }
   return toNetgetStatus(await getMonadStatus(record));
 }
 
-export async function startNetgetMonad(): Promise<NetgetMonadStatus> {
+export async function startNetgetMonad(options: { port?: number } = {}): Promise<NetgetMonadStatus> {
   try {
     return toNetgetStatus(await startMonadProcess({
-      name: MONAD_NAME,
+      name: getMonadName(),
       namespace: getGatewayRootNamespace(),
       seed: resolveGatewaySeed(),
+      // Optional: lets a caller that already reserved a specific port (e.g.
+      // a disposable-monad test arming a request guard for that EXACT
+      // origin before this call, closing the window a guard armed only
+      // after the fact would leave open during monad.ai's own startup
+      // health probe) hand it straight to startMonadProcess()'s own
+      // findFreePort(options.port ?? existing?.port), instead of letting
+      // it pick an origin the caller can't know in advance. Omitted, this
+      // is unchanged from before — production callers (proxy.js, the CLI)
+      // never pass it.
+      ...(options.port ? { port: options.port } : {}),
     }));
   } catch (error) {
     // startMonadProcess throws if a record already shows it running — treat
@@ -149,7 +188,7 @@ export async function startNetgetMonad(): Promise<NetgetMonadStatus> {
 
 export async function stopNetgetMonad(): Promise<{ ok: boolean; message: string }> {
   try {
-    const status = await stopMonadProcess(MONAD_NAME);
+    const status = await stopMonadProcess(getMonadName());
     return { ok: true, message: `netget's own monad (pid ${status.record.pid}) stopped.` };
   } catch (error) {
     return { ok: true, message: error instanceof Error ? error.message : "netget's own monad is not running." };

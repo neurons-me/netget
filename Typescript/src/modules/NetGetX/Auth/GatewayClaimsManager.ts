@@ -559,26 +559,71 @@ export class GatewayClaimsManager {
      * plain, unauthenticated GET, same as the keychain's own public key
      * listing.
      *
-     * A record with no owner (never bootstrapped on this surface, or the
-     * surface unreachable) materialises the same empty snapshot
-     * `needsBootstrap()` already expects — this must never look like "an
-     * owner exists" just because the request itself succeeded.
+     * A GENUINELY CONFIRMED record with no owner (this surface really has
+     * never bootstrapped this gatewayId) materialises the same empty
+     * snapshot `needsBootstrap()` already expects. But an UNVERIFIABLE
+     * response — the surface unreachable, a non-OK status, an unparseable
+     * body, `ok !== true` — must NEVER be treated the same way: silently
+     * downgrading to `empty()` here would make a temporary network blip or
+     * a stale/wrong `surfaceUrl` look exactly like "this installation was
+     * never claimed," inviting a fresh bootstrap attempt over an
+     * installation that is very much already owned. On anything short of a
+     * genuinely confirmed response, this preserves whatever the local
+     * cache already says — including "no owner yet," when that itself is
+     * the last CONFIRMED state — rather than guessing.
+     *
+     * EXPLICIT TRADEOFF (do not lose sight of this while relying on the
+     * preservation above): avoiding a false "needs bootstrap" state is not
+     * the same claim as "it is safe to keep authorizing against this
+     * cache." `adminSession.ts`'s `isAdmin()`/`getScopes()` checks read
+     * THIS local snapshot, not the canonical `.me` branch, on every call —
+     * they are "fresh" only relative to session issuance (a revoked
+     * *signing key* is still caught immediately, live, via
+     * `fetchKeychainKey()` — see adminSession.ts's own header comment),
+     * never relative to how recently this snapshot was last confirmed
+     * against the branch. Concretely: if this exact netget instance revokes
+     * an admin (`gatewayAdminActions.ts`'s `revokeGatewayAdmin`) and the
+     * monad accepts that revoke, but the immediate follow-up
+     * `materializeFromGatewayAuthority()` call that's supposed to refresh
+     * this cache fails (the same surface, now transiently unreachable), the
+     * revoke is real and persisted on the canonical branch, but THIS
+     * cache — and therefore `isAdmin()` for that identity — keeps saying
+     * "still admin" until some later call here succeeds. The outage window
+     * is bounded by how long the surface stays unreachable, not by design,
+     * and there is currently no background retry closing it on its own —
+     * only the next successful call to this function (another admin
+     * action, another setup-session commit) does. This is an accepted,
+     * explicit gap for this pass, not an oversight: closing it fully would
+     * mean either blocking every authorization check on a live round-trip
+     * to the branch (defeats the point of caching at all) or adding a
+     * background reconciliation loop, both out of scope here.
      */
     async materializeFromGatewayAuthority(surfaceUrl: string): Promise<GatewayClaimsSnapshot> {
         const url = `${surfaceUrl.replace(/\/+$/, '')}/api/v1/gateway/${encodeURIComponent(this.gatewayId)}/authority`;
-        let record: {
+        type AuthorityRecord = {
             owner?: string | null;
             admins?: Record<string, true>;
             grants?: Record<string, string[]>;
             pubkeys?: Record<string, string>;
             usernames?: Record<string, string>;
-        } | null = null;
+        };
+        let confirmed = false;
+        let record: AuthorityRecord | null = null;
         try {
             const res = await fetch(url);
-            const body = await res.json().catch(() => null) as { ok?: boolean; record?: typeof record } | null;
-            record = body?.ok ? (body.record ?? null) : null;
+            if (res.ok) {
+                const body = await res.json().catch(() => null) as { ok?: boolean; record?: AuthorityRecord | null } | null;
+                if (body?.ok === true) {
+                    confirmed = true;
+                    record = body.record ?? null;
+                }
+            }
         } catch {
-            record = null;
+            confirmed = false;
+        }
+
+        if (!confirmed) {
+            return this.read() ?? GatewayClaimsManager.empty(this.gatewayId);
         }
 
         // monad.ai stores gateway-authority pubkeys as PEM (its own keychain

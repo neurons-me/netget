@@ -41,7 +41,7 @@ const GATEWAY_SEED_ENV = 'NETGET_GATEWAY_SEED';
 // file at an isolated, disposable monad instance instead. Read fresh on
 // every call, not frozen at import time, matching getNetgetDataDir()'s
 // own pattern for the same reason.
-function getMonadName(): string {
+export function getMonadName(): string {
   return String(process.env.NETGET_MONAD_NAME || '').trim() || 'netget';
 }
 

@@ -35,8 +35,10 @@ import path from 'path';
 import { normalizeProofMessage } from 'this.me';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { resolveSurface } from '../../../kernel/topologyResolver.js';
+import { getMonadName } from '../../../kernel/netgetMonadProcess.js';
 import { GatewayClaimsManager } from './GatewayClaimsManager.js';
 import { fetchKeychainKey, verifyEd25519SignatureFromPem, pemToRawEd25519PublicKeyBase64Url } from './keychainKeyVerification.js';
+import { getMonadStatus, issueInstallationAuthorization, readMonadRecord } from 'monad.ai';
 
 const SESSION_FILENAME = 'setup-session.json';
 const LOCK_FILENAME = 'gateway-claim.lock';
@@ -118,6 +120,55 @@ export interface ClaimProof {
 export type CommitResult =
   | { ok: true; ownerUsername: string }
   | { ok: false; message: string };
+
+/**
+ * Confirms `surfaceUrl` (whatever resolveSurface() resolved namespace to)
+ * is genuinely THIS netget's own locally-managed monad — the one process
+ * this exact netget instance spawned via startNetgetMonad()/startMonadProcess()
+ * and therefore controls the stateDir of — before this function writes an
+ * installation authorization straight into that process's own local state.
+ *
+ * Comparing origins alone is not enough (a different process can end up
+ * listening on the same port after a crash, and resolveSurface() is a
+ * general-purpose namespace->monad resolver with no reason to only ever
+ * point at netget's own monad): this also requires the CURRENT live
+ * record's own pid to still be alive and healthy, reusing the exact
+ * primitives monad.ai's own process management already exposes
+ * (readMonadRecord/getMonadStatus — no new liveness check invented here).
+ * If any of this can't be confirmed, the caller must not proceed down this
+ * path at all -- no HTTP bootstrap call is ever sent to an unverified
+ * destination; there is no "try anyway, let the remote reject it" fallback.
+ */
+async function verifyOwnMonadSurface(surfaceUrl: string): Promise<{ ok: true; stateDir: string } | { ok: false; reason: string }> {
+  let ownRecord;
+  try {
+    ownRecord = await readMonadRecord(getMonadName());
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : 'Could not read this installation\'s own monad record.' };
+  }
+  if (!ownRecord) {
+    return { ok: false, reason: 'This installation has no locally-managed monad on record to authorize a first bootstrap against.' };
+  }
+
+  let ownOrigin: string;
+  let targetOrigin: string;
+  try {
+    ownOrigin = new URL(ownRecord.endpoint).origin;
+    targetOrigin = new URL(surfaceUrl).origin;
+  } catch {
+    return { ok: false, reason: 'Could not parse the target surface or this installation\'s own monad endpoint.' };
+  }
+  if (ownOrigin !== targetOrigin) {
+    return { ok: false, reason: 'The namespace resolved to a surface that is not this installation\'s own locally-managed monad.' };
+  }
+
+  const status = await getMonadStatus(ownRecord);
+  if (!status.pidAlive || !status.healthy) {
+    return { ok: false, reason: 'This installation\'s own monad process is not currently alive and healthy.' };
+  }
+
+  return { ok: true, stateDir: ownRecord.stateDir };
+}
 
 function getSessionPath(): string {
   return path.join(getNetgetDataDir(), 'runtime', SESSION_FILENAME);
@@ -500,6 +551,40 @@ export async function commitSignedClaim(
     // materializeFromNamespaceClaim()-only path was retired from this flow
     // (its local-only cache could no longer authorize grant/revoke/transfer
     // afterwards).
+    //
+    // Before that forward: this monad's own bootstrap gate additionally
+    // requires proof the caller passed THIS installation's own authorized
+    // setup (installationAuthorization.ts) -- a valid namespace claim + key
+    // is no longer sufficient on its own for the first bootstrap of a
+    // gatewayId (see gatewayAuthority.ts's own header comment for why).
+    // That proof is this exact setup-code ceremony, already completed
+    // above (requireUnlockedSession) -- extending its reach here, rather
+    // than inventing a second mechanism. It's written DIRECTLY into the
+    // target monad's own local state directory, never over the network, so
+    // reaching this point first REQUIRES confirming the target really is
+    // this netget's own locally-managed monad process -- a stale/wrong/
+    // remote surface must never receive a write into what would be a
+    // COMPLETELY DIFFERENT process's stateDir path, and must never let the
+    // bootstrap call go out at all if that can't be confirmed (no "try
+    // anyway, let the remote reject it" fallback here).
+    const ownSurface = await verifyOwnMonadSurface(surface.url);
+    if (!ownSurface.ok) {
+      return { ok: false, message: `Could not verify the target surface before authorizing this gateway's bootstrap: ${ownSurface.reason}` };
+    }
+    const authIssued = issueInstallationAuthorization({
+      stateDir: ownSurface.stateDir,
+      gatewayId: record.gatewayId,
+      namespace,
+      identityHash,
+      // Reuses this exact setup session's OWN remaining vigencia, rather
+      // than a second, independent clock — the authorization can never
+      // outlive the setup ceremony that's supposed to have produced it.
+      expiresAt: record.expiresAt,
+    });
+    if (!authIssued.ok) {
+      return { ok: false, message: `Could not authorize this installation's first bootstrap (${authIssued.error}).` };
+    }
+
     const bootstrapUrl = `${surface.url.replace(/\/+$/, '')}/api/v1/gateway/${encodeURIComponent(record.gatewayId)}/bootstrap`;
     let bootstrapBody: { ok?: boolean; error?: string } | null = null;
     try {

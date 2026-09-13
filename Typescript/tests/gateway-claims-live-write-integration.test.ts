@@ -48,7 +48,7 @@ const { startNetgetMonad, getGatewayRootNamespace } = await import('../src/kerne
 const { GatewayClaimsManager } = await import('../src/modules/NetGetX/Auth/GatewayClaimsManager.ts');
 const { grantGatewayAdmin, revokeGatewayAdmin, transferGatewayOwner } =
   await import('../src/modules/NetGetX/Auth/gatewayAdminActions.ts');
-const { deleteMonadProcess } = await import('monad.ai');
+const { deleteMonadProcess, issueInstallationAuthorization, readMonadRecord } = await import('monad.ai');
 // Same reasoning as admin-session-live-keychain.test.ts's identical import:
 // 'this.me' (published) lacks these newer primitives; reach the local
 // workspace build directly.
@@ -173,6 +173,21 @@ try {
   const owner = await claimTestIdentity(origin, 'owner1', 'owner1-secret', rootNamespace);
   const ownerKey = await generateDeviceKey();
   const ownerKeyId = await registerFirstKeychainKey(origin, owner, ownerKey, "Owner's laptop");
+
+  // Stands in for netget's own setup-code ceremony (gatewaySetupSession.ts),
+  // which this file deliberately bypasses (see bootstrapGateway()'s own
+  // comment) — a real bootstrap now requires proof of installation
+  // authorization, not just a valid namespace claim + key.
+  const ownMonadRecord = await readMonadRecord(TEST_MONAD_NAME);
+  assert.ok(ownMonadRecord, 'the disposable monad must have a real process record');
+  const authIssued = issueInstallationAuthorization({
+    stateDir: ownMonadRecord!.stateDir,
+    gatewayId: GATEWAY_ID,
+    namespace: owner.namespace,
+    identityHash: owner.identityHash,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  });
+  assert.ok(authIssued.ok, `installation authorization must be issuable: ${JSON.stringify(authIssued)}`);
 
   const bootstrapRes = await bootstrapGateway(origin, owner, ownerKeyId, ownerKey);
   assert.equal(bootstrapRes.status, 201, `bootstrap must succeed: ${JSON.stringify(bootstrapRes.json)}`);

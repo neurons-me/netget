@@ -27,6 +27,7 @@ import { resolveSurface } from "../../../../kernel/topologyResolver.ts";
 import { loadOrCreateXConfig } from "../../../../modules/NetGetX/config/xConfig.ts";
 import { GatewayClaimsManager } from "../../../../modules/NetGetX/Auth/GatewayClaimsManager.ts";
 import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSession.ts";
+import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -441,6 +442,39 @@ router.get("/apps", (req, res) => {
         count: liveApps.length,
         updatedAt: registry.updatedAt ?? null,
     });
+});
+
+// Loopback check for the write side below — mirrors apps.lua's own
+// is_local_request() exactly: the real TCP peer address (req.socket, never
+// a client-settable header like X-Forwarded-For), checked against the
+// same three values Lua's ngx.var.remote_addr can report for a genuinely
+// local connection. This route's own trust boundary does NOT come from
+// nginx vhost routing (unlike GET /apps just above, whose header comment
+// already notes it currently relies on that) — a monad self-reporting
+// hits this Express port directly, the same way it hits apps.lua directly
+// in production, so the check has to live here too.
+function isLocalRequest(req) {
+    const addr = req.socket?.remoteAddress || '';
+    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+// ─── Live monad mesh: report (write) ───────────────────────────────────────
+// The write half of GET /apps above — apps.lua's report_app() action,
+// ported here because it exists ONLY in Lua today (see upsertReportedApp's
+// own doc comment for the full reasoning and the exact contract this
+// reproduces). Every validation/restriction apps.lua enforces (loopback,
+// required fields, server-stamped lastSeenMs/localOnly, trust derived from
+// the real gateway claims, TTL scrubbing, atomic write) is preserved here
+// — this is not a looser stand-in for the same route.
+router.post("/apps/report", (req, res) => {
+    if (!isLocalRequest(req)) {
+        return res.status(403).json({ success: false, error: "Apps can only report to the local NetGet agent." });
+    }
+    const result = upsertReportedApp(req.body);
+    if (!result.ok) {
+        return res.status(400).json({ success: false, error: result.error });
+    }
+    return res.status(200).json({ success: true, id: result.id, localOnly: true });
 });
 
 // ─── Nginx logs ──────────────────────────────────────────────────────────────

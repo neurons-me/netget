@@ -174,7 +174,15 @@ export function generateMkcertCert(): boolean {
     const r = spawnSync(bin, [
         '-cert-file', MKCERT_CERT_PATH,
         '-key-file',  MKCERT_KEY_PATH,
-        'local.netget', 'localhost', '127.0.0.1', ...extraHosts, ...wildcardHosts,
+        // local.host/local.cleaker are the canonical/legacy names for the
+        // same admin block local.netget answers on (see
+        // setNginxConfigRoutes.ts's server_name list) -- omitting them here
+        // meant https://local.cleaker showed a real hostname-mismatch
+        // warning even though the mkcert CA itself is trusted (confirmed
+        // live: the cert's SAN list had no local.cleaker/local.host entry
+        // at all). Registration/sign-in need a warning-free https origin
+        // specifically because crypto.subtle only works in one.
+        'local.netget', 'local.host', 'local.cleaker', 'localhost', '127.0.0.1', ...extraHosts, ...wildcardHosts,
     ], { stdio: 'inherit' });
 
     return !r.error && r.status === 0;

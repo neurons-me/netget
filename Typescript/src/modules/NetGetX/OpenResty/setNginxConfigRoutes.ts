@@ -143,6 +143,47 @@ export function getNetgetAppConfContent(): string {
     ? `\n    ssl_certificate     ${MKCERT_CERT_PATH};\n    ssl_certificate_key ${MKCERT_KEY_PATH};\n`
     : '';
 
+  // WebCrypto (crypto.subtle) — used for every real identity operation
+  // (registration, sign-in, recovery-phrase derivation) — only exists in a
+  // browser "secure context": https, or the literal hostnames localhost/
+  // 127.0.0.1. A custom hostname like local.cleaker served over plain http
+  // can LOAD but every crypto call inside it throws ("crypto.subtle must be
+  // defined") — confirmed live. Worse, http://local.cleaker and
+  // https://local.cleaker are two completely different browser origins, so
+  // an identity registered on one is invisible (not just broken — genuinely
+  // absent) to the other's localStorage, surfacing as a false "invalid
+  // claim" for an already-claimed identity. Unconditional for the two real
+  // namespace-surface blocks below (nothing legitimate ever depends on
+  // those answering plain http). NOT applied to local.netget/localhost/
+  // 127.0.0.1/the LAN alias in the admin block further down — those are
+  // real loopback-only admin/API endpoints (heartbeats, CLI calls) that
+  // deliberately still speak plain http, and a 301 would silently break
+  // any of them that doesn't replay a POST body across a redirect.
+  const forceHttpsRedirect = certsPresent
+    ? '\n    if ($scheme = http) { return 301 https://$host$request_uri; }\n'
+    : '';
+
+  // The admin block (below) answers for BOTH real identity-facing hostnames
+  // (local.cleaker, local.host) and loopback-only admin/API aliases
+  // (local.netget, localhost, 127.0.0.1, the LAN .netget alias) that must
+  // keep answering plain http — see forceHttpsRedirect's own comment for
+  // why. A single `if ($scheme = http)` can't tell those apart by itself,
+  // so this map combines scheme+host into one flag `if` can branch on
+  // (nginx does not allow nested `if` blocks) — selective instead of
+  // blanket, on purpose.
+  const adminHttpsRedirectMap = certsPresent
+    ? `
+map $scheme:$host $netget_force_https {
+    default 0;
+    "http:local.cleaker" 1;
+    "http:local.host" 1;
+}
+`
+    : '';
+  const adminForceHttpsRedirect = certsPresent
+    ? '\n    if ($netget_force_https) { return 301 https://$host$request_uri; }\n'
+    : '';
+
   const proxyHeaders = `
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -261,6 +302,39 @@ ${proxyHeaders}
         add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Forwarded-Host' always;
         add_header 'Access-Control-Max-Age' 86400 always;
+    }
+`;
+
+  // /nrp — Beatle's WebSocket entry point, admin-block only. The bare
+  // hostname and {handle}.hostname server blocks don't need this: their
+  // own "location /" already proxies EVERY path (including /nrp) through
+  // surface_proxy.lua with the WS upgrade headers already in ${proxyHeaders}
+  // (confirmed: surface_proxy.lua never calls ngx.req.set_uri(), so nginx's
+  // own path-preserving proxy_pass behavior already forwards /nrp verbatim
+  // there). The admin block (local.netget/local.host/local.cleaker) is
+  // different — its own "location /" serves the static SPA, not a monad
+  // proxy — so /nrp there previously had nowhere to go but a 404/index.html
+  // fallback, silently failing every WebSocket upgrade attempt. This routes
+  // it to netget's own monad specifically, the same one /apps/netget
+  // already resolves to via the generic name-based regex above — Beatle's
+  // "here" entry (the admin page you're actually looking at) should reach
+  // the SAME monad any other "netget" mesh route already does, not a
+  // separate resolution path invented just for this.
+  //
+  // monad_proxy.lua rewrites the outbound request URI to $monad_proxy_tail
+  // verbatim (defaulting to "/" if empty) — must be set to "/nrp" itself,
+  // not left blank, or the monad receives "/" instead of the path its own
+  // WS handler actually listens on.
+  const nrpLocation = `
+    location = /nrp {
+        set $monad_proxy_name "netget";
+        set $monad_proxy_tail "/nrp";
+        set $monad_proxy_target "";
+        rewrite_by_lua_file lua/handlers/monad_proxy.lua;
+        proxy_pass $monad_proxy_target;
+${proxyHeaders}
+        proxy_set_header X-NetGet-App-Kind app;
+        proxy_set_header X-NetGet-Monad $monad_proxy_name;${meshProxyErrorHandling}
     }
 `;
 
@@ -799,6 +873,7 @@ ${viteAssetLocation}
 
 ${appFrontendModeLocation}
 ${appMeshLocations}
+${nrpLocation}
 ${appFrontendDistLocations}
 ${meshGatewayErrorLocation}
 
@@ -1293,7 +1368,7 @@ server {
 ${listenLines}
     server_name ${machineHostnameLower};
     client_max_body_size 500M;
-${sslDirectives}
+${sslDirectives}${forceHttpsRedirect}
     set $NETGET_DATA_DIR ${xConfig};
     set $NETGET_CLI_BIN "${netgetCliBin}";
     access_log ${layout.logDir}/netget_access.log netget_access;
@@ -1332,7 +1407,7 @@ server {
 ${listenLines}
     server_name ~^(?<nrp_handle>[^.]+)\\.${machineHostnameRegex}$;
     client_max_body_size 500M;
-${sslDirectives}
+${sslDirectives}${forceHttpsRedirect}
     set $NETGET_DATA_DIR ${xConfig};
     set $NETGET_CLI_BIN "${netgetCliBin}";
     access_log ${layout.logDir}/netget_access.log netget_access;
@@ -1373,6 +1448,7 @@ lua_shared_dict jwt_cache      10m;
 lua_shared_dict gateway_nonces  1m;
 
 log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
+${adminHttpsRedirectMap}
 ${namespaceSurfaceBlock}
 ${nrpHandleBlock}
 ${publicDomainBlocks}
@@ -1381,8 +1457,7 @@ server {
 ${listenLines}
     server_name local.netget local.host local.cleaker ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
     client_max_body_size 500M;
-${sslDirectives}
-
+${sslDirectives}${adminForceHttpsRedirect}
     set $NETGET_DATA_DIR ${xConfig};
     set $NETGET_CLI_BIN "${netgetCliBin}";
     set $netget_logs_path ${layout.logDir};

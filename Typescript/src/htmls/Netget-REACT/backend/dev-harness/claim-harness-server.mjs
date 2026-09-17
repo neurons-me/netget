@@ -32,7 +32,7 @@ const HARNESS_PORT = Number(process.env.HARNESS_PORT || 4601);
 
 const netgetRoot = '/Users/suign/Desktop/Neuroverse/all.this/modules/netget/Typescript';
 
-const { createSetupSession, verifySetupCode, issueClaimChallenge, commitSignedClaim } =
+const { createSetupSession, verifySetupCode, issueClaimChallenge, commitSignedClaim, verifyClaimCallback } =
   await import(path.join(netgetRoot, 'src/modules/NetGetX/Auth/gatewaySetupSession.ts'));
 const { startNetgetMonad, getGatewayRootNamespace } = await import(path.join(netgetRoot, 'src/kernel/netgetMonadProcess.ts'));
 const { GatewayClaimsManager } = await import(path.join(netgetRoot, 'src/modules/NetGetX/Auth/GatewayClaimsManager.ts'));
@@ -40,6 +40,11 @@ const { resolveLedgerIdentity } = await import(path.join(netgetRoot, 'src/kernel
 const { installMonadOriginGuard } = await import(path.join(netgetRoot, 'src/kernel/testing/monadOriginGuard.ts'));
 const { reservePort } = await import(path.join(netgetRoot, 'src/kernel/testing/reservePort.ts'));
 const { readMonadRecord } = await import('monad.ai');
+// The REAL mesh-registry write path (apps.lua's report_app(), ported to TS)
+// -- reused as-is, not reimplemented, so commitSignedClaim()'s own
+// resolveSurface() (topologyResolver.ts, reading this same apps.json) can
+// find this harness's disposable monad instead of "no live surface".
+const { upsertReportedApp } = await import(path.join(netgetRoot, 'src/runtime/appRegistry.ts'));
 
 console.log(`[harness] NETGET_DATA_DIR=${tmpDataDir}`);
 console.log(`[harness] NETGET_MONAD_NAME=${TEST_MONAD_NAME}`);
@@ -63,7 +68,17 @@ console.log(`[harness] NETGET_MONAD_NAME=${TEST_MONAD_NAME}`);
 const existingOwnRecord = await readMonadRecord(TEST_MONAD_NAME).catch(() => null);
 const reservedPort = await reservePort(existingOwnRecord?.port);
 const expectedOrigin = `http://127.0.0.1:${reservedPort}`;
-installMonadOriginGuard([expectedOrigin]);
+const harnessOrigin = `http://127.0.0.1:${HARNESS_PORT}`;
+// Also allowed: this harness's own Express app (below) -- the disposable
+// monad's real heartbeat (netgetRegistration.ts) reports itself there,
+// same as it would POST to a real local.netget in production. Nothing
+// outside {the monad's own origin, this harness} is ever reachable.
+installMonadOriginGuard([expectedOrigin, harnessOrigin]);
+// Points the monad's own real self-registration heartbeat at this
+// harness's Express app instead of its default (a real local.netget this
+// disposable run doesn't have) -- must be set before startNetgetMonad()
+// so the heartbeat loop it starts reads it from the first tick.
+process.env.NETGET_LOCAL = harnessOrigin;
 
 const monadStatus = await startNetgetMonad({ port: reservedPort });
 if (!monadStatus.running) {
@@ -104,9 +119,36 @@ app.get('/gateway-identity', (req, res) => {
   const mgr = new GatewayClaimsManager();
   const snap = mgr.read();
   res.json({
+    // Added for the embedded-harness verification (claimFlowEmbedded) --
+    // CleakerLanding's own probeNetgetGateway() (verifiedCleakerRoot.ts)
+    // requires a non-empty gatewayId in this response before it reports
+    // `netget.available: true` at all; without it, CleakerNetgetView never
+    // even renders GatewaySetup here. The two-role harness (claimFlow's
+    // NetgetRole) never needed this because it mounts GatewaySetup
+    // directly, bypassing that probe entirely.
+    gatewayId: ledgerIdentity.id,
     bootstrapped: !!snap?.owner,
     ownerUsername: snap?.owner ? (snap.usernames?.[snap.owner] ?? null) : null,
   });
+});
+
+// The REAL mesh-registry write route (localNetget.js's own /apps/report,
+// apps.lua's report_app() ported to TS) -- same isLocalRequest() gate and
+// the same upsertReportedApp() call, reused as-is so the disposable
+// monad's real self-registration heartbeat (netgetRegistration.ts,
+// pointed here via NETGET_LOCAL above) populates a real apps.json that
+// resolveSurface() can then read back, exactly like production.
+app.post('/apps/report', (req, res) => {
+  const addr = req.socket?.remoteAddress || '';
+  const isLocal = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+  if (!isLocal) {
+    return res.status(403).json({ success: false, error: 'Apps can only report to the local NetGet agent.' });
+  }
+  const result = upsertReportedApp(req.body);
+  if (!result.ok) {
+    return res.status(400).json({ success: false, error: result.error });
+  }
+  return res.status(200).json({ success: true, id: result.id, localOnly: true });
 });
 
 app.get('/openresty-status', (req, res) => {
@@ -143,6 +185,18 @@ app.post('/setup/challenge', (req, res) => {
 app.post('/setup/claim', async (req, res) => {
   const result = await commitSignedClaim(String(req.body?.setupToken || ''), req.body?.proof);
   res.status(result.ok ? 200 : 400).json(result);
+});
+
+// Mirrors the real backend's route (backend/routes/setupSession.js) --
+// CleakerNetgetClaimView's own returnTo-authorization check calls this
+// same-origin; without it here, that check has nothing to ask and every
+// claim attempt through this harness would refuse itself as "untrusted
+// destination" regardless of the actual fix under test.
+app.post('/setup/verify-callback', (req, res) => {
+  const state = String(req.body?.state || '');
+  const returnOrigin = String(req.body?.returnOrigin || '');
+  const returnPath = String(req.body?.returnPath || '');
+  res.json({ ok: verifyClaimCallback(state, returnOrigin, returnPath) });
 });
 
 // Prints a fresh setup code on demand -- the harness's stand-in for what

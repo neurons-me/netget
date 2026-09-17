@@ -319,6 +319,46 @@ export function isSetupSessionActive(setupToken: string): boolean {
   return requireUnlockedSession(setupToken) !== null;
 }
 
+/**
+ * Confirms `returnOrigin`/`returnPath` are EXACTLY what THIS live session
+ * recorded at issueClaimChallenge() time, keyed by `state` — not a second
+ * independent policy decision, a lookup against the one record that
+ * already made that decision once. Added because the browser-side check
+ * (CleakerNetgetClaimView's own `allowedReturnOrigin`) could only ever
+ * GUESS at netget's origin from the current page's own vantage point —
+ * correct for a genuinely separate netget origin, but it can never equal
+ * Cleaker's own origin by construction, so it failed closed on every
+ * attempt where the whole flow legitimately never leaves Cleaker (the
+ * embedded /netget integration). That heuristic never asked the one party
+ * that actually knows the right answer: this session record. This does.
+ *
+ * Read-only, no side effects — state/session are neither consumed nor
+ * mutated just by asking, so it's safe to call speculatively or more than
+ * once (e.g. re-checked after a page reload).
+ *
+ * A wrong or absent `state` fails closed the same way commitSignedClaim's
+ * own state check does: this must never confirm a callback for a
+ * DIFFERENT session (or no session at all) than the one identified.
+ * `record.callbackOrigin`/`callbackPath` are set exactly once, at
+ * issueClaimChallenge() time, and never updated afterward — so this also
+ * catches a `returnTo` altered after that point (a query param edited
+ * post-hoc, or substituted outright), not just a wholesale foreign origin.
+ */
+export function verifyClaimCallback(state: string, returnOrigin: string, returnPath: string): boolean {
+  const record = loadLiveSession();
+  if (!record || !record.state || !record.callbackOrigin || !record.callbackPath) return false;
+  if (!safeEqualUtf8(String(state || ''), record.state)) return false;
+
+  let normalizedOrigin: string;
+  try {
+    normalizedOrigin = new URL(String(returnOrigin || '')).origin;
+  } catch {
+    return false;
+  }
+  const normalizedPath = String(returnPath || '').trim() || '/';
+  return normalizedOrigin === record.callbackOrigin && normalizedPath === record.callbackPath;
+}
+
 // GatewaySetup.tsx's real production mount is netget's own root path
 // (App.jsx: `<Route path="/" element={<GatewayEntry />} />`). The one
 // deliberate exception is the disposable `cleakerHome` demo pilot

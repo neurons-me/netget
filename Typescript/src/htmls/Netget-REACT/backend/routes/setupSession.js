@@ -14,7 +14,7 @@
  * introducing).
  */
 import express from "express";
-import { verifySetupCode, issueClaimChallenge, commitSignedClaim } from "../../../../modules/NetGetX/Auth/gatewaySetupSession.ts";
+import { verifySetupCode, issueClaimChallenge, commitSignedClaim, verifyClaimCallback } from "../../../../modules/NetGetX/Auth/gatewaySetupSession.ts";
 
 const router = express.Router();
 
@@ -23,6 +23,21 @@ router.post('/setup/verify-code', (req, res) => {
     const result = verifySetupCode(code);
     if (!result.ok) return res.status(401).json(result);
     res.json(result);
+});
+
+// Read-only: lets the SIGNING page (CleakerNetgetClaimView, possibly on a
+// different origin than this backend's own netget frontend) confirm its
+// own `returnTo` is the exact one this session recorded at /setup/challenge
+// time, rather than trusting a client-side guess at "what netget's origin
+// should be" -- see verifyClaimCallback's own doc comment for why that
+// guess alone isn't enough. Never returns the recorded values themselves,
+// only whether the submitted ones match -- nothing here needs to leak
+// beyond a yes/no.
+router.post('/setup/verify-callback', (req, res) => {
+    const state = String(req.body?.state || '');
+    const returnOrigin = String(req.body?.returnOrigin || '');
+    const returnPath = String(req.body?.returnPath || '');
+    res.json({ ok: verifyClaimCallback(state, returnOrigin, returnPath) });
 });
 
 router.post('/setup/challenge', (req, res) => {

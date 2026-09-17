@@ -828,6 +828,66 @@ ${meshGatewayErrorLocation}
 ${proxyHeaders}
     }
 
+    # GatewaySetup's own claim flow (netgetSetupClient.ts ->
+    # gatewaySetupSession.ts's real /setup/* routes on the Express backend,
+    # backend/routes/setupSession.js) -- POST-only. Missing here entirely
+    # was a real, confirmed gap: with no location matching /setup/*, these
+    # requests fell through to the generic "/" static-file location below,
+    # whose ngx_http_static_module rejects any non-GET/HEAD method with a
+    # bare OpenResty 405 -- before Express, or even this app, ever saw the
+    # request. Three exact-match blocks (matching this file's own
+    # established per-route style, not a new prefix-match pattern) rather
+    # than one broader location, since that's what this whole file already
+    # does for every other proxied Express route.
+    location = /setup/verify-code {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        proxy_pass http://127.0.0.1:3000/setup/verify-code;
+${proxyHeaders}
+    }
+
+    location = /setup/challenge {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        proxy_pass http://127.0.0.1:3000/setup/challenge;
+${proxyHeaders}
+    }
+
+    location = /setup/claim {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        proxy_pass http://127.0.0.1:3000/setup/claim;
+${proxyHeaders}
+    }
+
+    # CleakerNetgetClaimView's own server-verified return-callback check
+    # (verifyClaimCallback, gatewaySetupSession.ts) -- added after the
+    # exact same class of gap the comment above already describes: a new
+    # backend route with no matching location here falls through to the
+    # static-file location's bare 405, confirmed live the same way.
+    location = /setup/verify-callback {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        proxy_pass http://127.0.0.1:3000/setup/verify-callback;
+${proxyHeaders}
+    }
+
     # Slice 2 — read-only network entrypoints / semantic surfaces report.
     # See src/types/SurfaceResolution.ts for the contract. No writes here;
     # /add-domain etc. below remain the only way to change what's registered.

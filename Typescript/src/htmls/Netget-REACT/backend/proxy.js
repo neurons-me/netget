@@ -103,6 +103,18 @@ if (!process.env.LOG_SOURCE_URL) {
     process.env.LOG_SOURCE_URL = `http://127.0.0.1:${PORT}`;
 }
 
+// Same mechanism, same local origin, for a DIFFERENT live NRP path
+// (monad.ai's openRestyStatusProxy.ts, generic — it has no idea this
+// points at netget specifically): me.<namespace>.openResty/.openResty.<port>
+// re-checks this backend's own real-time /openresty-status probe on every
+// read, never a stored kernel value. Kept as its own env var pair rather
+// than reusing LOG_SOURCE_URL directly — a coincidence of today's
+// deployment sharing one origin, not a reason to couple two unrelated
+// live-path proxies to the same name.
+if (!process.env.OPENRESTY_STATUS_URL) {
+    process.env.OPENRESTY_STATUS_URL = `http://127.0.0.1:${PORT}`;
+}
+
 // netget runs its own monad.ai instance instead of an embedded kernel
 // (domainStore.ts talks to it over HTTP — see kernel/netgetMonadProcess.ts).
 // Domain CRUD depends on this being up; routing itself does not (Lua polls
@@ -123,6 +135,13 @@ loadGatewayRootNamespaceCache().then(() => {
     // as LOG_SOURCE_URL above.
     if (!process.env.LOG_SOURCE_NAMESPACE) {
         process.env.LOG_SOURCE_NAMESPACE = `netget.${getGatewayRootNamespace()}`;
+    }
+    // Same "netget.<root>" convention as LOG_SOURCE_NAMESPACE above, for
+    // openRestyStatusProxy.ts's own exact-match check — a read of
+    // "openResty.443" under any OTHER namespace must never resolve to
+    // this host's own gateway status.
+    if (!process.env.OPENRESTY_STATUS_NAMESPACE) {
+        process.env.OPENRESTY_STATUS_NAMESPACE = `netget.${getGatewayRootNamespace()}`;
     }
     return startNetgetMonad();
 }).then((status) => {

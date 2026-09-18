@@ -12,7 +12,12 @@ const router = express.Router();
 
 router.post('/admin-session/challenge', (req, res) => {
     const identityHash = String(req.body?.identityHash || '');
-    const result = issueAdminSessionChallenge(identityHash);
+    // returnOrigin/returnPath are optional -- see issueAdminSessionChallenge's
+    // own doc comment. When the caller supplies them, this commits THIS
+    // challenge to that exact destination; verify below then holds it to it.
+    const returnOrigin = req.body?.returnOrigin ? String(req.body.returnOrigin) : undefined;
+    const returnPath = req.body?.returnPath ? String(req.body.returnPath) : undefined;
+    const result = issueAdminSessionChallenge(identityHash, undefined, returnOrigin, returnPath);
     res.status(result.ok ? 200 : 401).json(result);
 });
 
@@ -21,7 +26,9 @@ router.post('/admin-session/verify', async (req, res) => {
     const namespace = String(req.body?.namespace || '');
     const keyId = String(req.body?.keyId || '');
     const signature = String(req.body?.signature || '');
-    const result = await verifyAdminSessionChallenge(identityHash, namespace, keyId, signature);
+    const returnOrigin = req.body?.returnOrigin ? String(req.body.returnOrigin) : undefined;
+    const returnPath = req.body?.returnPath ? String(req.body.returnPath) : undefined;
+    const result = await verifyAdminSessionChallenge(identityHash, namespace, keyId, signature, undefined, returnOrigin, returnPath);
     res.status(result.ok ? 200 : 401).json(result);
 });
 

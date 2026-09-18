@@ -207,6 +207,64 @@ try {
   assert.ok(resolvedA, 'a session minted from a genuinely active key must resolve');
   assert.deepEqual(resolvedA!.scopes, ['gateway:read']);
 
+  // ── 1b. returnOrigin/returnPath commitment: a challenge issued for one
+  // destination must refuse to mint a session for a DIFFERENT one at
+  // verify time -- the actual gap this session's CleakerNetgetAdminSignView
+  // fix closes (a client-side-only guess was the sole trust signal before).
+  {
+    const committed = issueAdminSessionChallenge(alice.identityHash, undefined, 'https://local.cleaker', '/keychain/admin-sign');
+    assert.ok(committed.ok && committed.challenge, 'a challenge with a well-formed returnOrigin must still issue');
+    const sig = await keyA.sign(committed.challenge!);
+
+    // Same origin, DIFFERENT path -> must still be rejected.
+    const wrongPath = await verifyAdminSessionChallenge(
+      alice.identityHash, alice.namespace, keyAId, sig, undefined, 'https://local.cleaker', '/somewhere-else',
+    );
+    assert.equal(wrongPath.ok, false);
+    assert.equal(wrongPath.message, 'RETURN_TARGET_MISMATCH');
+  }
+  {
+    const committed = issueAdminSessionChallenge(alice.identityHash, undefined, 'https://local.cleaker', '/keychain/admin-sign');
+    const sig = await keyA.sign(committed.challenge!);
+    // Path matches, DIFFERENT origin -> must still be rejected.
+    const wrongOrigin = await verifyAdminSessionChallenge(
+      alice.identityHash, alice.namespace, keyAId, sig, undefined, 'https://attacker.example', '/keychain/admin-sign',
+    );
+    assert.equal(wrongOrigin.ok, false);
+    assert.equal(wrongOrigin.message, 'RETURN_TARGET_MISMATCH');
+  }
+  {
+    const committed = issueAdminSessionChallenge(alice.identityHash, undefined, 'https://local.cleaker', '/keychain/admin-sign');
+    const sig = await keyA.sign(committed.challenge!);
+    // Omitting returnOrigin entirely at verify time must NOT silently skip
+    // the check just because the caller left it out -- a challenge minted
+    // WITH a commitment must never be redeemable without honoring it.
+    const omitted = await verifyAdminSessionChallenge(alice.identityHash, alice.namespace, keyAId, sig);
+    assert.equal(omitted.ok, false);
+    assert.equal(omitted.message, 'RETURN_TARGET_MISMATCH');
+  }
+  {
+    // Exact match -> succeeds, and mints a real, resolvable session --
+    // the commitment mechanism isn't just a rejection path.
+    const committed = issueAdminSessionChallenge(alice.identityHash, undefined, 'https://local.cleaker', '/keychain/admin-sign');
+    const sig = await keyA.sign(committed.challenge!);
+    const matched = await verifyAdminSessionChallenge(
+      alice.identityHash, alice.namespace, keyAId, sig, undefined, 'https://local.cleaker', '/keychain/admin-sign',
+    );
+    assert.equal(matched.ok, true, JSON.stringify(matched));
+    const resolvedMatched = await resolveAdminSession(matched.sessionToken!);
+    assert.ok(resolvedMatched, 'a session minted with a matched returnTo commitment must resolve normally');
+  }
+  {
+    // A malformed returnOrigin fails the WHOLE challenge request outright
+    // (fail closed) -- never silently issues a challenge with no recorded
+    // commitment, which would let a caller bypass the check by sending
+    // garbage here instead of omitting the field.
+    const malformed = issueAdminSessionChallenge(alice.identityHash, undefined, 'not-a-url', '/keychain/admin-sign');
+    assert.equal(malformed.ok, false);
+    assert.equal(malformed.message, 'INVALID_RETURN_ORIGIN');
+  }
+
   // ── 2. Rotate: register B (acting=A), then revoke A (acting=B) ─────────
   const keyB = await generateDeviceKey();
   const keyBId = await registerKeychainKeyViaActing(origin, alice.namespace, keyAId, keyA, keyB, 'Alice\'s new phone (key B)', true);

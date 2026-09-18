@@ -47,6 +47,14 @@ const SESSION_TTL_MS = 30 * 60 * 1000;
 interface PendingChallenge {
   challenge: string;
   expiresAt: number;
+  // Set only when the caller supplied a returnTo commitment at issuance --
+  // see issueAdminSessionChallenge's own doc comment. Undefined means this
+  // challenge was requested with no returnTo concept at all (a caller with
+  // no redirect step), in which case verifyAdminSessionChallenge never
+  // checks it either -- this stays optional so existing callers with no
+  // return flow are unaffected.
+  returnOrigin?: string;
+  returnPath?: string;
 }
 
 interface AdminSessionRecord {
@@ -65,13 +73,45 @@ export interface IssueChallengeResult {
   message?: string;
 }
 
-export function issueAdminSessionChallenge(identityHash: string, claims: GatewayClaimsManager = new GatewayClaimsManager()): IssueChallengeResult {
+/**
+ * `returnOrigin`/`returnPath`, when given, are the caller's OWN commitment
+ * to where this attempt will redirect once verified -- recorded here so
+ * verifyAdminSessionChallenge() can hold the verify-time caller to that
+ * exact same destination (see that function's own comment) instead of a
+ * client-side guess deciding, on its own, whether some later `returnTo`
+ * looks trustworthy. A malformed `returnOrigin` fails the WHOLE challenge
+ * request outright (fail closed) rather than silently issuing a challenge
+ * with no recorded commitment, which would otherwise let a caller bypass
+ * the check just by sending garbage here.
+ */
+export function issueAdminSessionChallenge(
+  identityHash: string,
+  claims: GatewayClaimsManager = new GatewayClaimsManager(),
+  returnOrigin?: string,
+  returnPath?: string,
+): IssueChallengeResult {
   const id = String(identityHash || '').trim();
   if (!id) return { ok: false, message: 'identityHash is required' };
   if (!claims.isAdmin(id)) return { ok: false, message: 'NOT_AN_ADMIN' };
 
+  let normalizedReturnOrigin: string | undefined;
+  let normalizedReturnPath: string | undefined;
+  if (returnOrigin) {
+    try {
+      normalizedReturnOrigin = new URL(returnOrigin).origin;
+    } catch {
+      return { ok: false, message: 'INVALID_RETURN_ORIGIN' };
+    }
+    normalizedReturnPath = String(returnPath || '').trim() || '/';
+  }
+
   const challenge = crypto.randomBytes(24).toString('base64url');
-  pendingChallenges.set(id, { challenge, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+  pendingChallenges.set(id, {
+    challenge,
+    expiresAt: Date.now() + CHALLENGE_TTL_MS,
+    returnOrigin: normalizedReturnOrigin,
+    returnPath: normalizedReturnPath,
+  });
   return { ok: true, challenge };
 }
 
@@ -102,6 +142,8 @@ export async function verifyAdminSessionChallenge(
   keyId: string,
   signature: string,
   claims: GatewayClaimsManager = new GatewayClaimsManager(),
+  returnOrigin?: string,
+  returnPath?: string,
 ): Promise<VerifyChallengeResult> {
   const id = String(identityHash || '').trim();
   const pending = pendingChallenges.get(id);
@@ -111,6 +153,22 @@ export async function verifyAdminSessionChallenge(
     return { ok: false, message: 'CHALLENGE_EXPIRED' };
   }
   if (!claims.isAdmin(id)) return { ok: false, message: 'NOT_AN_ADMIN' };
+
+  // If issueAdminSessionChallenge recorded a returnTo commitment, this
+  // call must present the EXACT same destination -- never a silent skip
+  // by omitting these fields at verify time (that would let a challenge
+  // requested for one destination be redeemed for a different one). No
+  // commitment recorded (pending.returnOrigin unset) means this caller
+  // never used the returnTo concept at all; nothing to check.
+  if (pending.returnOrigin) {
+    let normalizedOrigin: string | null = null;
+    try { normalizedOrigin = returnOrigin ? new URL(returnOrigin).origin : null; } catch { normalizedOrigin = null; }
+    const normalizedPath = String(returnPath || '').trim() || '/';
+    if (normalizedOrigin !== pending.returnOrigin || normalizedPath !== pending.returnPath) {
+      pendingChallenges.delete(id);
+      return { ok: false, message: 'RETURN_TARGET_MISMATCH' };
+    }
+  }
 
   const surface = await resolveSurface({ namespace });
   if (!surface) return { ok: false, message: 'NAMESPACE_SURFACE_NOT_FOUND' };

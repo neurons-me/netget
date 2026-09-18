@@ -963,6 +963,37 @@ ${proxyHeaders}
 ${proxyHeaders}
     }
 
+    # CleakerNetgetAdminSignView's own admin re-authentication (adminSession.ts)
+    # -- fetched genuinely cross-origin (Cleaker's own origin calling netget's),
+    # unlike /setup/* above, so the CORS headers here are load-bearing, not
+    # just OPTIONS-preflight ceremony. Same class of gap as /setup/* before it
+    # was added: with no location matching these two, both POST routes fell
+    # through to the generic "/" static-file location's bare 405, confirmed
+    # the same way.
+    location = /admin-session/challenge {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        proxy_pass http://127.0.0.1:3000/admin-session/challenge;
+${proxyHeaders}
+    }
+
+    location = /admin-session/verify {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        add_header 'Access-Control-Allow-Origin' $http_origin always;
+        proxy_pass http://127.0.0.1:3000/admin-session/verify;
+${proxyHeaders}
+    }
+
     # Slice 2 — read-only network entrypoints / semantic surfaces report.
     # See src/types/SurfaceResolution.ts for the contract. No writes here;
     # /add-domain etc. below remain the only way to change what's registered.

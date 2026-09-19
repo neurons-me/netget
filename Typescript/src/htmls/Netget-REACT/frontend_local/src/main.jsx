@@ -71,8 +71,21 @@ mount(spec, '#root', {
   React,
   ReactDOM,
   me,
-  // inspectorToggleVisible: false — the LeftBar's own Dev Tools popover
-  // (wrench icon, bottom of the rail) already has a Semantic Inspector
-  // on/off toggle; this floating bottom-right button duplicated it.
-  devtools: { inspector: false, inspectorToggleVisible: false },
+  // inspectorToggleVisible stays false — the LeftBar's own Dev Tools
+  // popover (wrench icon, bottom of the rail) already has a Semantic
+  // Inspector on/off toggle; a second floating bottom-right button would
+  // duplicate it (see mount.ts's own normalizeMountDevtools comment for
+  // the confirmed-live bug two live inspector instances caused).
+  //
+  // inspector: true (not false) -- mount.ts's own "requested" logic only
+  // ever mounts SelectionProvider/RuntimeInspector at all when at least
+  // one flag is explicitly `true`; `inspector: false` alone (the previous
+  // value here) means "not requested," full stop -- neither this app's
+  // CleakerLanding nor NetGetShell branch actually had a working inspector
+  // behind that wrench icon, confirmed by reading normalizeMountDevtools:
+  // `devtools.requested` gates whether SelectionProvider mounts at all.
+  // `true` here means inspection/hover-select starts ON by default
+  // (toggle it off via either branch's own Dev Tools wrench icon) rather
+  // than mounted-but-inert.
+  devtools: { inspector: true, inspectorToggleVisible: false },
 });

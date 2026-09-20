@@ -187,6 +187,11 @@ function NetGetShell() {
 const HOST = typeof window !== 'undefined' ? window.location.hostname : '';
 const PROVIDER_BOOT = readProviderBoot();
 const ROLE = frontendRole({ host: HOST, boot: PROVIDER_BOOT });
+// The monad the landing reads its directory from (Users, Blockchain). On
+// local.cleaker that stays netget's own monad through /apps/netget (the
+// CleakerLanding default); on a namespace served by its own monad it is that
+// monad, at the address the page came from.
+const CLEAKER_MONAD_ORIGIN = HOST === 'local.cleaker' || !PROVIDER_BOOT ? undefined : netgetMonadTransportOrigin();
 const CLEAKER_ENDPOINT = HOST === 'local.cleaker'
   ? 'http://local.cleaker'
   : namespaceEndpoint(PROVIDER_BOOT, typeof window !== 'undefined' ? window.location : null);
@@ -199,7 +204,7 @@ const App = () => (
   >
     <LauncherPopoverProvider>
       {ROLE === 'cleaker' ? (
-        <CleakerLanding cleakerEndpoint={CLEAKER_ENDPOINT} />
+        <CleakerLanding cleakerEndpoint={CLEAKER_ENDPOINT} netgetMonadOrigin={CLEAKER_MONAD_ORIGIN} />
       ) : ROLE === 'host' ? (
         <HostSurface endpoint={netgetMonadTransportOrigin()} />
       ) : (

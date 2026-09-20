@@ -124,6 +124,12 @@ export async function mount(app, ctx) {
   // pages (cleaker.me -> netget.site), so it may call the gateway cross-origin.
   const own = parseHostList(env.ME_NAMESPACE);
   mountGatewayRouters(app, routers, { extraOrigins: [...parseHostList(env.NETGET_GATEWAY_ORIGINS), ...own] });
+
+  // The namespace names the gateway's main server (netget.main.server.name); this
+  // derives the door from that declaration and keeps it in step (mainServerEntry.ts).
+  // NETGET_MAIN_SERVER_RECONCILE_MS=0 checks once and stops watching.
+  const { startMainServerReconciler } = await import('./mainServerEntry.ts');
+  startMainServerReconciler({ intervalMs: Number(env.NETGET_MAIN_SERVER_RECONCILE_MS ?? 5000) });
 }
 
 export default { mount };

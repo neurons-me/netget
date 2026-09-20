@@ -27,7 +27,7 @@ export interface AdoptOptions {
    */
   namespace?: string;
   port?: number;
-  /** The gateway's own public name (xConfig.mainServerName): the domain its admin screens are served on. */
+  /** The domain the gateway is administered from. Seeds netget.main.server.name in the namespace; xConfig.mainServerName is still written until nginx reads the derived state instead. */
   mainServerName?: string;
   /** A built front end for the monad to serve (its index.html and /assets). */
   frontendDir?: string;
@@ -71,6 +71,10 @@ export async function adoptMonadAsGateway(options: AdoptOptions): Promise<AdoptR
     NETGET_MONAD_NAMESPACE: record.namespace,
   };
   if (options.frontendDir) patch.MONAD_FRONTEND_DIR = options.frontendDir;
+  // The gateway's main server is declared in the namespace (netget.main.server.name).
+  // This is only its starting value: the monad writes it when the path is empty, and
+  // once a gateway has an owner the tree decides (the owner's signature changes it).
+  if (options.mainServerName) patch.MONAD_MAIN_SERVER_NAME = options.mainServerName.trim().toLowerCase();
   if (options.useGatewaySeed) {
     // An installation with state but no ledger-identity.json is still on the
     // seed derived from its hostname: public, so not one to hand a monad.

@@ -137,6 +137,12 @@ export async function mount(app, ctx) {
     resolveSession: (token) => resolveAdminSession(token),
     isOwner: (identityHash) => new GatewayClaimsManager().isOwner(identityHash),
   });
+
+  // The namespace names the gateway's main server (netget.main.server.name); this
+  // derives the door from that declaration and keeps it in step (mainServerEntry.ts).
+  // NETGET_MAIN_SERVER_RECONCILE_MS=0 checks once and stops watching.
+  const { startMainServerReconciler } = await import('./mainServerEntry.ts');
+  startMainServerReconciler({ intervalMs: Number(env.NETGET_MAIN_SERVER_RECONCILE_MS ?? 5000) });
 }
 
 export default { mount };

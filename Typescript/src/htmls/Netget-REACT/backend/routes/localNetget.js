@@ -30,6 +30,7 @@ import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSessi
 import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
 import { buildGatewayIdentityResponse, arrivalOf, localIPv4 } from "../../../../modules/NetGetX/Auth/gatewayIdentityResponse.ts";
+import { readMainServerState } from "../../../../gateway/mainServerEntry.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -698,14 +699,27 @@ router.get('/domains', async (req, res) => {
 // namespace must never be conflated.
 router.get('/main-server-namespace', async (req, res) => {
     // namespace is the resolved value (falls back to "local.cleaker" when
-    // unconfigured). mainServerName is the RAW xConfig value, unresolved --
-    // empty when nothing has been set via mainServer.cli.ts. Returning both
-    // lets a caller distinguish "explicitly configured" from "using the
-    // default," which the resolved value alone can't tell you.
+    // unconfigured). mainServerName is where the gateway is administered from:
+    // what the namespace itself declares at netget.main.server.name when it does
+    // (source "namespace", with the derived door's state), else the RAW xConfig
+    // value the older setups have (source "config"), else null. Returning the
+    // source lets a caller tell "declared in the tree" from "still a file setting".
+    const state = readMainServerState();
+    if (state?.name) {
+        return res.json({
+            namespace: getGatewayRootNamespace(),
+            mainServerName: state.name,
+            source: 'namespace',
+            mainServer: state,
+        });
+    }
     const xConfig = await loadOrCreateXConfig();
+    const configured = String(xConfig.mainServerName || '').trim() || null;
     res.json({
         namespace: getGatewayRootNamespace(),
-        mainServerName: String(xConfig.mainServerName || '').trim() || null,
+        mainServerName: configured,
+        source: configured ? 'config' : null,
+        mainServer: state,
     });
 });
 

@@ -64,6 +64,22 @@ assert.ok(second.stored.includes('SEED'));
 assert.ok(!JSON.stringify(second).includes('a'.repeat(64)), 'the seed is never returned');
 assert.equal(fs.statSync(path.join(monadsHome, 'local', 'env.json')).mode & 0o777, 0o600);
 
+// A fresh machine: the monad does not exist yet, so its environment is written
+// before its first start (it never runs once on the default seed).
+{
+  const fresh = await adoptMonadAsGateway({
+    monad: 'netget', namespace: 'netget.site', port: 8161, mainServerName: 'NetGet.Site', useGatewaySeed: true,
+  });
+  assert.equal(fresh.gatewayUpstream, 'http://127.0.0.1:8161');
+  const env = readMonadEnv('netget');
+  assert.equal(env.NETGET_MONAD_NAMESPACE, 'netget.site');
+  assert.equal(env.SEED, 'a'.repeat(64));
+  const xc = JSON.parse(fs.readFileSync(path.join(dataDir, 'xConfig.json'), 'utf8'));
+  assert.equal(xc.mainServerName, 'netget.site');
+  assert.equal(xc.gatewayUpstream, 'http://127.0.0.1:8161');
+  await assert.rejects(() => adoptMonadAsGateway({ monad: 'ghost', namespace: 'x.example' }), /--namespace <namespace> --port <port>/);
+}
+
 // An installation with state but no persisted ledger identity would hand the
 // monad the hostname-derived seed (public): refused, unless a seed was given.
 {

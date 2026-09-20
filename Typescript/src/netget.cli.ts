@@ -690,10 +690,13 @@ program
   .command('gateway-adopt <monad>')
   .description("Make an existing monad the gateway's monad: it mounts netget/gateway, so no standalone backend (:3000) or second monad is needed.")
   .option('--frontend [dir]', "Also have the monad serve a built front end (default: this package's main-server-ui dist)")
+  .option('--namespace <namespace>', 'For a monad that does not exist yet: the namespace it will serve')
+  .option('--port <port>', 'For a monad that does not exist yet: the port it will listen on')
+  .option('--main-server-name <name>', "Also set the gateway's own public name (the domain its admin screens are served on)")
   .option('--use-gateway-seed', "Start the monad with netget's own persisted ledger identity as its seed (changes the monad's identity)")
-  .option('--apply-nginx', "Also rewrite netget_app.conf with the new upstream and reload OpenResty")
+  .option('--apply-nginx', 'Also write netget_app.conf and its Lua handlers, validate, and reload OpenResty (backed up; undone if it does not validate)')
   .option('--json', 'Print a single JSON line')
-  .action(async (monad: string, opts: { frontend?: string | boolean; useGatewaySeed?: boolean; applyNginx?: boolean; json?: boolean }) => {
+  .action(async (monad: string, opts: { frontend?: string | boolean; namespace?: string; port?: string; mainServerName?: string; useGatewaySeed?: boolean; applyNginx?: boolean; json?: boolean }) => {
     try {
       const { adoptMonadAsGateway } = await import('./gateway/adopt.ts');
       let frontendDir: string | undefined;
@@ -703,23 +706,39 @@ program
       } else if (typeof opts.frontend === 'string') {
         frontendDir = opts.frontend;
       }
-      const result = await adoptMonadAsGateway({ monad, frontendDir, useGatewaySeed: Boolean(opts.useGatewaySeed) });
+      const result = await adoptMonadAsGateway({
+        monad,
+        frontendDir,
+        namespace: opts.namespace,
+        port: opts.port ? Number(opts.port) : undefined,
+        mainServerName: opts.mainServerName,
+        useGatewaySeed: Boolean(opts.useGatewaySeed),
+      });
 
       let nginx: { written: boolean; reloaded: boolean; message: string } = { written: false, reloaded: false, message: 'not requested' };
       if (opts.applyNginx) {
         const { getNetgetAppConfContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
-        const { writeFileWithFallback } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
-        const { detectOpenRestyLayout } = await import('./modules/NetGetX/OpenResty/platformDetect.ts');
-        const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+        const { detectOpenRestyLayout, findOpenRestyBin } = await import('./modules/NetGetX/OpenResty/platformDetect.ts');
+        const { applyGatewayNginx, systemIo } = await import('./gateway/applyNginx.ts');
+        const { getNetgetDataDir } = await import('./utils/netgetPaths.js');
+        const nodePath = (await import('path')).default;
+        const { fileURLToPath } = await import('url');
         const layout = detectOpenRestyLayout();
-        if (!layout.isSupported) {
-          nginx = { written: false, reloaded: false, message: 'this platform has no OpenResty layout' };
+        const bin = findOpenRestyBin();
+        if (!layout.isSupported || !bin) {
+          nginx = { written: false, reloaded: false, message: 'this platform has no OpenResty layout, or the binary was not found' };
         } else {
-          const nodePath = (await import('path')).default;
-          const destConf = nodePath.join(layout.confDDir, 'netget_app.conf');
-          await writeFileWithFallback(destConf, getNetgetAppConfContent(), `write netget_app.conf at ${destConf}`);
-          const reloaded = await startOpenRestyOnce(true);
-          nginx = { written: true, reloaded, message: reloaded ? 'netget_app.conf rewritten, OpenResty reloaded' : 'netget_app.conf rewritten, but the reload may have failed' };
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const applied = applyGatewayNginx({
+            confPath: nodePath.join(layout.confDDir, 'netget_app.conf'),
+            luaDir: layout.luaDir,
+            sourceLuaDir: nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), 'modules/NetGetX/OpenResty/lua'),
+            newConf: getNetgetAppConfContent(),
+            backupDir: nodePath.join(getNetgetDataDir(), 'backups', `nginx-${stamp}`),
+            io: systemIo(bin, layout.configFilePath),
+          });
+          nginx = { written: applied.ok, reloaded: applied.reloaded, message: `${applied.message} (backup: ${applied.backupDir})` };
+          if (!applied.ok) throw new Error(`nginx was not changed: ${applied.message}`);
         }
       }
 
@@ -731,7 +750,7 @@ program
       console.log(`  stored for the monad: ${result.stored.join(', ')}`);
       console.log(`  nginx upstream (xConfig.gatewayUpstream): ${result.gatewayUpstream}`);
       console.log(result.seedChanged ? chalk.yellow("  seed: changed to netget's ledger identity") : chalk.gray('  seed: unchanged'));
-      console.log(opts.applyNginx ? `  nginx: ${nginx.message}` : chalk.gray('  nginx: not touched (add --apply-nginx to rewrite netget_app.conf and reload)'));
+      console.log(opts.applyNginx ? `  nginx: ${nginx.message}` : chalk.gray('  nginx: not touched (add --apply-nginx to write netget_app.conf + Lua, validate and reload)'));
       console.log(chalk.cyan(`Next: monads restart ${result.monad}  (the monad applies its stored environment on start)`));
     } catch (err: any) {
       const message = err instanceof Error ? err.message : String(err);
@@ -740,6 +759,46 @@ program
         process.exit(1);
       }
       console.error(chalk.red(`gateway-adopt failed: ${message}`));
+      process.exit(1);
+    }
+  });
+
+
+// The setup code the browser claim asks for -- and nothing else. `netget init`
+// creates it too, but also rewrites the gateway's config and services; this only
+// opens a setup session and prints the code (valid for a short time), so the
+// claim can be made from https://<this gateway>/ with the owner's own passphrase.
+program
+  .command('setup-code')
+  .description('Print a setup code for claiming this gateway from the browser (touches no config or service)')
+  .option('--json', 'Print a single JSON line')
+  .action(async (opts: { json?: boolean }) => {
+    try {
+      const { GatewayClaimsManager } = await import('./modules/NetGetX/Auth/GatewayClaimsManager.ts');
+      const { resolveLedgerIdentity } = await import('./kernel/ledgerIdentity.ts');
+      const { createSetupSession } = await import('./modules/NetGetX/Auth/gatewaySetupSession.ts');
+      const { loadOrCreateXConfig } = await import('./modules/NetGetX/config/xConfig.ts');
+      const mgr = new GatewayClaimsManager();
+      if (!mgr.needsBootstrap()) {
+        const message = 'This gateway already has an owner. Use `netget claim --reset` to claim it again.';
+        if (opts.json) { console.log(JSON.stringify({ ok: false, message })); process.exit(1); }
+        console.log(chalk.yellow(message));
+        process.exit(1);
+      }
+      const xConfig = await loadOrCreateXConfig();
+      const session = createSetupSession(resolveLedgerIdentity().id);
+      const address = String(xConfig.mainServerName || '').trim();
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, code: session.code, expiresAt: session.expiresAt, address: address || null }));
+        return;
+      }
+      console.log(chalk.bold(`\nSetup code:  ${chalk.yellow.bold(session.code)}`));
+      if (address) console.log(`Open:        https://${address}/`);
+      console.log(chalk.gray(`Valid until  ${new Date(session.expiresAt).toISOString()}\n`));
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.json) { console.log(JSON.stringify({ ok: false, message })); process.exit(1); }
+      console.error(chalk.red(`setup-code failed: ${message}`));
       process.exit(1);
     }
   });

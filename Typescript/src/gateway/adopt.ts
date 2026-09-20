@@ -19,6 +19,16 @@ export const GATEWAY_MODULE = 'netget/gateway';
 
 export interface AdoptOptions {
   monad: string;
+  /**
+   * For a monad that does not exist yet (a fresh machine): what it will be, so
+   * its environment can be written BEFORE its first start -- a monad started
+   * first and configured after would have run once on the default seed, which is
+   * its namespace's name.
+   */
+  namespace?: string;
+  port?: number;
+  /** The gateway's own public name (xConfig.mainServerName): the domain its admin screens are served on. */
+  mainServerName?: string;
   /** A built front end for the monad to serve (its index.html and /assets). */
   frontendDir?: string;
   /** Start the monad with netget's own persisted ledger identity as its seed. */
@@ -42,8 +52,17 @@ export function mergeModules(existing: string | undefined, add: string): string 
 }
 
 export async function adoptMonadAsGateway(options: AdoptOptions): Promise<AdoptResult> {
-  const record = await readMonadRecord(options.monad);
-  if (!record) throw new Error(`No monad named "${options.monad}". Create it first: monads start ${options.monad} --namespace <namespace>`);
+  const existing = await readMonadRecord(options.monad);
+  const planned = !existing && options.namespace && options.port
+    ? { name: options.monad, namespace: options.namespace, endpoint: `http://127.0.0.1:${options.port}` }
+    : null;
+  const record = existing ?? planned;
+  if (!record) {
+    throw new Error(
+      `No monad named "${options.monad}". Create it first (monads start ${options.monad} --namespace <namespace>), `
+      + 'or say what it will be: --namespace <namespace> --port <port>',
+    );
+  }
 
   const stored = readMonadEnv(record.name);
   const patch: Record<string, string | null> = {
@@ -66,7 +85,10 @@ export async function adoptMonadAsGateway(options: AdoptOptions): Promise<AdoptR
   }
 
   const after = writeMonadEnv(record.name, patch);
-  await saveXConfig({ gatewayUpstream: record.endpoint });
+  await saveXConfig({
+    gatewayUpstream: record.endpoint,
+    ...(options.mainServerName ? { mainServerName: options.mainServerName.trim().toLowerCase() } : {}),
+  });
 
   return {
     monad: record.name,

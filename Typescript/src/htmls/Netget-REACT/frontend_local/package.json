@@ -10,12 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.7",
     "@mui/material": "^6.4.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.3",
-    "this.gui": "file:/Users/suign/Desktop/Neuroverse/all.this/packages/GUI/Typescript"
+    "this.gui": "file:../../../../../../../packages/GUI/Typescript"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

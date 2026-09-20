@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,6 +9,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Resolve netget.gui source directly — no need to build the lib package for dev.
 // Subpath aliases MUST come before the root alias (Vite does prefix matching).
 const NETGET_GUI = path.resolve(__dirname, '../../../../gui/src');
+
+// This app's own copy of an @emotion package, else the one hoisted to
+// netget/Typescript's node_modules.
+function emotionDir(name) {
+  const own = path.resolve(__dirname, 'node_modules/@emotion', name);
+  const hoisted = path.resolve(__dirname, '../../../../node_modules/@emotion', name);
+  return fs.existsSync(own) ? own : hoisted;
+}
 
 export default defineConfig({
   plugins: [react()],
@@ -40,12 +49,11 @@ export default defineConfig({
       // exact same file, and therefore the exact same ThemeContext.
       { find: '@mui/material', replacement: path.resolve(__dirname, 'node_modules/@mui/material') },
       { find: '@mui/icons-material', replacement: path.resolve(__dirname, 'node_modules/@mui/icons-material') },
-      // Not installed directly under frontend_local/ — both hoist to
-      // netget/Typescript's own node_modules (confirmed via require.resolve,
-      // including from @mui/material's own internal resolution), so that's
-      // the one real copy to pin everyone to.
-      { find: '@emotion/react', replacement: path.resolve(__dirname, '../../../../node_modules/@emotion/react') },
-      { find: '@emotion/styled', replacement: path.resolve(__dirname, '../../../../node_modules/@emotion/styled') },
+      // One copy of Emotion for everyone. This app declares it (so a clean
+      // `npm install` here has it); on a machine where an older install hoisted
+      // it to netget/Typescript's node_modules instead, that copy is used.
+      { find: '@emotion/react', replacement: emotionDir('react') },
+      { find: '@emotion/styled', replacement: emotionDir('styled') },
     ],
   },
 

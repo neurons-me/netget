@@ -60,8 +60,11 @@ const origin = process.env.NETGET_MONAD_ORIGIN;
 
 const mapPath = path.join(dataDir, 'runtime', 'domain-map.json');
 const readMap = () => JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+// The gateway's mutating routes take the machine's own callers (the internal token the
+// monad made at start) or an admin session -- never an anonymous request.
+// gateway-anonymous-access.test.ts covers the refusals; this flow is the operator's.
 const post = (p: string, body: unknown) =>
-  fetch(`${origin}${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  fetch(`${origin}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-monad-internal-token': process.env.MONAD_INTERNAL_TOKEN! }, body: JSON.stringify(body) });
 const listDomains = async () => (await (await fetch(`${origin}/domains`)).json()).domains.map((d: any) => d.domain);
 
 try {

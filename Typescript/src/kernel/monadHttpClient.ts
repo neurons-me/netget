@@ -13,6 +13,8 @@
  * writes are unauthenticated local writes to a namespace it controls.
  */
 
+import { internalHeaders } from '../gateway/internalToken.js';
+
 export interface MonadWriteResult {
   memoryHash: string | null;
   path: string;
@@ -57,6 +59,9 @@ export async function writeToMonad<TValue = unknown>(
       'content-type': 'application/json',
       'x-forwarded-host': ns,
       host: ns,
+      // The gateway's routing records (domains.*, domainIndex.*) are written only by the
+      // machine's own callers: the monad refuses them without this credential.
+      ...internalHeaders(),
     },
     // operator:'-' is the real tombstone marker the semantic memory layer
     // understands (modules/monad's memoryStore.ts buildSemanticBranchTreeForNamespace

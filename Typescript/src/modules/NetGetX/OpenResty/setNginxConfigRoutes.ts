@@ -30,6 +30,26 @@ import { readReportedApps } from '../../../runtime/appRegistry.ts';
 // resolve the absolute bin path once here and bake it into the generated
 // config as $NETGET_CLI_BIN — the same pattern already used for
 // $NETGET_DATA_DIR.
+/**
+ * Where nginx sends the gateway's own API. An origin, no trailing slash:
+ * xConfig.gatewayUpstream (written by `netget gateway-adopt`), else the
+ * NETGET_GATEWAY_UPSTREAM env, else the standalone backend on :3000.
+ * Only http(s) origins on this machine are accepted -- this ends up in a
+ * proxy_pass, so it must not be able to name anywhere else.
+ */
+export function resolveGatewayUpstream(xConfigData: Record<string, unknown> = {}): string {
+  const fallback = 'http://127.0.0.1:3000';
+  const raw = String(xConfigData.gatewayUpstream || process.env.NETGET_GATEWAY_UPSTREAM || '').trim().replace(/\/+$/, '');
+  if (!raw) return fallback;
+  return /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/.test(raw) ? raw : fallback;
+}
+
+/** The server_name of a domain's block: the domain, plus its wildcard when that is registered too. */
+export function serverNamesFor(domain: string, registered: ReadonlySet<string>): string {
+  const wildcard = `*.${domain}`;
+  return registered.has(wildcard) ? `${domain} ${wildcard}` : domain;
+}
+
 function resolveNetgetCliBinPath(): string {
   try {
     const out = execFileSync('which', ['netget'], { encoding: 'utf8' }).trim();
@@ -489,6 +509,11 @@ ${proxyHeaders}
   const publicIP = String(xConfigData.publicIP || '').trim();
   const localIP  = String(xConfigData.localIP  || '').trim();
   const mainServerName = String(xConfigData.mainServerName || '').trim().toLowerCase();
+  // Where the gateway's own API answers (/setup/*, /domains, /admin-session/*,
+  // /main-server-namespace, ...). By default the standalone backend on :3000;
+  // when the gateway is mounted in a monad (src/gateway/monadModule.mjs) it is
+  // that monad's origin -- `netget gateway-adopt <monad>` writes it here.
+  const gatewayUpstream = resolveGatewayUpstream(xConfigData);
 
   // Extra server_name tokens for the Main Server dashboard block (IPs, if known).
   const extraServerNames = [localIP, publicIP]
@@ -664,7 +689,7 @@ ${viteAssetLocation}
     # materialize gateway-claims.json afterwards. This endpoint is not public.
     location = /__netget/internal/gateway-claim {
         internal;
-        proxy_pass http://127.0.0.1:3000/__gateway/claim;
+        proxy_pass ${gatewayUpstream}/__gateway/claim;
         proxy_set_header Content-Type application/json;
         proxy_set_header X-NetGet-Internal claim_identity.lua;
     }
@@ -899,7 +924,7 @@ ${meshGatewayErrorLocation}
             add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/main-server-namespace;
+        proxy_pass ${gatewayUpstream}/main-server-namespace;
 ${proxyHeaders}
     }
 
@@ -921,7 +946,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/setup/verify-code;
+        proxy_pass ${gatewayUpstream}/setup/verify-code;
 ${proxyHeaders}
     }
 
@@ -932,7 +957,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/setup/challenge;
+        proxy_pass ${gatewayUpstream}/setup/challenge;
 ${proxyHeaders}
     }
 
@@ -943,7 +968,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/setup/claim;
+        proxy_pass ${gatewayUpstream}/setup/claim;
 ${proxyHeaders}
     }
 
@@ -959,7 +984,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/setup/verify-callback;
+        proxy_pass ${gatewayUpstream}/setup/verify-callback;
 ${proxyHeaders}
     }
 
@@ -978,7 +1003,7 @@ ${proxyHeaders}
             return 204;
         }
         add_header 'Access-Control-Allow-Origin' $http_origin always;
-        proxy_pass http://127.0.0.1:3000/admin-session/challenge;
+        proxy_pass ${gatewayUpstream}/admin-session/challenge;
 ${proxyHeaders}
     }
 
@@ -990,7 +1015,7 @@ ${proxyHeaders}
             return 204;
         }
         add_header 'Access-Control-Allow-Origin' $http_origin always;
-        proxy_pass http://127.0.0.1:3000/admin-session/verify;
+        proxy_pass ${gatewayUpstream}/admin-session/verify;
 ${proxyHeaders}
     }
 
@@ -1046,7 +1071,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/domains;
+        proxy_pass ${gatewayUpstream}/domains;
 ${proxyHeaders}
     }
 
@@ -1062,7 +1087,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass ${gatewayUpstream};
 ${proxyHeaders}
     }
     location /add-domain {
@@ -1077,7 +1102,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/add-domain;
+        proxy_pass ${gatewayUpstream}/add-domain;
 ${proxyHeaders}
     }
     location /update-domain {
@@ -1092,7 +1117,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/update-domain;
+        proxy_pass ${gatewayUpstream}/update-domain;
 ${proxyHeaders}
     }
     location /delete-domain {
@@ -1107,7 +1132,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/delete-domain;
+        proxy_pass ${gatewayUpstream}/delete-domain;
 ${proxyHeaders}
     }
     # Gateway capability model (Phase 1 prototype) — see
@@ -1154,7 +1179,7 @@ ${proxyHeaders}
             local cjson = require "cjson.safe"
             ngx.var.me_scopes = cjson.encode(ngx.ctx.me_scopes or {})
         }
-        proxy_pass http://127.0.0.1:3000/domains/metadata;
+        proxy_pass ${gatewayUpstream}/domains/metadata;
 ${proxyHeaders}
         proxy_set_header X-Netget-Identity $me_identity;
         proxy_set_header X-Netget-Scopes $me_scopes;
@@ -1175,7 +1200,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/provision-cert;
+        proxy_pass ${gatewayUpstream}/provision-cert;
 ${proxyHeaders}
     }
 
@@ -1197,7 +1222,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/explain;
+        proxy_pass ${gatewayUpstream}/explain;
 ${proxyHeaders}
     }
     location /inspect {
@@ -1212,7 +1237,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/inspect;
+        proxy_pass ${gatewayUpstream}/inspect;
 ${proxyHeaders}
     }
 
@@ -1233,7 +1258,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000/cleaker/resolve;
+        proxy_pass ${gatewayUpstream}/cleaker/resolve;
 ${proxyHeaders}
     }
 
@@ -1259,7 +1284,7 @@ ${proxyHeaders}
             add_header 'Access-Control-Max-Age' 86400 always;
             return 204;
         }
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass ${gatewayUpstream};
 ${proxyHeaders}
     }
 
@@ -1321,6 +1346,7 @@ ${proxyHeaders}
       }
     } catch { /* ignore */ }
 
+    const registered = new Set(domains);
     return domains.map(domain => {
       const letsencryptLiveRoot = process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
       const liveDir = path.join(letsencryptLiveRoot, domain);
@@ -1360,7 +1386,7 @@ server {
     listen [::]:80;
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name ${domain};
+    server_name ${serverNamesFor(domain, registered)};
     client_max_body_size 500M;
     ssl_certificate     ${certPath};
     ssl_certificate_key ${keyPath};

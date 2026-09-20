@@ -31,6 +31,8 @@ interface XConfig {
     mainServerFrontendMode?: 'dev' | 'package-dist' | 'local-dist';
     mainServerFrontendDevUrl?: string;
     mainServerFrontendStaticRoot?: string;
+    /** Origin nginx sends the gateway's own API to (a monad that mounts netget/gateway); empty = the standalone backend on :3000. */
+    gatewayUpstream?: string;
     [key: string]: any; // Allow additional properties
 }
 
@@ -126,6 +128,7 @@ async function saveXConfig(updates: ConfigUpdates): Promise<void> {
             mainServerFrontendMode: "package-dist",
             mainServerFrontendDevUrl: "http://127.0.0.1:5173",
             mainServerFrontendStaticRoot: "",
+            gatewayUpstream: "",
         };
 
         // Start from defaults, then merge existing file over them

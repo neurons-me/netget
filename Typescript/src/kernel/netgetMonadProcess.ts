@@ -203,6 +203,10 @@ export async function stopNetgetMonad(): Promise<{ ok: boolean; message: string 
 let _originPromise: Promise<string> | null = null;
 
 export function getNetgetMonadOrigin(): Promise<string> {
+  // Running inside the gateway's own monad (src/gateway/monadModule.mjs): the
+  // monad is this process, so there is nothing to start or look up.
+  const fixed = String(process.env.NETGET_MONAD_ORIGIN || '').trim();
+  if (fixed) return Promise.resolve(fixed);
   if (!_originPromise) {
     _originPromise = startNetgetMonad().then((status) => {
       if (!status.ok || !status.origin) {

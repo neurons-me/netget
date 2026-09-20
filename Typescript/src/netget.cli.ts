@@ -682,6 +682,68 @@ program
     }
   });
 
+
+// Runs the gateway inside an existing monad instead of as a separate backend:
+// records the monad's module/env and where nginx sends the gateway's API. It
+// never restarts the monad and never touches nginx unless --apply-nginx is given.
+program
+  .command('gateway-adopt <monad>')
+  .description("Make an existing monad the gateway's monad: it mounts netget/gateway, so no standalone backend (:3000) or second monad is needed.")
+  .option('--frontend [dir]', "Also have the monad serve a built front end (default: this package's main-server-ui dist)")
+  .option('--use-gateway-seed', "Start the monad with netget's own persisted ledger identity as its seed (changes the monad's identity)")
+  .option('--apply-nginx', "Also rewrite netget_app.conf with the new upstream and reload OpenResty")
+  .option('--json', 'Print a single JSON line')
+  .action(async (monad: string, opts: { frontend?: string | boolean; useGatewaySeed?: boolean; applyNginx?: boolean; json?: boolean }) => {
+    try {
+      const { adoptMonadAsGateway } = await import('./gateway/adopt.ts');
+      let frontendDir: string | undefined;
+      if (opts.frontend === true) {
+        const { getPackageMainServerUiDistDir } = await import('./modules/NetGetX/OpenResty/mainServerFrontend.ts');
+        frontendDir = getPackageMainServerUiDistDir();
+      } else if (typeof opts.frontend === 'string') {
+        frontendDir = opts.frontend;
+      }
+      const result = await adoptMonadAsGateway({ monad, frontendDir, useGatewaySeed: Boolean(opts.useGatewaySeed) });
+
+      let nginx: { written: boolean; reloaded: boolean; message: string } = { written: false, reloaded: false, message: 'not requested' };
+      if (opts.applyNginx) {
+        const { getNetgetAppConfContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
+        const { writeFileWithFallback } = await import('./modules/NetGetX/OpenResty/includeNetgetAppConf.ts');
+        const { detectOpenRestyLayout } = await import('./modules/NetGetX/OpenResty/platformDetect.ts');
+        const { startOpenRestyOnce } = await import('./modules/NetGetX/OpenResty/openRestyService.ts');
+        const layout = detectOpenRestyLayout();
+        if (!layout.isSupported) {
+          nginx = { written: false, reloaded: false, message: 'this platform has no OpenResty layout' };
+        } else {
+          const nodePath = (await import('path')).default;
+          const destConf = nodePath.join(layout.confDDir, 'netget_app.conf');
+          await writeFileWithFallback(destConf, getNetgetAppConfContent(), `write netget_app.conf at ${destConf}`);
+          const reloaded = await startOpenRestyOnce(true);
+          nginx = { written: true, reloaded, message: reloaded ? 'netget_app.conf rewritten, OpenResty reloaded' : 'netget_app.conf rewritten, but the reload may have failed' };
+        }
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, ...result, nginx }));
+        return;
+      }
+      console.log(chalk.green(`✔ ${result.monad} (${result.namespace}) will mount the gateway.`));
+      console.log(`  stored for the monad: ${result.stored.join(', ')}`);
+      console.log(`  nginx upstream (xConfig.gatewayUpstream): ${result.gatewayUpstream}`);
+      console.log(result.seedChanged ? chalk.yellow("  seed: changed to netget's ledger identity") : chalk.gray('  seed: unchanged'));
+      console.log(opts.applyNginx ? `  nginx: ${nginx.message}` : chalk.gray('  nginx: not touched (add --apply-nginx to rewrite netget_app.conf and reload)'));
+      console.log(chalk.cyan(`Next: monads restart ${result.monad}  (the monad applies its stored environment on start)`));
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: false, message }));
+        process.exit(1);
+      }
+      console.error(chalk.red(`gateway-adopt failed: ${message}`));
+      process.exit(1);
+    }
+  });
+
 program
   .command('claim')
   .description('Claim this gateway — establish your .me identity as the owner (first-run setup or key update)')

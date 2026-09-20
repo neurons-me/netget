@@ -10,6 +10,7 @@ import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
+import { readProviderBoot, frontendRole, namespaceEndpoint } from './session/providerBoot.js';
 
 // One client for this tab's lifetime, at module scope — NOT inside a
 // render, and NOT re-created per navigation. Holds nothing secret: no
@@ -165,26 +166,30 @@ function NetGetShell() {
   );
 }
 
-// Three distinct hosts, three distinct jobs — nginx's bare "/" is one
-// static file shared by every admin-block hostname (setNginxConfigRoutes.ts),
-// so which one actually loaded the page has to branch client-side, the same
-// way main.jsx's document.title already does:
-//   local.cleaker → identity's own landing (this.gui's CleakerLanding,
-//     entire page, same session as everywhere else).
-//   local.host    → this host's own hardware/activity dashboard
-//     (HostSurface — CPU/RAM/storage gauges, self-reported, not verified
+// Three distinct jobs, decided by where this page was loaded (see
+// session/providerBoot.js) -- nginx's bare "/" is one static file shared by
+// every admin-block hostname, and a monad hands the same bundle to every
+// namespace it serves, so which one actually loaded the page is branched
+// client-side, the same way main.jsx's document.title already does:
+//   cleaker  → a namespace's own landing (this.gui's CleakerLanding, entire
+//     page, same session as everywhere else). local.cleaker, and any monad
+//     that serves this bundle without mounting the gateway: the namespace is
+//     the one the monad reports (www.cleaker.me is cleaker.me).
+//   host     → local.host: this host's own hardware/activity dashboard
+//     (HostSurface -- CPU/RAM/storage gauges, self-reported, not verified
 //     by the mesh, plus a live request feed), pointed at netget's own
 //     monad. Deliberately not Cleaker (no claim/identity/namespace jargon)
-//     and not netget's admin dashboard (that's local.netget's job
-//     specifically, not "the host" in general). See the naming-migration
-//     memory for the fuller local.host/@user/namespace grammar this is a
-//     first step toward: today this is a fixed view, not yet real path
-//     resolution.
-//   everything else (local.netget, the machine hostname, ...) → netget's
-//     own admin dashboard/sidebar, unaffected.
+//     and not netget's admin dashboard. See the naming-migration memory for
+//     the fuller local.host/@user/namespace grammar this is a first step
+//     toward: today this is a fixed view, not yet real path resolution.
+//   gateway  → everything else (local.netget, netget.site, the machine
+//     hostname, ...): netget's own admin dashboard/sidebar.
 const HOST = typeof window !== 'undefined' ? window.location.hostname : '';
-const IS_CLEAKER_HOST = HOST === 'local.cleaker';
-const IS_HOST_SURFACE = HOST === 'local.host';
+const PROVIDER_BOOT = readProviderBoot();
+const ROLE = frontendRole({ host: HOST, boot: PROVIDER_BOOT });
+const CLEAKER_ENDPOINT = HOST === 'local.cleaker'
+  ? 'http://local.cleaker'
+  : namespaceEndpoint(PROVIDER_BOOT, typeof window !== 'undefined' ? window.location : null);
 
 const App = () => (
   <SeedSessionProvider
@@ -193,9 +198,9 @@ const App = () => (
     sessionBackend="cleaker"
   >
     <LauncherPopoverProvider>
-      {IS_CLEAKER_HOST ? (
-        <CleakerLanding cleakerEndpoint="http://local.cleaker" />
-      ) : IS_HOST_SURFACE ? (
+      {ROLE === 'cleaker' ? (
+        <CleakerLanding cleakerEndpoint={CLEAKER_ENDPOINT} />
+      ) : ROLE === 'host' ? (
         <HostSurface endpoint={netgetMonadTransportOrigin()} />
       ) : (
         <Router>

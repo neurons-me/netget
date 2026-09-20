@@ -5,6 +5,7 @@ import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
 import { detectOpenRestyLayout, type OpenRestyLayout } from './platformDetect.ts';
+import { readMainServerState } from '../../../gateway/mainServerEntry.ts';
 import {
   getActiveStaticRoot,
   resolveMainServerFrontendConfig,
@@ -1353,13 +1354,17 @@ ${proxyHeaders}
     } catch { /* ignore */ }
 
     const registered = new Set(domains);
+    const derivedMainServer = readMainServerState() !== null;
     return domains.map(domain => {
       const letsencryptLiveRoot = process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
       const liveDir = path.join(letsencryptLiveRoot, domain);
       const certPath = path.join(liveDir, 'fullchain.pem');
       const keyPath = path.join(liveDir, 'privkey.pem');
       if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return '';
-      const isMainServerDomain = !!mainServerName && domain.toLowerCase() === mainServerName;
+      // A main server netget has DERIVED from the namespace (runtime/main-server.json) is a door
+      // into it like any other host, so it gets the same block: the tree is not behind a page.
+      // Only an installation with no derived state keeps the older dashboard block for it.
+      const isMainServerDomain = !derivedMainServer && !!mainServerName && domain.toLowerCase() === mainServerName;
       const domainLocations = isMainServerDomain
         ? mainServerLocations
         : `
@@ -1368,6 +1373,7 @@ ${namespaceAssetLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";
+        set $surface_forwarded_host $host;
         ${meshIdentityVar}
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;
         proxy_pass $surface_proxy_target;
@@ -1376,7 +1382,9 @@ ${proxyHeaders}
         add_header Cache-Control $netget_default_cache_control always;
         ${meshIdentityHeader}
         proxy_set_header X-NetGet-Surface $host;
-        proxy_set_header X-Forwarded-Host $host;${meshProxyErrorHandling}
+        proxy_set_header X-Forwarded-Host $surface_forwarded_host;
+        proxy_set_header X-Netget-Identity "";
+        proxy_set_header X-Netget-Scopes "";${meshProxyErrorHandling}
     }
 ${meshGatewayErrorLocation}`;
 
@@ -1444,6 +1452,7 @@ ${appFrontendDistLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";
+        set $surface_forwarded_host $host;
         ${meshIdentityVar}
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;
         proxy_pass $surface_proxy_target;
@@ -1452,7 +1461,9 @@ ${proxyHeaders}
         add_header Cache-Control $netget_default_cache_control always;
         ${meshIdentityHeader}
         proxy_set_header X-NetGet-Surface $host;
-        proxy_set_header X-Forwarded-Host $host;${meshProxyErrorHandling}
+        proxy_set_header X-Forwarded-Host $surface_forwarded_host;
+        proxy_set_header X-Netget-Identity "";
+        proxy_set_header X-Netget-Scopes "";${meshProxyErrorHandling}
     }
 ${meshGatewayErrorLocation}
 }
@@ -1481,6 +1492,7 @@ ${namespaceAssetLocations}
     location / {
         if ($request_method = OPTIONS) { return 204; }
         set $surface_proxy_target "";
+        set $surface_forwarded_host $host;
         ${meshIdentityVar}
         rewrite_by_lua_file lua/handlers/surface_proxy.lua;
         proxy_pass $surface_proxy_target;

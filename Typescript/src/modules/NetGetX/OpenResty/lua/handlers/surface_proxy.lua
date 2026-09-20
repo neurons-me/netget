@@ -101,6 +101,23 @@ end
 local host = (ngx.var.host or ""):lower()
 host = host:match("^([^:]+)") or host
 
+-- A door (netget.site, as declared by the namespace) is a host that ENTERS the namespace:
+-- <door>/<path> is the namespace's <path>. The monad answering it is the one that serves
+-- that namespace, and it is told the namespace, not the door, so authorization and
+-- disclosure are the ones the namespace's own address gets. Anything the client sent as
+-- X-Forwarded-Host is replaced by the server-block's own value (see the generator).
+do
+  local ok, main_server = pcall(require, "lib.main_server")
+  if ok then
+    local door_namespace = main_server.door_namespace(host)
+    if door_namespace then
+      -- the variable exists only in blocks that forward it (the generator declares it)
+      pcall(function() ngx.var.surface_forwarded_host = door_namespace end)
+      host = door_namespace
+    end
+  end
+end
+
 local function wants_html()
   local accept = ngx.var.http_accept or ""
   return accept:find("text/html") ~= nil

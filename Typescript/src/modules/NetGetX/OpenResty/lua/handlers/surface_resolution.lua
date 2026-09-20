@@ -46,7 +46,8 @@ end
 local function is_control_entrypoint(host)
   if host == "" then return true end
   if host == "localhost" or host == "127.0.0.1" or host == "local.netget" then return true end
-  if _G.MAIN_SERVER_NAME and host == _G.MAIN_SERVER_NAME then return true end
+  local main_server_name = require("lib.main_server").name()
+  if main_server_name ~= "" and host == main_server_name then return true end
   return false
 end
 
@@ -62,7 +63,7 @@ local function list_entrypoints()
   -- init_worker_by_lua_block (see setNginxConfigFile.ts) and shared across
   -- every included server block in this worker's Lua VM — same mechanism
   -- @mesh_gateway_error already relies on for _G.render_gateway_status.
-  local mainServerName = _G.MAIN_SERVER_NAME
+  local mainServerName = require("lib.main_server").name()
   if mainServerName and mainServerName ~= "" then
     table.insert(entrypoints, {
       id = mainServerName,

@@ -695,8 +695,10 @@ program
   .option('--main-server-name <name>', "Also set the gateway's own public name (the domain its admin screens are served on)")
   .option('--use-gateway-seed', "Start the monad with netget's own persisted ledger identity as its seed (changes the monad's identity)")
   .option('--apply-nginx', 'Also write netget_app.conf and its Lua handlers, validate, and reload OpenResty (backed up; undone if it does not validate)')
+  .option('--apply-main-conf', 'With --apply-nginx: also replace the main nginx.conf (its default server routes the doors). Look at --diff first')
+  .option('--diff', 'Print what --apply-nginx would change (installed vs generated, and the Lua files) and touch nothing')
   .option('--json', 'Print a single JSON line')
-  .action(async (monad: string, opts: { frontend?: string | boolean; namespace?: string; port?: string; mainServerName?: string; useGatewaySeed?: boolean; applyNginx?: boolean; json?: boolean }) => {
+  .action(async (monad: string, opts: { frontend?: string | boolean; namespace?: string; port?: string; mainServerName?: string; useGatewaySeed?: boolean; applyNginx?: boolean; applyMainConf?: boolean; diff?: boolean; json?: boolean }) => {
     try {
       const { adoptMonadAsGateway } = await import('./gateway/adopt.ts');
       let frontendDir: string | undefined;
@@ -718,8 +720,9 @@ program
       let nginx: { written: boolean; reloaded: boolean; message: string } = { written: false, reloaded: false, message: 'not requested' };
       if (opts.applyNginx) {
         const { getNetgetAppConfContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
+        const { buildNginxConfigContent } = await import('./modules/NetGetX/OpenResty/setNginxConfigFile.ts');
         const { detectOpenRestyLayout, findOpenRestyBin } = await import('./modules/NetGetX/OpenResty/platformDetect.ts');
-        const { applyGatewayNginx, systemIo } = await import('./gateway/applyNginx.ts');
+        const { applyGatewayNginx, diffGatewayNginx, systemIo } = await import('./gateway/applyNginx.ts');
         const { getNetgetDataDir } = await import('./utils/netgetPaths.js');
         const nodePath = (await import('path')).default;
         const { fileURLToPath } = await import('url');
@@ -729,14 +732,25 @@ program
           nginx = { written: false, reloaded: false, message: 'this platform has no OpenResty layout, or the binary was not found' };
         } else {
           const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const applied = applyGatewayNginx({
-            confPath: nodePath.join(layout.confDDir, 'netget_app.conf'),
-            luaDir: layout.luaDir,
-            sourceLuaDir: nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), 'modules/NetGetX/OpenResty/lua'),
-            newConf: getNetgetAppConfContent(),
-            backupDir: nodePath.join(getNetgetDataDir(), 'backups', `nginx-${stamp}`),
-            io: systemIo(bin, layout.configFilePath),
-          });
+          const sourceLuaDir = nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), 'modules/NetGetX/OpenResty/lua');
+          const confPath = nodePath.join(layout.confDDir, 'netget_app.conf');
+          const newConf = getNetgetAppConfContent();
+          const mainConf = opts.applyMainConf ? { path: layout.configFilePath, content: buildNginxConfigContent(layout) } : undefined;
+          const io = systemIo(bin, layout.configFilePath);
+          const applied = opts.diff
+            ? (() => {
+                console.log(diffGatewayNginx({ io, confPath, newConf, mainConf, luaDir: layout.luaDir, sourceLuaDir }));
+                return { ok: true, reloaded: false, message: 'diff only: nothing was written', backupDir: '-' };
+              })()
+            : applyGatewayNginx({
+                confPath,
+                luaDir: layout.luaDir,
+                sourceLuaDir,
+                newConf,
+                mainConf,
+                backupDir: nodePath.join(getNetgetDataDir(), 'backups', `nginx-${stamp}`),
+                io,
+              });
           nginx = { written: applied.ok, reloaded: applied.reloaded, message: `${applied.message} (backup: ${applied.backupDir})` };
           if (!applied.ok) throw new Error(`nginx was not changed: ${applied.message}`);
         }

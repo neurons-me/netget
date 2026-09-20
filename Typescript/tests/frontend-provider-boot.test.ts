@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // Which of the bundle's three jobs a page gets, from where it was loaded and
 // what the monad said about itself (window.__MONAD_NAMESPACE_PROVIDER_BOOT__).
-const { readProviderBoot, isGatewayMonad, frontendRole, namespaceEndpoint, GATEWAY_MODULE } =
+const { readProviderBoot, isGatewayMonad, frontendRole, namespaceEndpoint, transportOriginFor, bootNamespaceRoot, GATEWAY_MODULE } =
   await import('../src/htmls/Netget-REACT/frontend_local/src/session/providerBoot.js');
 
 assert.equal(GATEWAY_MODULE, 'netget/gateway');
@@ -35,5 +35,18 @@ assert.equal(namespaceEndpoint(namespaceBoot, { protocol: 'https:', port: '', or
 assert.equal(namespaceEndpoint(namespaceBoot, { protocol: 'http:', port: '8162', origin: 'http://127.0.0.1:8162' }), 'http://cleaker.me:8162');
 assert.equal(namespaceEndpoint(null, { protocol: 'https:', port: '', origin: 'https://x.example' }), 'https://x.example');
 assert.equal(namespaceEndpoint(namespaceBoot, null), '');
+
+// where the session talks: the gateway's monad through /apps/netget, or the
+// namespace's own monad at the address the page came from
+const at = (origin: string) => ({ origin, protocol: 'https:', port: '' });
+assert.equal(transportOriginFor(null, at('https://netget.site')), 'https://netget.site/apps/netget');
+assert.equal(transportOriginFor(gatewayBoot, at('https://netget.site')), 'https://netget.site/apps/netget');
+assert.equal(transportOriginFor({ ...namespaceBoot, apiOrigin: 'https://www.cleaker.me' }, at('https://www.cleaker.me')), 'https://www.cleaker.me');
+assert.equal(transportOriginFor(namespaceBoot, at('https://cleaker.me')), 'https://cleaker.me', 'no apiOrigin: the page origin');
+
+// the root a credential claims under
+assert.equal(bootNamespaceRoot(namespaceBoot), 'cleaker.me');
+assert.equal(bootNamespaceRoot(gatewayBoot), '');
+assert.equal(bootNamespaceRoot(null), '');
 
 console.log('frontend-provider-boot.test.ts: all assertions passed');

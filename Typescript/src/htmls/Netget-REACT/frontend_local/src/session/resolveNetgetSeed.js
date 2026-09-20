@@ -8,6 +8,7 @@
 // that already exists, so the rest of the app (MeLauncher, Domains.jsx) can
 // share one session instead of each page deriving its own one-off node.
 import { deriveCompoundSeed, fetchGatewayHostname, getActiveNamespaceRoot } from 'this.gui/cleaker';
+import { readProviderBoot, transportOriginFor, bootNamespaceRoot } from './providerBoot.js';
 
 // Mirrors modules/netget/Typescript/src/kernel/domainStore.ts's
 // sanitizeOwnerLabel() exactly — must match, since the namespace claimed
@@ -33,7 +34,7 @@ function sanitizeOwnerLabel(raw) {
 // (fetchGatewayHostname()) everywhere no such switch is in play, same as
 // before this existed.
 export async function resolveNetgetSeedFromCredentials({ username, password }) {
-  const hostname = getActiveNamespaceRoot() || await fetchGatewayHostname();
+  const hostname = getActiveNamespaceRoot() || bootNamespaceRoot(readProviderBoot()) || await fetchGatewayHostname();
   const seed = deriveCompoundSeed(String(username || '').trim(), password);
   const namespace = `${sanitizeOwnerLabel(username)}.${hostname}`;
   return { seed, namespace };
@@ -45,6 +46,9 @@ export async function resolveNetgetSeedFromCredentials({ username, password }) {
 // kernel/netgetMonadProcess.ts) — no dedicated nginx route needed, and the
 // dev server gets the same shape via localNetget.js's /apps/netget/*
 // passthrough.
+//
+// Served by a namespace's own monad (cleaker.me), the session talks to that
+// monad directly -- see providerBoot.js's transportOriginFor().
 export function netgetMonadTransportOrigin() {
-  return `${window.location.origin}/apps/netget`;
+  return transportOriginFor(readProviderBoot(), window.location);
 }

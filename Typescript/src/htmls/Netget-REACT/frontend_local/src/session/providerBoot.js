@@ -36,3 +36,22 @@ export function namespaceEndpoint(boot, loc) {
   if (!namespace || !loc) return (loc && loc.origin) || '';
   return `${loc.protocol}//${namespace}${loc.port ? `:${loc.port}` : ''}`;
 }
+
+// Where this page's session talks to its monad. Through netget's generic
+// /apps/<name> proxy to the gateway's monad ("netget", the name netget has
+// always given its own) -- unless the monad that served this page is a
+// namespace's own, in which case it is that monad: the namespace answers for
+// itself, at the address the page was loaded from.
+export function transportOriginFor(boot, loc) {
+  const origin = (loc && loc.origin) || '';
+  if (boot && !isGatewayMonad(boot)) return String(boot.apiOrigin || origin);
+  return `${origin}/apps/netget`;
+}
+
+// The root a credential claims under when nothing on screen picked one: the
+// namespace the monad serves, if it serves one; otherwise the caller falls back
+// to the gateway's own hostname.
+export function bootNamespaceRoot(boot) {
+  if (!boot || isGatewayMonad(boot)) return '';
+  return String(boot.namespace || '').trim();
+}

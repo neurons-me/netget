@@ -34,7 +34,7 @@ function sanitizeOwnerLabel(raw) {
 // (fetchGatewayHostname()) everywhere no such switch is in play, same as
 // before this existed.
 export async function resolveNetgetSeedFromCredentials({ username, password }) {
-  const hostname = getActiveNamespaceRoot() || bootNamespaceRoot(readProviderBoot()) || await fetchGatewayHostname();
+  const hostname = getActiveNamespaceRoot() || bootNamespaceRoot(readProviderBoot(), typeof window !== 'undefined' ? window.location.hostname : '') || await fetchGatewayHostname();
   const seed = deriveCompoundSeed(String(username || '').trim(), password);
   const namespace = `${sanitizeOwnerLabel(username)}.${hostname}`;
   return { seed, namespace };

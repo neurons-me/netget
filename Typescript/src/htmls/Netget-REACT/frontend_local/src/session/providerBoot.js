@@ -22,10 +22,26 @@ export function isGatewayMonad(boot) {
   return Array.isArray(boot && boot.modules) && boot.modules.includes(GATEWAY_MODULE);
 }
 
+// Is this page loaded from the namespace the monad serves -- its root, www, or a
+// handle under it (cleaker.me, www.cleaker.me, ana.cleaker.me)?
+export function hostIsNamespace(host, boot) {
+  const ns = String((boot && boot.namespace) || '').trim().toLowerCase();
+  const h = String(host || '').trim().toLowerCase();
+  return !!ns && (h === ns || h.endsWith(`.${ns}`));
+}
+
+// One monad can be both a namespace and the gateway (its identities and the
+// gateway's authority must live on the same monad), so the monad alone does not
+// say which screens a page gets -- the address does: the namespace's own hosts
+// get the Cleaker app (which reaches the gateway at /netget), any other host
+// the monad answers for (netget.site) the admin screens.
 export function frontendRole({ host, boot }) {
   if (host === 'local.cleaker') return 'cleaker';
   if (host === 'local.host') return 'host';
-  if (boot && !isGatewayMonad(boot)) return 'cleaker';
+  if (boot) {
+    if (hostIsNamespace(host, boot)) return 'cleaker';
+    if (!isGatewayMonad(boot)) return 'cleaker';
+  }
   return 'gateway';
 }
 
@@ -44,14 +60,16 @@ export function namespaceEndpoint(boot, loc) {
 // itself, at the address the page was loaded from.
 export function transportOriginFor(boot, loc) {
   const origin = (loc && loc.origin) || '';
-  if (boot && !isGatewayMonad(boot)) return String(boot.apiOrigin || origin);
+  const host = (loc && loc.hostname) || '';
+  if (boot && (hostIsNamespace(host, boot) || !isGatewayMonad(boot))) return String(boot.apiOrigin || origin);
   return `${origin}/apps/netget`;
 }
 
 // The root a credential claims under when nothing on screen picked one: the
 // namespace the monad serves, if it serves one; otherwise the caller falls back
 // to the gateway's own hostname.
-export function bootNamespaceRoot(boot) {
-  if (!boot || isGatewayMonad(boot)) return '';
+export function bootNamespaceRoot(boot, host) {
+  if (!boot) return '';
+  if (isGatewayMonad(boot) && !hostIsNamespace(host, boot)) return '';
   return String(boot.namespace || '').trim();
 }

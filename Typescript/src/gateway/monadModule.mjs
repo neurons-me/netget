@@ -120,7 +120,10 @@ export async function mount(app, ctx) {
   const { loadGatewayRootNamespaceCache } = await import('../kernel/netgetMonadProcess.ts');
   await loadGatewayRootNamespaceCache();
 
-  mountGatewayRouters(app, routers, { extraOrigins: parseHostList(env.NETGET_GATEWAY_ORIGINS) });
+  // The namespace this monad serves signs claims for the gateway from its own
+  // pages (cleaker.me -> netget.site), so it may call the gateway cross-origin.
+  const own = parseHostList(env.ME_NAMESPACE);
+  mountGatewayRouters(app, routers, { extraOrigins: [...parseHostList(env.NETGET_GATEWAY_ORIGINS), ...own] });
 }
 
 export default { mount };

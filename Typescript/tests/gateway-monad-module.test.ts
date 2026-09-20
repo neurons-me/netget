@@ -115,6 +115,11 @@ try {
   const install = await fetch(`${origin}/openresty/install/availability`);
   assert.ok([200, 401, 403].includes(install.status), `install availability answered ${install.status}`);
 
+  // ...the namespace the monad serves may call it from its own pages (cleaker.me signs
+  // the claim for netget.site)...
+  const own = await post('/setup/verify-code', { code: 'nope' }, { origin: 'https://gateway-test.me' });
+  assert.equal(own.status, 401, 'the monad\'s own namespace is an allowed origin');
+
   // ...a browser call from another origin is refused before any route runs...
   const foreign = await post('/setup/verify-code', { code: 'nope' }, { origin: 'https://evil.example' });
   assert.equal(foreign.status, 403);

@@ -721,10 +721,10 @@ router.get('/main-server-namespace', async (req, res) => {
     // value the older setups have (source "config"), else null. Returning the
     // source lets a caller tell "declared in the tree" from "still a file setting".
     const state = readMainServerState();
-    if (state?.name) {
+    if (state?.active) {
         return res.json({
             namespace: getGatewayRootNamespace(),
-            mainServerName: state.name,
+            mainServerName: state.active,
             source: 'namespace',
             mainServer: state,
         });

@@ -64,6 +64,21 @@ assert.ok(second.stored.includes('SEED'));
 assert.ok(!JSON.stringify(second).includes('a'.repeat(64)), 'the seed is never returned');
 assert.equal(fs.statSync(path.join(monadsHome, 'local', 'env.json')).mode & 0o777, 0o600);
 
+// An installation with state but no persisted ledger identity would hand the
+// monad the hostname-derived seed (public): refused, unless a seed was given.
+{
+  const savedSeed = process.env.NETGET_GATEWAY_SEED;
+  delete process.env.NETGET_GATEWAY_SEED;
+  fs.writeFileSync(path.join(dataDir, 'domains.db'), 'legacy state');
+  fakeMonad('legacy', 'legacy.example', 8170);
+  await assert.rejects(
+    () => adoptMonadAsGateway({ monad: 'legacy', useGatewaySeed: true }),
+    /no persisted ledger identity[\s\S]*seed-from-stdin/,
+  );
+  assert.equal(readMonadEnv('legacy').SEED, undefined, 'nothing was stored');
+  process.env.NETGET_GATEWAY_SEED = savedSeed;
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('gateway-adopt.test.ts: all assertions passed');
 process.exit(0);

@@ -20,6 +20,8 @@ process.env.NETGET_MONAD_NAMESPACE = 'gateway-test.me';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const modulePath = path.resolve(here, '../src/gateway/monadModule.mjs');
+process.env.SEED = 'some-other-seed-the-monad-overrides';
+delete process.env.NETGET_GATEWAY_SEED;
 const gateway = await import(modulePath);
 
 // ── the pure pieces ─────────────────────────────────────────────────────────
@@ -98,6 +100,11 @@ try {
   const verify = await post('/setup/verify-code', { code: 'nope' });
   assert.equal(verify.status, 401);
   assert.equal((await verify.json()).ok, false);
+
+  // netget's gateway seed is the seed this monad runs with, not a hostname-derived one.
+  assert.equal(process.env.NETGET_GATEWAY_SEED, 'gateway-module-test-seed');
+  const { resolveGatewaySeed } = await import('../src/kernel/netgetMonadProcess.ts');
+  assert.equal(resolveGatewaySeed(), 'gateway-module-test-seed');
 
   // The routes reach THIS monad as their own origin, and never start another.
   assert.equal(process.env.NETGET_MONAD_ORIGIN, `http://127.0.0.1:${process.env.PORT || (server.address() as any).port}`.replace(/:undefined$/, ''), 'origin');

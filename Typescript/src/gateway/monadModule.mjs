@@ -110,6 +110,11 @@ export async function mount(app, ctx) {
   env.NETGET_MONAD_NAME ||= env.MONAD_NAME || 'local';
   env.NETGET_MONAD_NAMESPACE ||= env.ME_NAMESPACE || '';
   env.NETGET_MONAD_ORIGIN ||= `http://127.0.0.1:${ctx?.config?.port ?? env.PORT ?? 8161}`;
+  // The gateway's identity IS this monad's seed. netget derives its own from
+  // NETGET_GATEWAY_SEED first, and otherwise from a ledger identity file that an
+  // older installation may not have (it then falls back to a seed derived from
+  // the hostname) -- so the seed the monad actually runs with is the one it uses.
+  if (env.SEED) env.NETGET_GATEWAY_SEED ||= env.SEED;
 
   const routers = await loadRouters();
   const { loadGatewayRootNamespaceCache } = await import('../kernel/netgetMonadProcess.ts');

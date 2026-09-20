@@ -1,6 +1,7 @@
 import { readMonadEnv, readMonadRecord, writeMonadEnv } from 'monad.ai';
 import { saveXConfig } from '../modules/NetGetX/config/xConfig.ts';
 import { resolveGatewaySeed } from '../kernel/netgetMonadProcess.ts';
+import { resolveLedgerIdentity } from '../kernel/ledgerIdentity.ts';
 
 /**
  * Makes an existing monad THE gateway's monad: the one that also serves the
@@ -51,7 +52,18 @@ export async function adoptMonadAsGateway(options: AdoptOptions): Promise<AdoptR
     NETGET_MONAD_NAMESPACE: record.namespace,
   };
   if (options.frontendDir) patch.MONAD_FRONTEND_DIR = options.frontendDir;
-  if (options.useGatewaySeed) patch.SEED = resolveGatewaySeed();
+  if (options.useGatewaySeed) {
+    // An installation with state but no ledger-identity.json is still on the
+    // seed derived from its hostname: public, so not one to hand a monad.
+    if (!process.env.NETGET_GATEWAY_SEED && resolveLedgerIdentity().requiresMigration) {
+      throw new Error(
+        "This installation has no persisted ledger identity (ledger-identity.json), so netget's seed would be the "
+        + 'legacy one derived from the hostname, which is public. Give the monad its own random seed instead: '
+        + `openssl rand -hex 32 | monads env ${record.name} --seed-from-stdin`,
+      );
+    }
+    patch.SEED = resolveGatewaySeed();
+  }
 
   const after = writeMonadEnv(record.name, patch);
   await saveXConfig({ gatewayUpstream: record.endpoint });

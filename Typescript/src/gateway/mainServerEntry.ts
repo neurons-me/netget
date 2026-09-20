@@ -254,7 +254,7 @@ export function readMainServerState(filePath = getMainServerStatePath()): MainSe
 
 const LETSENCRYPT_LIVE = '/etc/letsencrypt/live';
 
-export function findLetsEncryptCertificate(domain: string, liveDir = LETSENCRYPT_LIVE): { certificate: string; key: string } | null {
+export function findLetsEncryptCertificate(domain: string, liveDir = process.env.NETGET_LETSENCRYPT_LIVE_DIR || LETSENCRYPT_LIVE): { certificate: string; key: string } | null {
   const certificate = path.join(liveDir, domain, 'fullchain.pem');
   const key = path.join(liveDir, domain, 'privkey.pem');
   return fs.existsSync(certificate) && fs.existsSync(key) ? { certificate, key } : null;

@@ -209,7 +209,7 @@ http {
             # which must continue to show the real panel so the CLI-driven
             # setup flow (which runs against local.netget) keeps working.
             content_by_lua_block {
-                if _G.MAIN_SERVER_NAME == "" then
+                if require("lib.main_server").name() == "" then
                     local host = string.lower(ngx.var.host or ""):gsub(":%d+$", "")
                     local is_local = host == "local.netget"
                         or host == "localhost"
@@ -389,14 +389,21 @@ http {
             content_by_lua_block {
                 local host = string.lower(ngx.var.host):gsub(":%d+$", "")
 
-                -- The main-server domain (whatever an operator sets via
-                -- Main Server -> Set public domain) is netget's own
-                -- loopback/panel surface: always served from netget's own
-                -- static build (${xConfig}/html), the same as
-                -- local.netget/localhost/127.0.0.1 — entirely independent
-                -- of domain-map routing or whatever a monad behind it would
-                -- otherwise decide to serve at "/". It is never proxied.
-                if _G.MAIN_SERVER_NAME ~= "" and host == _G.MAIN_SERVER_NAME then
+                -- A door: a host the namespace declares as its main server. It ENTERS the
+                -- namespace (<door>/<path> is the namespace's <path>), the same as any
+                -- namespace host, so it never gets a page of its own in front of the tree.
+                -- The default app it shows is the monad's business (by address), not this
+                -- block's. lib/main_server.lua reads what netget derived from the namespace.
+                local main_server = require("lib.main_server")
+                if main_server.is_door(host) then
+                    ngx.exec("@door")
+                    return
+                end
+
+                -- Installations netget has not derived a main server for yet keep the older
+                -- behavior: the name nginx.conf was generated with is served from netget's
+                -- own static build, never proxied.
+                if not main_server.state() and _G.MAIN_SERVER_NAME ~= "" and host == _G.MAIN_SERVER_NAME then
                     ngx.var.root = "${xConfig}/html"
                     ngx.exec("@dynamic_root")
                     return
@@ -512,6 +519,34 @@ http {
                     ngx.exit(ngx.HTTP_NOT_FOUND)
                 end
             }
+        }
+
+        # A door into the namespace (see location / above): the same route to the monad that
+        # a namespace host gets. surface_proxy.lua turns the door into the namespace it enters
+        # and hands the monad that namespace, so both addresses resolve the same paths with the
+        # same authorization and disclosure. The headers below are set here, never taken from
+        # the client: it does not choose which namespace it addresses, nor who it claims to be.
+        location @door {
+            internal;
+            set $surface_proxy_target "";
+            set $surface_proxy_identity "";
+            set $surface_forwarded_host $host;
+            rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+            proxy_pass $surface_proxy_target;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Host $surface_forwarded_host;
+            proxy_set_header X-NetGet-Surface $host;
+            proxy_set_header X-Netget-Identity "";
+            proxy_set_header X-Netget-Scopes "";
+            proxy_cache_bypass $http_upgrade;
+            add_header Vary "Accept" always;
+            add_header Cache-Control "no-store" always;
         }
 
         location @dynamic_root {

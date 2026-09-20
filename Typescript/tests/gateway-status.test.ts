@@ -36,9 +36,10 @@ assert.match(conf, /_G\.GATEWAY_PUBLIC_IP/);
 // MAIN_SERVER_NAME is threaded through from xConfig.json.
 assert.match(conf, /MAIN_SERVER_NAME = "/);
 
-// State 1 (NOT_CONFIGURED): default_server location special-cases empty mainServerName,
-// excluding local.netget/localhost/127.0.0.1/*.local.
-assert.match(conf, /_G\.MAIN_SERVER_NAME == ""/);
+// State 1 (NOT_CONFIGURED): default_server location special-cases an empty main server name
+// (the derived one -- lib/main_server.lua, which falls back to the name nginx.conf was
+// generated with), excluding local.netget/localhost/127.0.0.1/*.local.
+assert.match(conf, /require\("lib\.main_server"\)\.name\(\) == ""/);
 assert.match(conf, /host == "local\.netget"/);
 assert.match(conf, /render_gateway_status\(1, host, ""\)/);
 

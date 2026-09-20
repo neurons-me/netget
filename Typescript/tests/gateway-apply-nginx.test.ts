@@ -7,7 +7,7 @@ import path from 'node:path';
 // validated before any reload, and put back if it does not hold. The
 // validator and the reload are fakes here; the filesystem is a temp dir.
 
-const { applyGatewayNginx, systemIo } = await import('../src/gateway/applyNginx.ts');
+const { applyGatewayNginx, diffGatewayNginx, lineDiff, systemIo } = await import('../src/gateway/applyNginx.ts');
 
 function fixture() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'netget-apply-nginx-'));
@@ -92,6 +92,70 @@ function io(fx: ReturnType<typeof fixture>, opts: { valid: boolean; reloadThrows
   assert.equal(result.ok, true);
   assert.equal(fs.readFileSync(fx.confPath, 'utf8'), 'FIRST CONF');
   assert.equal(fs.existsSync(path.join(fx.backupDir, 'netget_app.conf')), false);
+  fs.rmSync(fx.tmp, { recursive: true, force: true });
+}
+
+// the main nginx.conf goes in the same step: backed up, validated together, and put back with the rest
+{
+  const fx = fixture();
+  const mainPath = path.join(fx.tmp, 'conf', 'nginx.conf');
+  fs.mkdirSync(path.dirname(mainPath), { recursive: true });
+  fs.writeFileSync(mainPath, 'OLD MAIN');
+  const good = io(fx, { valid: true });
+  const ok = applyGatewayNginx({ ...fx, newConf: 'NEW CONF', mainConf: { path: mainPath, content: 'NEW MAIN' }, io: good.io });
+  assert.equal(ok.ok, true);
+  assert.equal(fs.readFileSync(mainPath, 'utf8'), 'NEW MAIN');
+  assert.equal(fs.readFileSync(path.join(fx.backupDir, 'main-nginx.conf'), 'utf8'), 'OLD MAIN');
+  assert.equal(fs.readFileSync(path.join(fx.backupDir, 'netget_app.conf'), 'utf8'), 'OLD CONF');
+  fs.rmSync(fx.tmp, { recursive: true, force: true });
+
+  for (const failure of [{ valid: false }, { valid: true, reloadThrows: true }] as const) {
+    const g = fixture();
+    const main2 = path.join(g.tmp, 'conf', 'nginx.conf');
+    fs.mkdirSync(path.dirname(main2), { recursive: true });
+    fs.writeFileSync(main2, 'OLD MAIN');
+    const bad = io(g, failure);
+    const r = applyGatewayNginx({ ...g, newConf: 'NEW CONF', mainConf: { path: main2, content: 'BROKEN MAIN' }, io: bad.io });
+    assert.equal(r.ok, false); assert.equal(r.rolledBack, true);
+    assert.equal(fs.readFileSync(main2, 'utf8'), 'OLD MAIN', 'the main conf is put back exactly');
+    assert.equal(fs.readFileSync(g.confPath, 'utf8'), 'OLD CONF');
+    assert.equal(fs.readFileSync(path.join(g.luaDir, 'handlers', 'apps.lua'), 'utf8'), 'old lua');
+    fs.rmSync(g.tmp, { recursive: true, force: true });
+  }
+}
+
+// without mainConf the main conf is not touched
+{
+  const fx = fixture();
+  const mainPath = path.join(fx.tmp, 'conf', 'nginx.conf');
+  fs.mkdirSync(path.dirname(mainPath), { recursive: true });
+  fs.writeFileSync(mainPath, 'OLD MAIN');
+  applyGatewayNginx({ ...fx, newConf: 'NEW CONF', io: io(fx, { valid: true }).io });
+  assert.equal(fs.readFileSync(mainPath, 'utf8'), 'OLD MAIN');
+  assert.equal(fs.existsSync(path.join(fx.backupDir, 'main-nginx.conf')), false);
+  fs.rmSync(fx.tmp, { recursive: true, force: true });
+}
+
+// --diff says what would change and writes nothing
+{
+  assert.deepEqual(lineDiff('a\nb\nc', 'a\nb\nc'), []);
+  assert.deepEqual(lineDiff('a\nb\nc', 'a\nx\nc'), ['@@', ' a', '-b', '+x', ' c'].slice(0, 5));
+  const fx = fixture();
+  const mainPath = path.join(fx.tmp, 'conf', 'nginx.conf');
+  fs.mkdirSync(path.dirname(mainPath), { recursive: true });
+  fs.writeFileSync(mainPath, 'one\ntwo\nthree');
+  const text = diffGatewayNginx({
+    io: systemIo('/nonexistent/openresty', '/nonexistent/nginx.conf'), confPath: fx.confPath, newConf: 'NEW CONF',
+    mainConf: { path: mainPath, content: 'one\n2\nthree' }, luaDir: fx.luaDir, sourceLuaDir: fx.sourceLuaDir,
+  });
+  assert.match(text, /netget_app\.conf: 1 lines removed, 1 added/);
+  assert.match(text, /nginx\.conf: 1 lines removed, 1 added/);
+  assert.match(text, /-two\n\+2/);
+  assert.match(text, /# lua: 2 files differ/);
+  assert.match(text, /~ handlers\/apps\.lua/); assert.match(text, /\+ handlers\/extra\.lua \(new\)/);
+  assert.equal(fs.readFileSync(fx.confPath, 'utf8'), 'OLD CONF'); assert.equal(fs.readFileSync(mainPath, 'utf8'), 'one\ntwo\nthree');
+  assert.equal(fs.readFileSync(path.join(fx.luaDir, 'handlers', 'apps.lua'), 'utf8'), 'old lua');
+  assert.match(diffGatewayNginx({ io: systemIo('/x', '/y'), confPath: fx.confPath, newConf: 'OLD CONF', luaDir: fx.luaDir, sourceLuaDir: fx.luaDir }), /main nginx\.conf: not included/);
   fs.rmSync(fx.tmp, { recursive: true, force: true });
 }
 

@@ -423,7 +423,7 @@ local function gateway_info()
   -- whatever local.cleaker/@handle's resolver composes server-side
   -- (getGatewayRootNamespace() in netgetMonadProcess.ts) — same source,
   -- same fallback order, so the two never silently disagree.
-  local mainServerName = _G.MAIN_SERVER_NAME
+  local mainServerName = require("lib.main_server").name()
   local hostname = (mainServerName and mainServerName ~= "" and mainServerName)
     or ngx.var.hostname or os.getenv("HOSTNAME") or "unknown"
   ngx.say(cjson.encode({

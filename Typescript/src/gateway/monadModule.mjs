@@ -21,6 +21,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gatewayAdminGate } from './adminGate.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROUTES_DIR = path.resolve(here, '../htmls/Netget-REACT/backend/routes');
@@ -83,11 +84,17 @@ export function parseHostList(value) {
     .filter(Boolean);
 }
 
-/** Mounts already-loaded routers on `app` behind the origin guard. Pure: no loading, no env. */
+/**
+ * Mounts already-loaded routers on `app` behind the origin guard and the admin gate
+ * (adminGate.mjs: who may use which route). Pure: no loading, no env.
+ */
 export function mountGatewayRouters(app, routers, options = {}) {
   const guard = originGuard(options.extraOrigins ?? []);
+  const gate = gatewayAdminGate(routers, { resolveSession: options.resolveSession, isOwner: options.isOwner });
+  const ownPaths = options.ownPaths ?? MONAD_OWN_PATHS;
+  app.use('/', guard, delegateExcept(gate, ownPaths));
   for (const router of routers) {
-    app.use('/', guard, delegateExcept(router, options.ownPaths ?? MONAD_OWN_PATHS));
+    app.use('/', guard, delegateExcept(router, ownPaths));
   }
 }
 
@@ -123,7 +130,13 @@ export async function mount(app, ctx) {
   // The namespace this monad serves signs claims for the gateway from its own
   // pages (cleaker.me -> netget.site), so it may call the gateway cross-origin.
   const own = parseHostList(env.ME_NAMESPACE);
-  mountGatewayRouters(app, routers, { extraOrigins: [...parseHostList(env.NETGET_GATEWAY_ORIGINS), ...own] });
+  const { resolveAdminSession } = await import('../modules/NetGetX/Auth/adminSession.ts');
+  const { GatewayClaimsManager } = await import('../modules/NetGetX/Auth/GatewayClaimsManager.ts');
+  mountGatewayRouters(app, routers, {
+    extraOrigins: [...parseHostList(env.NETGET_GATEWAY_ORIGINS), ...own],
+    resolveSession: (token) => resolveAdminSession(token),
+    isOwner: (identityHash) => new GatewayClaimsManager().isOwner(identityHash),
+  });
 
   // The namespace names the gateway's main server (netget.main.server.name); this
   // derives the door from that declaration and keeps it in step (mainServerEntry.ts).

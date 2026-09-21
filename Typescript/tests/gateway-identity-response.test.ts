@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 
 const { buildGatewayIdentityResponse, arrivalOf } = await import('../src/modules/NetGetX/Auth/gatewayIdentityResponse.ts');
 
-const CONTRACT = ['adminCount', 'bootstrapped', 'gatewayId', 'ip', 'owner', 'ownerUsername', 'port', 'scheme', 'scopes', 'updatedAt', 'version'];
+const CONTRACT = ['adminCount', 'bootstrapped', 'gatewayId', 'hostname', 'ip', 'owner', 'ownerUsername', 'port', 'scheme', 'scopes', 'updatedAt', 'version'];
 const machine = { hostname: 'the-host', ip: '10.0.0.5' };
 const https443 = { scheme: 'https' as const, port: 443 };
 
@@ -23,7 +23,7 @@ const https443 = { scheme: 'https' as const, port: 443 };
 const unclaimed = buildGatewayIdentityResponse(null, https443, machine);
 assert.deepEqual(Object.keys(unclaimed).sort(), CONTRACT, 'the whole contract is always there');
 assert.deepEqual(unclaimed, {
-  gatewayId: 'the-host', bootstrapped: false, owner: null, ownerUsername: null, adminCount: 0, scopes: [], version: null, updatedAt: null,
+  gatewayId: 'the-host', hostname: 'the-host', bootstrapped: false, owner: null, ownerUsername: null, adminCount: 0, scopes: [], version: null, updatedAt: null,
   scheme: 'https', port: 443, ip: '10.0.0.5',
 });
 
@@ -35,6 +35,8 @@ const claimed = buildGatewayIdentityResponse({
   version: '2a4a141b6f', updatedAt: 1790013004738,
 } as any, https443, machine);
 assert.equal(claimed.gatewayId, '5f5a2602c5b1707b243e3fa31bed7447');
+assert.equal(claimed.hostname, 'the-host', 'the machine name is its own field: the gatewayId is an identity, not a substitute for it');
+assert.notEqual(claimed.hostname, claimed.gatewayId);
 assert.equal(claimed.bootstrapped, true);
 assert.equal(claimed.owner, OWNER);
 assert.equal(claimed.ownerUsername, 'jabellae', 'the owner is named, whichever door asked');
@@ -90,6 +92,7 @@ try {
   assert.equal(before.bootstrapped, false);
   assert.equal(before.owner, null);
   assert.equal(before.gatewayId, os.hostname());
+  assert.equal(before.hostname, os.hostname());
 
   fs.writeFileSync(path.join(process.env.NETGET_DATA_DIR, 'runtime', 'gateway-claims.json'), JSON.stringify({
     gatewayId: 'gw-1', owner: OWNER, admins: { [OWNER]: true }, grants: { [OWNER]: [] }, usernames: { [OWNER]: 'jabellae' }, version: 'v1', updatedAt: 1790013004738,
@@ -100,6 +103,7 @@ try {
   assert.equal(viaEdge.ownerUsername, 'jabellae');
   assert.equal(viaEdge.adminCount, 1);
   assert.equal(viaEdge.gatewayId, 'gw-1');
+  assert.equal(viaEdge.hostname, os.hostname(), 'after the claim the hostname is still the machine, not the gateway id');
   assert.deepEqual([viaEdge.scheme, viaEdge.port], ['https', 443]);
   // the SAME request, with or without the edge, is the same answer apart from how it arrived
   const direct = await get();

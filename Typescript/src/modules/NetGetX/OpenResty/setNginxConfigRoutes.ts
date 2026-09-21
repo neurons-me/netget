@@ -1373,7 +1373,7 @@ ${namespaceAssetLocations}
         proxy_pass $surface_proxy_target;
 ${proxyHeaders}
         add_header Vary "Accept" always;
-        add_header Cache-Control "no-store" always;
+        add_header Cache-Control $netget_default_cache_control always;
         ${meshIdentityHeader}
         proxy_set_header X-NetGet-Surface $host;
         proxy_set_header X-Forwarded-Host $host;${meshProxyErrorHandling}
@@ -1449,7 +1449,7 @@ ${appFrontendDistLocations}
         proxy_pass $surface_proxy_target;
 ${proxyHeaders}
         add_header Vary "Accept" always;
-        add_header Cache-Control "no-store" always;
+        add_header Cache-Control $netget_default_cache_control always;
         ${meshIdentityHeader}
         proxy_set_header X-NetGet-Surface $host;
         proxy_set_header X-Forwarded-Host $host;${meshProxyErrorHandling}
@@ -1486,7 +1486,7 @@ ${namespaceAssetLocations}
         proxy_pass $surface_proxy_target;
 ${proxyHeaders}
         add_header Vary "Accept" always;
-        add_header Cache-Control "no-store" always;
+        add_header Cache-Control $netget_default_cache_control always;
         ${meshIdentityHeader}${meshProxyErrorHandling}
     }
 ${meshGatewayErrorLocation}
@@ -1510,6 +1510,16 @@ ${meshGatewayErrorLocation}
 lua_shared_dict gateway_nonces  1m;
 
 log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
+    # A response that already carries a Cache-Control from the gateway keeps it (the front end's hashed assets are
+    # immutable, its fixed-name files no-cache); only a response with none is marked no-store. An unconditional
+    # add_header Cache-Control "no-store" put a second, contradictory value on every hashed asset, and browsers obey
+    # no-store: the 2.4 MB script and the 5 MB icon font were downloaded again on every page load. (add_header with an
+    # empty value adds nothing.)
+    map $upstream_http_cache_control $netget_default_cache_control {
+        default "";
+        ""      "no-store";
+    }
+
 ${adminHttpsRedirectMap}
 ${namespaceSurfaceBlock}
 ${nrpHandleBlock}

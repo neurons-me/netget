@@ -8,6 +8,9 @@
  * `adminCount: 0` through one door and `1` through another, and the screen fed by the Express route could not
  * name its owner. Now there is one builder, used by the route; nginx sends the request to it.
  *
+ * Three names that are not the same thing: `gatewayId` (stable identity of the gateway), `hostname` (the machine's name,
+ * which can change) and the domains it is reached through (not part of this answer).
+ *
  * Reads the materialized claims snapshot (gateway-claims.json) -- never calls .me at runtime.
  */
 import os from 'node:os';
@@ -26,7 +29,10 @@ export type GatewayClaimsSnapshot = {
 export type Arrival = { scheme: 'http' | 'https'; port: number };
 
 export type GatewayIdentityResponse = {
+  /** the gateway's stable identity (what the claim is bound to); it does not change when the machine is renamed */
   gatewayId: string;
+  /** the machine's own name, which CAN change; a different thing from gatewayId and from the domains it is reached by */
+  hostname: string;
   bootstrapped: boolean;
   /** identityHash of the owner, or null while unclaimed */
   owner: string | null;
@@ -59,6 +65,7 @@ export function buildGatewayIdentityResponse(
   const updated = Number(claims?.updatedAt);
   return {
     gatewayId: text(claims?.gatewayId) ?? machine.hostname,
+    hostname: machine.hostname,
     bootstrapped: owner !== null,
     owner,
     ownerUsername: owner && usernames ? text(usernames[owner]) : null,

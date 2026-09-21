@@ -69,6 +69,10 @@ assert.equal(transportOriginFor(null, at('https://netget.site')), 'https://netge
 assert.equal(transportOriginFor(gatewayBoot, at('https://netget.site')), 'https://netget.site/apps/netget');
 assert.equal(transportOriginFor({ ...namespaceBoot, apiOrigin: 'https://www.cleaker.me' }, at('https://www.cleaker.me')), 'https://www.cleaker.me');
 assert.equal(transportOriginFor(namespaceBoot, at('https://cleaker.me')), 'https://cleaker.me', 'no apiOrigin: the page origin');
+// a boot may only restate the origin that served the client; another origin is ignored, not followed
+assert.equal(transportOriginFor({ ...namespaceBoot, apiOrigin: 'https://evil.example' }, at('https://cleaker.me')), 'https://cleaker.me');
+assert.equal(transportOriginFor({ ...namespaceBoot, apiOrigin: 'https://cleaker.me' }, at('https://www.cleaker.me')), 'https://www.cleaker.me', 'www is another origin: the session stays where the client was served');
+assert.equal(transportOriginFor({ ...namespaceBoot, apiOrigin: 'http://cleaker.me' }, at('https://cleaker.me')), 'https://cleaker.me', 'a downgraded scheme is not followed');
 // the combined monad: its namespace's hosts talk to it directly, the gateway host through /apps/netget
 assert.equal(transportOriginFor({ ...bothBoot, apiOrigin: 'https://cleaker.me' }, { origin: 'https://cleaker.me', hostname: 'cleaker.me' }), 'https://cleaker.me');
 assert.equal(transportOriginFor(bothBoot, { origin: 'https://netget.site', hostname: 'netget.site' }), 'https://netget.site/apps/netget');

@@ -66,10 +66,18 @@ export function namespaceEndpoint(boot, loc) {
 // always given its own) -- unless the monad that served this page is a
 // namespace's own, in which case it is that monad: the namespace answers for
 // itself, at the address the page was loaded from.
+//
+// The session's signed and keychain operations go to this origin, so it is fixed to the one that served
+// this client: the boot may only restate that origin. An `apiOrigin` naming any other origin is ignored,
+// because a destination is authorized to receive those operations by being where the running client
+// came from, not by what a name or a field says.
 export function transportOriginFor(boot, loc) {
   const origin = (loc && loc.origin) || '';
   const host = (loc && loc.hostname) || '';
-  if (boot && (hostIsNamespace(host, boot) || !isGatewayMonad(boot))) return String(boot.apiOrigin || origin);
+  if (boot && (hostIsNamespace(host, boot) || !isGatewayMonad(boot))) {
+    const declared = String(boot.apiOrigin || '');
+    return declared && declared === origin ? declared : origin;
+  }
   return `${origin}/apps/netget`;
 }
 

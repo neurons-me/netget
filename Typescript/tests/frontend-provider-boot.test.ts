@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // Which of the bundle's three jobs a page gets, from where it was loaded and
 // what the monad said about itself (window.__MONAD_NAMESPACE_PROVIDER_BOOT__).
-const { readProviderBoot, isGatewayMonad, frontendRole, hostIsNamespace, namespaceEndpoint, transportOriginFor, bootNamespaceRoot, GATEWAY_MODULE } =
+const { readProviderBoot, isGatewayMonad, frontendRole, hostIsNamespace, namespaceEndpoint, transportOriginFor, bootNamespaceRoot, rootNamespaceOf, GATEWAY_MODULE } =
   await import('../src/htmls/Netget-REACT/frontend_local/src/session/providerBoot.js');
 
 assert.equal(GATEWAY_MODULE, 'netget/gateway');
@@ -52,6 +52,13 @@ assert.equal(frontendRole({ host: 'local.netget', boot: null }), 'gateway');
 // the namespace's own address, on the scheme and port the page came over
 assert.equal(namespaceEndpoint(namespaceBoot, { protocol: 'https:', port: '', origin: 'https://www.cleaker.me' }), 'https://cleaker.me');
 assert.equal(namespaceEndpoint(namespaceBoot, { protocol: 'http:', port: '8162', origin: 'http://127.0.0.1:8162' }), 'http://cleaker.me:8162');
+// At a handle host the boot's `namespace` is the HANDLE's own; the root is `rootNamespace`. The endpoint, and the root a
+// credential claims under, name the root -- composing from the handle's namespace made jabellae.jabellae.cleaker.me.
+const handleBoot = { ...namespaceBoot, namespace: 'jabellae.cleaker.me', rootNamespace: 'cleaker.me', handle: 'jabellae' };
+assert.equal(rootNamespaceOf(handleBoot), 'cleaker.me');
+assert.equal(rootNamespaceOf({ ...namespaceBoot, rootNamespace: undefined }), namespaceBoot.namespace, 'a monad older than the field only has namespace');
+assert.equal(namespaceEndpoint(handleBoot, { protocol: 'https:', port: '', origin: 'https://jabellae.cleaker.me' }), 'https://cleaker.me');
+assert.equal(bootNamespaceRoot(handleBoot, 'jabellae.cleaker.me'), 'cleaker.me');
 assert.equal(namespaceEndpoint(null, { protocol: 'https:', port: '', origin: 'https://x.example' }), 'https://x.example');
 assert.equal(namespaceEndpoint(namespaceBoot, null), '');
 

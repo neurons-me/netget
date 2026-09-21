@@ -13,6 +13,14 @@
 
 export const GATEWAY_MODULE = 'netget/gateway';
 
+// What the boot calls `namespace` is the one THIS ADDRESS resolves to: the root at cleaker.me and
+// www.cleaker.me, but the handle's own at jabellae.cleaker.me. The root every handle lives under is
+// `rootNamespace`. Composing a handle's namespace from `namespace` is what produced
+// jabellae.jabellae.cleaker.me. A monad older than this field only ever had `namespace`.
+export function rootNamespaceOf(boot) {
+  return String((boot && (boot.rootNamespace || boot.namespace)) || '').trim();
+}
+
 export function readProviderBoot(win = typeof window !== 'undefined' ? window : undefined) {
   const boot = win && win.__MONAD_NAMESPACE_PROVIDER_BOOT__;
   return boot && typeof boot === 'object' ? boot : null;
@@ -48,7 +56,7 @@ export function frontendRole({ host, boot }) {
 // The address of the namespace itself, on the scheme and port the page was
 // loaded over: https://cleaker.me even when the page came from www.cleaker.me.
 export function namespaceEndpoint(boot, loc) {
-  const namespace = String((boot && boot.namespace) || '').trim();
+  const namespace = rootNamespaceOf(boot);
   if (!namespace || !loc) return (loc && loc.origin) || '';
   return `${loc.protocol}//${namespace}${loc.port ? `:${loc.port}` : ''}`;
 }
@@ -71,5 +79,5 @@ export function transportOriginFor(boot, loc) {
 export function bootNamespaceRoot(boot, host) {
   if (!boot) return '';
   if (isGatewayMonad(boot) && !hostIsNamespace(host, boot)) return '';
-  return String(boot.namespace || '').trim();
+  return rootNamespaceOf(boot);
 }

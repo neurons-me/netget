@@ -77,15 +77,12 @@ mount(spec, '#root', {
   // duplicate it (see mount.ts's own normalizeMountDevtools comment for
   // the confirmed-live bug two live inspector instances caused).
   //
-  // inspector: true (not false) -- mount.ts's own "requested" logic only
-  // ever mounts SelectionProvider/RuntimeInspector at all when at least
-  // one flag is explicitly `true`; `inspector: false` alone (the previous
-  // value here) means "not requested," full stop -- neither this app's
-  // CleakerLanding nor NetGetShell branch actually had a working inspector
-  // behind that wrench icon, confirmed by reading normalizeMountDevtools:
-  // `devtools.requested` gates whether SelectionProvider mounts at all.
-  // `true` here means inspection/hover-select starts ON by default
-  // (toggle it off via either branch's own Dev Tools wrench icon) rather
-  // than mounted-but-inert.
-  devtools: { inspector: true, inspectorToggleVisible: false },
+  // The inspector is mounted (so the Dev Tools wrench in either branch can
+  // switch it on) but starts OFF. mount.ts only mounts SelectionProvider /
+  // RuntimeInspector when devtools is requested, and `inspector: true` asks
+  // for that AND for it to start enabled -- which left inspection/hover-select
+  // on at every page load. `enabled: true` requests the mount; the explicit
+  // `inspector: false` / `adminView: false` set the initial state, and an
+  // explicit false also wins over a preference stored by an earlier toggle.
+  devtools: { enabled: true, inspector: false, adminView: false, inspectorToggleVisible: false },
 });

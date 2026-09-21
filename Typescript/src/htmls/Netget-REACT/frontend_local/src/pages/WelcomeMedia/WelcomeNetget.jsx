@@ -760,13 +760,13 @@ const WelcomeNetget = () => {
                         <span className="surface-status-dot" />
                     </span>
                     <span className="openresty-status-label">{statusLabel}</span>
-                    <InfoTip text="Estado real de OpenResty, consultado cada 5s a /openresty-status. UNKNOWN = todavía no llegó respuesta (arrancando o falló la última petición). SERVICE/MANUAL = está corriendo y escuchando. STOPPED = está apagado." />
+                    <InfoTip text="Live OpenResty status, polled every 5s from /openresty-status. UNKNOWN = no answer yet (starting up, or the last request failed). SERVICE/MANUAL = running and listening. STOPPED = not running." />
                     {badRequestCount > 0 && (
                         <span className="openresty-badge openresty-badge--warn" title={`${badRequestCount} bad/error response${badRequestCount === 1 ? '' : 's'} in the visible log`}>
                             {badRequestCount} bad
                         </span>
                     )}
-                    <InfoTip text="Peticiones con error (4xx/5xx) o que fallaron, dentro de las últimas 18 líneas visibles en la terminal de requests. No es un total histórico: si desaparecen líneas viejas del log, este número baja solo." />
+                    <InfoTip text="Requests that failed or returned an error (4xx/5xx) among the last 18 lines visible in the request terminal. This is not a historical total: as old lines scroll out of the log, the number drops on its own." />
                 </div>
                 <div className="openresty-actions">
                     <button
@@ -777,7 +777,7 @@ const WelcomeNetget = () => {
                     >
                         {openrestyPending === 'restart' ? '...' : 'RESTART'}
                     </button>
-                    <InfoTip text="Reinicia OpenResty (netget reload). Recarga config + Lua, tarda unos segundos. No borra nada ni afecta a domains.db." />
+                    <InfoTip text="Restarts OpenResty (netget reload). Reloads the config and Lua; takes a few seconds. It deletes nothing and does not touch domains.db." />
                     <button
                         type="button"
                         className={`openresty-btn openresty-btn--power ${openrestyOnline ? 'openresty-btn--power-on' : 'openresty-btn--power-off'}`}
@@ -786,7 +786,7 @@ const WelcomeNetget = () => {
                     >
                         {openrestyPending === 'stop' ? '...' : openrestyOnline ? 'ON' : 'OFF'}
                     </button>
-                    <InfoTip text="Este botón muestra el estado ACTUAL, no la acción del click. 'ON' = está encendido ahora — click lo apaga (pide confirmación, corta esta misma página). 'OFF' = está apagado — click lo enciende." />
+                    <InfoTip text="This button shows the CURRENT state, not what a click does. 'ON' = running now — a click stops it (asks for confirmation, and takes this very page down). 'OFF' = stopped — a click starts it." />
                 </div>
             </div>
         );

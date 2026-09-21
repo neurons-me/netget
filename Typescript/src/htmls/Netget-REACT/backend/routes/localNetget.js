@@ -28,13 +28,14 @@ import { loadOrCreateXConfig } from "../../../../modules/NetGetX/config/xConfig.
 import { GatewayClaimsManager } from "../../../../modules/NetGetX/Auth/GatewayClaimsManager.ts";
 import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSession.ts";
 import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
+import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
-function getNetgetDataDir() {
-    return process.env.NETGET_DATA_DIR || path.join(os.homedir(), '.get');
-}
-
+// The data directory is decided in ONE place (utils/netgetPaths.js): NETGET_DATA_DIR, else the platform's first
+// writable default -- /opt/.get on Linux. This file used to carry its own `NETGET_DATA_DIR || ~/.get`, so on a
+// machine where the rest of netget writes to /opt/.get these routes read ~/.get: a gateway that had been claimed
+// (gateway-claims.json in /opt/.get) still answered "unclaimed", and /apps read a stale registry.
 function runtimePath(filename) {
     return path.join(getNetgetDataDir(), 'runtime', filename);
 }

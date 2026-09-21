@@ -76,7 +76,12 @@ function readJsonIfExists(filePath: string): Record<string, any> | null {
     }
 }
 
-function getProbableDataDir(): string {
+/** Where the data directory probably is, without creating anything: the explicit setting first (as netgetPaths.js does), then the platform default. */
+export function getProbableDataDir(): string {
+    if (process.env.NETGET_DATA_DIR) {
+        return process.env.NETGET_DATA_DIR;
+    }
+
     if (os.platform() === 'linux' && exists('/opt/.get')) {
         return '/opt/.get';
     }

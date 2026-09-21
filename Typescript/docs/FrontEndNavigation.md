@@ -125,7 +125,7 @@ not be shown as a **negative** fact, and different names must not share a field.
 Not a defect, worth knowing: fetch failures do show the real message ("404 Not Found"), which is the honest
 behaviour `MainServerView` needed for `/entrypoints`.
 
-Nothing in section 4 is fixed yet.
+Findings 1–3 are fixed locally: missing gateway IDs, claim status, and admin counts now show explicit unavailable states. An explicit `false` still means unclaimed and an explicit `0` still shows zero. `GatewayDashboard` rejects malformed values for these three fields. The `MissingIdentityFields` story covers a successful but incomplete response. Two neighbours of the same class are closed as well: a missing `owner` shows "Owner unavailable" (an explicit `null` still shows "not set") and a missing `scopes` shows "Not available" (an explicit `[]` still shows 0). The mapping lives in `gui/src/compounds/GatewayDashboard/identityView.ts` and is covered by `tests/gateway-identity-view.test.ts` (part of `npm test`). Findings 4–12 remain pending; this does not imply deployment.
 
 ## 5. What is still unknown
 

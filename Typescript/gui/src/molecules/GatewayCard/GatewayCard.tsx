@@ -7,15 +7,15 @@ import { Card, Typography, Box, Chip } from 'this.gui/atoms';
 import HashLabel from '../../atoms/HashLabel/HashLabel';
 
 export interface GatewayCardProps {
-  /** Gateway hostname / node ID */
-  gatewayId: string;
-  /** Identity hash of the owner (null if not bootstrapped) */
+  /** Gateway ID; absent when not reported by the server. */
+  gatewayId?: string;
+  /** Identity hash of the owner. null: the gateway reports no owner. undefined: not reported. */
   owner?: string | null;
-  /** Whether the gateway has been claimed by an owner */
-  bootstrapped: boolean;
+  /** Whether the gateway has been claimed; absent means not reported. */
+  bootstrapped?: boolean;
   /** Number of admin identities registered */
   adminCount?: number;
-  /** List of scopes granted to the owner */
+  /** Scopes granted to the owner; absent means not reported (not an empty list). */
   scopes?: string[];
   /** ISO date of the last claim snapshot update */
   updatedAt?: string | null;
@@ -31,8 +31,8 @@ export default function GatewayCard({
   gatewayId,
   owner,
   bootstrapped,
-  adminCount = 0,
-  scopes = [],
+  adminCount,
+  scopes,
   updatedAt,
   ip,
   port,
@@ -46,11 +46,11 @@ export default function GatewayCard({
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h6" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-          {gatewayId}
+          {gatewayId?.trim() || 'Gateway ID unavailable'}
         </Typography>
         <Chip
-          label={bootstrapped ? 'bootstrapped' : 'unclaimed'}
-          color={bootstrapped ? 'success' : 'warning'}
+          label={bootstrapped === true ? 'bootstrapped' : bootstrapped === false ? 'unclaimed' : 'Claim status unavailable'}
+          color={bootstrapped === true ? 'success' : bootstrapped === false ? 'warning' : 'default'}
           size="small"
           variant={bootstrapped ? 'filled' : 'outlined'}
         />
@@ -61,7 +61,7 @@ export default function GatewayCard({
         <Typography variant="caption" sx={{ opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Owner
         </Typography>
-        <HashLabel hash={owner ?? ''} fallback="not set" sx={{ mt: 0.25 }} />
+        <HashLabel hash={owner ?? ''} fallback={owner === undefined ? 'Owner unavailable' : 'not set'} sx={{ mt: 0.25 }} />
       </Box>
 
       {/* Network row — IP + port */}
@@ -80,16 +80,16 @@ export default function GatewayCard({
       <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap' }}>
         <Box>
           <Typography variant="caption" sx={{ opacity: 0.55 }}>Admins</Typography>
-          <Typography variant="body2" fontWeight={600}>{adminCount}</Typography>
+          <Typography variant="body2" fontWeight={600}>{adminCount ?? 'Not available'}</Typography>
         </Box>
         <Box>
           <Typography variant="caption" sx={{ opacity: 0.55 }}>Scopes</Typography>
-          <Typography variant="body2" fontWeight={600}>{scopes.length}</Typography>
+          <Typography variant="body2" fontWeight={600}>{scopes === undefined ? 'Not available' : scopes.length}</Typography>
         </Box>
       </Box>
 
       {/* Scopes */}
-      {scopes.length > 0 && (
+      {scopes !== undefined && scopes.length > 0 && (
         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 1.5 }}>
           {scopes.map((s) => (
             <Chip key={s} label={s} size="small" variant="outlined" color="default" />

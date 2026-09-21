@@ -66,3 +66,18 @@ export const Unclaimed: Story = {
   ],
   args: { pollMs: 999999 },
 };
+
+// A successful response can omit facts. Missing is not zero or unclaimed.
+export const MissingIdentityFields: Story = {
+  decorators: [
+    (Story) => {
+      // @ts-ignore
+      globalThis.fetch = (url: string) => Promise.resolve(new Response(
+        JSON.stringify(url.includes('gateway-identity') ? {} : { apps: [], count: 0 }),
+        { headers: { 'Content-Type': 'application/json' } },
+      ));
+      return <Story />;
+    },
+  ],
+  args: { pollMs: 999999 },
+};

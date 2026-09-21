@@ -5,6 +5,7 @@
 import * as React from 'react';
 import { Box, Typography } from 'this.gui/atoms';
 import GatewayCard, { GatewayCardProps } from '../../molecules/GatewayCard/GatewayCard';
+import { gatewayCardPropsFromIdentity } from './identityView';
 import MonadMesh from '../MonadMesh/MonadMesh';
 import type { MonadEntry } from '../MonadMesh/MonadMesh';
 
@@ -42,17 +43,7 @@ export default function GatewayDashboard({
         if (!cancelled) {
           setIdentity({
             status: 'ready',
-            data: {
-              gatewayId:   data.gatewayId   ?? 'unknown',
-              owner:       data.owner       ?? null,
-              bootstrapped: !!data.bootstrapped,
-              adminCount:  data.adminCount  ?? 0,
-              scopes:      Array.isArray(data.scopes) ? data.scopes : [],
-              updatedAt:   data.updatedAt   ?? null,
-              ip:          data.ip          ?? undefined,
-              port:        data.port        ?? undefined,
-              scheme:      data.scheme      ?? 'https',
-            },
+            data: gatewayCardPropsFromIdentity(data),
           });
         }
       } catch (e: unknown) {

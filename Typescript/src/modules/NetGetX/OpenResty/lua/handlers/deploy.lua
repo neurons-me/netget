@@ -53,14 +53,14 @@ local method = ngx.req.get_method()
 if uri == '/deploy' and method == 'POST' then
 	local body = read_body_json() or {}
 	if not body.token or not body.routes or not body.server then
-		return json({ error = 'Faltan campos obligatorios' }, 400)
+		return json({ error = 'Required fields are missing' }, 400)
 	end
 	local deploy_token = os.getenv('DEPLOY_TOKEN')
 	if not deploy_token or body.token ~= deploy_token then
-		return json({ error = 'Token inválido' }, 403)
+		return json({ error = 'Invalid token' }, 403)
 	end
 	ngx.log(ngx.INFO, 'Deploy received: ', cjson.encode({ server = body.server, routes = #body.routes }))
-	return json({ success = true, message = 'Despliegue ejecutado correctamente', details = { deployedTo = body.server, routes = #body.routes } }, 200)
+	return json({ success = true, message = 'Deployment executed successfully', details = { deployedTo = body.server, routes = #body.routes } }, 200)
 end
 
 -- Health (GET /deploy/health) with bearer auth

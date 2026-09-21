@@ -29,15 +29,15 @@ export function validateDeployConfig(config: DeployConfig): ValidationResult {
 
     // Validación general
     if (!config.server || typeof config.server !== 'string') {
-        errors.push("El campo 'server' es obligatorio y debe ser un string.");
+        errors.push("The 'server' field is required and must be a string.");
     }
 
     if (!config.timestamp || typeof config.timestamp !== 'number') {
-        errors.push("El campo 'timestamp' es obligatorio y debe ser un número.");
+        errors.push("The 'timestamp' field is required and must be a number.");
     }
 
     if (!Array.isArray(config.domains) || config.domains.length === 0) {
-        errors.push("El campo 'domains' debe ser un arreglo con al menos un objeto.");
+        errors.push("The 'domains' field must be an array with at least one object.");
         return { isValid: errors.length === 0, errors }; // Evita forEach si no es arreglo
     }
 
@@ -58,7 +58,7 @@ export function validateDeployConfig(config: DeployConfig): ValidationResult {
     config.domains.forEach((entry, index) => {
         requiredFields.forEach(field => {
             if (!(field in entry) || typeof entry[field] !== 'string' || (entry[field] as string).trim() === '') {
-                errors.push(`'${field}' es obligatorio y debe ser un string válido en domains[${index}]`);
+                errors.push(`'${field}' is required and must be a non-empty string in domains[${index}]`);
             }
         });
     });

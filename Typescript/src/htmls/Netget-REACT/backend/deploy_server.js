@@ -73,21 +73,21 @@ router.post('/', async (req, res) => {
 
                 // 1. Validaciones mínimas
                 if (!config.token || !config.routes || !config.server) {
-                        return res.status(400).json({ error: 'Faltan campos obligatorios' });
+                        return res.status(400).json({ error: 'Required fields are missing' });
                 }
 
                 // 2. Validación del token (ej. contra NetGet o BD local)
                 if (config.token !== process.env.DEPLOY_TOKEN) {
-                        return res.status(403).json({ error: 'Token inválido' });
+                        return res.status(403).json({ error: 'Invalid token' });
                 }
 
                 // 3. Simular ejecución del despliegue
-                console.log("📦 Recibido para deploy:", config);
+                console.log("📦 Deploy request received:", config);
 
                 // 4. Si todo va bien
                 return res.status(200).json({
                         success: true,
-                        message: 'Despliegue ejecutado correctamente',
+                        message: 'Deployment executed successfully',
                         details: {
                                 deployedTo: config.server,
                                 routes: config.routes.length
@@ -95,8 +95,8 @@ router.post('/', async (req, res) => {
                 });
 
         } catch (err) {
-                console.error("❌ Error en deploy:", err.message);
-                return res.status(500).json({ error: 'Error interno en el servidor' });
+                console.error("❌ Deploy error:", err.message);
+                return res.status(500).json({ error: 'Internal server error' });
         }
 });
 

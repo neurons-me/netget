@@ -719,13 +719,20 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # .me kernel — gateway identity (loopback-only, no auth needed)
-    location /gateway-identity {
-        if ($request_method = OPTIONS) { return 204; }
-        content_by_lua_file lua/handlers/gateway_identity.lua;
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+    # .me kernel — gateway identity. ONE answer: the gateway's own route (gatewayIdentityResponse.ts),
+    # not a second implementation in Lua that reported a different contract (adminCount without the owner,
+    # ISO dates, its own scheme/port). CORS is the gateway's: a foreign origin is refused there, not allowed here.
+    location = /gateway-identity {
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
+            return 204;
+        }
+        proxy_pass ${gatewayUpstream}/gateway-identity;
+${proxyHeaders}
+        # the port THIS request arrived on, which the screens show
+        proxy_set_header X-Forwarded-Port $server_port;
     }
 
     # OpenResty gateway control — status/restart/stop. status is read-only

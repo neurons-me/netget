@@ -57,9 +57,21 @@ assert.doesNotMatch(standalone, /server_name \*\.cleaker\.me;/);
 fs.writeFileSync(path.join(dataDir, 'xConfig.json'), JSON.stringify({ gatewayUpstream: 'http://127.0.0.1:8161' }));
 const adopted = getNetgetAppConfContent();
 assert.doesNotMatch(adopted, /127\.0\.0\.1:3000/, 'no location may still point at the standalone backend');
-for (const route of ['/setup/claim', '/setup/verify-code', '/admin-session/verify', '/add-domain', '/provision-cert', '/main-server-namespace']) {
+for (const route of ['/setup/claim', '/setup/verify-code', '/admin-session/verify', '/add-domain', '/provision-cert', '/main-server-namespace', '/gateway-identity']) {
   assert.match(adopted, new RegExp(`proxy_pass http://127\\.0\\.0\\.1:8161${route.replace(/[/-]/g, '\\$&')};`), route);
 }
+
+// /gateway-identity has ONE implementation: the gateway's route. There is no second answer behind nginx (a Lua handler that
+// reported a different contract), in any configuration, and the port the request arrived on is passed along.
+for (const [name, conf] of [['standalone', standalone], ['adopted', adopted]] as const) {
+  assert.doesNotMatch(conf, /gateway_identity\.lua/, `${name}: no Lua handler answers /gateway-identity`);
+  // the block of THIS location only (up to its own closing brace), so a header of another location cannot satisfy it
+  const block = conf.match(/location = \/gateway-identity \{[\s\S]*?\n    \}\n/)?.[0];
+  assert.ok(block, `${name}: /gateway-identity has an exact-match location`);
+  assert.match(block!, /proxy_set_header X-Forwarded-Port \$server_port;/, `${name}: the arrival port is forwarded`);
+  assert.match(block!, /proxy_pass http:\/\/127\.0\.0\.1:\d+\/gateway-identity;/, `${name}: it is proxied, in this very location`);
+}
+assert.match(standalone, /proxy_pass http:\/\/127\.0\.0\.1:3000\/gateway-identity;/, 'standalone: to the standalone backend, which mounts the same route');
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('nginx-gateway-upstream.test.ts: all assertions passed');

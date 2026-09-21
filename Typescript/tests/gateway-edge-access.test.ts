@@ -155,6 +155,30 @@ try {
   assert.equal(status.status, 200, `a process on this machine may ask: ${status.text.slice(0, 120)}`);
   assert.deepEqual(ran().slice(-1), ['status'], 'and it reached the handler');
   assert.notEqual((await call('127.0.0.1', 'http', 'localhost', 'GET', '/logs?type=access')).status, 401, 'and may read the server logs');
+
+  // /gateway-identity has ONE answer: the gateway's own route. Through nginx and straight from the monad it is the
+  // same, unclaimed and claimed (it used to be a Lua handler with another contract: adminCount without the owner, no
+  // version, ISO dates -- the same gateway said 0 admins through one door and 1 through the other).
+  {
+    const viaNginx = async () => (await call('127.0.0.1', 'http', 'localhost', 'GET', '/gateway-identity')).json;
+    const direct = async () => (await fetch(`${monadOrigin}/gateway-identity`, { headers: { 'x-forwarded-proto': 'http', 'x-forwarded-port': String(HTTP_PORT) } })).json() as Promise<any>;
+    const before = await viaNginx();
+    assert.equal(before?.bootstrapped, false);
+    assert.deepEqual(before, await direct(), 'unclaimed: the same answer through nginx and from the monad');
+    const identityHash = 'c'.repeat(64);
+    fs.mkdirSync(path.join(dataDir, 'runtime'), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'runtime', 'gateway-claims.json'), JSON.stringify({
+      gatewayId: 'edge-gw', owner: identityHash, admins: { [identityHash]: true }, grants: { [identityHash]: [] },
+      usernames: { [identityHash]: 'edge-owner' }, version: 'edge-v1', updatedAt: 1790013004738,
+    }));
+    const claimed = await viaNginx();
+    assert.deepEqual(claimed, await direct(), 'claimed: the same answer through nginx and from the monad');
+    assert.equal(claimed.adminCount, 1, 'the owner counts as an admin, through nginx too');
+    assert.equal(claimed.ownerUsername, 'edge-owner');
+    assert.equal(claimed.version, 'edge-v1');
+    assert.equal(claimed.port, HTTP_PORT, 'nginx says which port the request arrived on');
+    fs.rmSync(path.join(dataDir, 'runtime', 'gateway-claims.json'));
+  }
   // nginx lets the loopback client through; the monad still wants a credential
   assert.equal((await call('127.0.0.1', 'http', 'localhost', 'POST', '/add-domain', { body: { domain: 'evil.test', type: 'proxy' } })).status, 401);
   // the internal credential does not survive nginx: sent through it, it is as good as nothing...

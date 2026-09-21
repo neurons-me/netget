@@ -29,6 +29,7 @@ import { GatewayClaimsManager } from "../../../../modules/NetGetX/Auth/GatewayCl
 import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSession.ts";
 import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
+import { buildGatewayIdentityResponse, arrivalOf, localIPv4 } from "../../../../modules/NetGetX/Auth/gatewayIdentityResponse.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -393,33 +394,15 @@ router.post("/__gateway/claim", async (req, res) => {
 });
 
 // ─── Gateway identity ────────────────────────────────────────────────────────
-// Reads the materialized claims snapshot — never calls .me at runtime.
+// The ONE answer to GET /gateway-identity (see gatewayIdentityResponse.ts): nginx sends the request here too,
+// there is no second implementation behind it. Reads the materialized claims snapshot -- never calls .me at runtime.
 router.get("/gateway-identity", (req, res) => {
     const claims = readJson(runtimePath('gateway-claims.json'));
-
-    if (!claims) {
-        return res.json({
-            gatewayId: os.hostname(),
-            owner: null,
-            bootstrapped: false,
-            adminCount: 0,
-            scopes: [],
-            version: null,
-            updatedAt: null,
-        });
-    }
-
-    const ownerScopes = claims.owner ? (claims.grants?.[claims.owner] ?? []) : [];
-
-    return res.json({
-        gatewayId: claims.gatewayId ?? os.hostname(),
-        owner: claims.owner ?? null,
-        bootstrapped: !!claims.owner,
-        adminCount: Object.keys(claims.admins ?? {}).length,
-        scopes: ownerScopes,
-        version: claims.version ?? null,
-        updatedAt: claims.updatedAt ?? null,
-    });
+    return res.json(buildGatewayIdentityResponse(
+        claims,
+        arrivalOf(req.headers, req.protocol),
+        { hostname: os.hostname(), ip: localIPv4() },
+    ));
 });
 
 // ─── Live monad mesh ─────────────────────────────────────────────────────────

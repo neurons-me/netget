@@ -1,15 +1,13 @@
 local cjson = require "cjson.safe"
-local ck = require "resty.cookie"
+local operator = require "lib.operator_access"
 
 local function set_json()
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
 end
 
+-- The server's own logs are for a process on this machine. (This used to accept ANY cookie named "token".)
 local function verify_cookie()
-  local cookie = ck:new()
-  local token, err = cookie:get("token")
-  if not token then return false end
-  return true
+  return operator.authorized_operator()
 end
 
 local function read_file_tail(path)

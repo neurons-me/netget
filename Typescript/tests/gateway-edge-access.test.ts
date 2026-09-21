@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url';
 //     127.0.0.1 (a process on this machine) and from this machine's LAN address (a different peer
 //     address, same Host). Only the first may change or stop anything.
 //   * "Plain HTTP means local development" is not a credential: the LAN client over HTTP gets nothing.
-//   * A JWT signed with the built-in "dev_secret" is not a credential: with no JWT_SECRET configured
-//     no token is accepted at all, and with a real one a token signed with the default is refused.
+//   * A cookie or a JWT is not a credential: nothing in the gateway issues one, so nothing may accept one.
+//     (An older version verified a JWT with a built-in "dev_secret", and /logs accepted ANY cookie named
+//     "token".) A forged token, a token signed with a real secret and a bare cookie all get nothing.
 // And the monad's internal credential must never get through nginx: a request that carries the REAL
 // token, sent through nginx, is refused; the same request sent to the monad directly is accepted.
 //
@@ -95,6 +96,11 @@ fs.writeFileSync(path.join(prefix, 'conf.d', 'netget_app.conf'), highPorts(appCo
 fs.copyFileSync('/opt/homebrew/etc/openresty/mime.types', path.join(prefix, 'conf', 'mime.types'));
 fs.cpSync(path.resolve(here, '../src/modules/NetGetX/OpenResty/lua'), path.join(prefix, 'lua'), { recursive: true });
 
+// the config itself: no JWT machinery, no example routes behind it
+assert.doesNotMatch(appConf, /jwt_cookie|jwt_cache|JWT_SECRET|resty\.jwt/, 'the generated app conf has no JWT machinery');
+assert.doesNotMatch(fs.readFileSync(path.join(prefix, 'conf', 'nginx.conf'), 'utf8'), /JWT/, 'the generated main conf passes no JWT_SECRET through');
+assert.doesNotMatch(appConf, /location \/(protected|test) /);
+for (const gone of ['handlers/protected.lua', 'middleware/jwt_cookie.lua']) assert.equal(fs.existsSync(path.join(prefix, 'lua', gone)), false, `${gone} is gone`);
 // the config itself: the internal credential is stripped wherever nginx proxies, and never set from anything
 assert.match(appConf, /proxy_set_header X-Monad-Internal-Token "";/);
 assert.doesNotMatch(appConf, /X-Monad-Internal-Token\s+(?!"")\S/i, 'nginx never sets the internal credential from anything');
@@ -141,13 +147,14 @@ const cookie = (token: string) => ({ cookie: `token=${token}` });
 const HOSTS = ['localhost', 'local.netget', '127.0.0.1'];
 
 try {
-  // ═══ 1. a gateway with no JWT_SECRET, which is the usual state ═══════════════
+  // ═══ 1. the gateway as it is ═════════════════════════════════════════════════════
   await startNginx({});
 
-  // from this machine
+  // from this machine (also the logs, which the machine's own operator may read)
   const status = await call('127.0.0.1', 'http', 'localhost', 'GET', '/openresty-status');
   assert.equal(status.status, 200, `a process on this machine may ask: ${status.text.slice(0, 120)}`);
   assert.deepEqual(ran().slice(-1), ['status'], 'and it reached the handler');
+  assert.notEqual((await call('127.0.0.1', 'http', 'localhost', 'GET', '/logs?type=access')).status, 401, 'and may read the server logs');
   // nginx lets the loopback client through; the monad still wants a credential
   assert.equal((await call('127.0.0.1', 'http', 'localhost', 'POST', '/add-domain', { body: { domain: 'evil.test', type: 'proxy' } })).status, 401);
   // the internal credential does not survive nginx: sent through it, it is as good as nothing...
@@ -179,10 +186,15 @@ try {
       assert.equal((await call(lan, 'http', host, 'GET', '/openresty-status')).status, 401, `status from ${lan}, Host ${host}`);
       assert.equal((await call(lan, 'http', host, 'GET', '/dev-server-status')).status, 401);
     }
-    // a token signed with the built-in secret: over HTTPS, from another peer, with no JWT_SECRET configured
-    const bait = cookie(forgeJwt('dev_secret'));
-    assert.equal((await call(lan, 'https', 'localhost', 'GET', '/openresty-status', { headers: bait })).status, 401, 'no secret configured: no token is accepted');
-    assert.equal((await call(lan, 'https', 'localhost', 'POST', '/openresty-stop', { headers: bait, body: {} })).status, 403);
+    // a cookie is not a credential, however it is made: a bare one, a forged JWT (signed with the old built-in
+    // secret), over HTTP and over HTTPS, for the handlers that used to look at it
+    for (const [scheme, cookieValue] of [['http', 'anything'], ['https', 'anything'], ['https', forgeJwt('dev_secret')], ['http', forgeJwt('dev_secret')]] as const) {
+      for (const p of ['/openresty-status', '/dev-server-status', '/logs?type=access']) {
+        const r = await call(lan, scheme, 'localhost', 'GET', p, { headers: cookie(cookieValue) });
+        assert.equal(r.status, 401, `${scheme} ${p} with a cookie from ${lan} answered ${r.status}`);
+      }
+      assert.equal((await call(lan, scheme, 'localhost', 'POST', '/openresty-stop', { headers: cookie(cookieValue), body: {} })).status, 403);
+    }
     // the gateway's own reads stay reachable
     assert.equal((await call(lan, 'http', 'localhost', 'GET', '/domains')).status, 200);
     assert.deepEqual(ran().filter((c) => c !== 'status'), [], 'nothing ran netget for the other peer');
@@ -190,24 +202,19 @@ try {
     console.log('gateway-edge-access.test.ts: no non-loopback address on this machine -- the other-peer half was skipped');
   }
 
-  // ═══ 2. a gateway with a real JWT_SECRET ═══════════════════════════════════════
+  // ═══ 2. even if someone still sets JWT_SECRET, a token signed with it is not a credential ═══
   const secret = crypto.randomBytes(32).toString('hex');
   await startNginx({ JWT_SECRET: secret });
   if (lan) {
     const good = cookie(forgeJwt(secret));
     const before = ran().length;
-    assert.equal((await call(lan, 'https', 'localhost', 'GET', '/openresty-status', { headers: good })).status, 200, 'a token signed with the real secret is a credential (HTTPS)');
-    assert.equal(ran().length, before + 1);
-    assert.equal((await call(lan, 'http', 'localhost', 'GET', '/openresty-status', { headers: good })).status, 401, 'but not over plain HTTP');
-    assert.equal((await call(lan, 'https', 'localhost', 'GET', '/openresty-status', { headers: cookie(forgeJwt('dev_secret')) })).status, 401, 'and a token signed with the default is not');
-    assert.equal((await call(lan, 'https', 'localhost', 'GET', '/openresty-status', { headers: cookie(forgeJwt('short')) })).status, 401);
-    // control actions that change things stay for this machine even with a valid token
-    assert.equal((await call(lan, 'https', 'localhost', 'POST', '/openresty-stop', { headers: good, body: {} })).status, 403);
-    assert.equal(ran().filter((c) => c === 'stop').length, 0);
+    for (const scheme of ['http', 'https'] as const) {
+      assert.equal((await call(lan, scheme, 'localhost', 'GET', '/openresty-status', { headers: good })).status, 401, `${scheme}: a token signed with a real secret is still nothing`);
+      assert.equal((await call(lan, scheme, 'localhost', 'GET', '/logs?type=access', { headers: good })).status, 401);
+      assert.equal((await call(lan, scheme, 'localhost', 'POST', '/openresty-stop', { headers: good, body: {} })).status, 403);
+    }
+    assert.equal(ran().length, before, 'nothing ran for the other peer');
   }
-  // a weak configured secret is not accepted either
-  await startNginx({ JWT_SECRET: 'dev_secret' });
-  if (lan) assert.equal((await call(lan, 'https', 'localhost', 'GET', '/openresty-status', { headers: cookie(forgeJwt('dev_secret')) })).status, 401, 'JWT_SECRET=dev_secret is refused');
 } finally {
   stopNginx();
   await new Promise((resolve) => monad.close(resolve));

@@ -598,17 +598,6 @@ ${operatorOnly}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # Protected
-    location /protected {
-        if ($request_method = OPTIONS) { return 204; }
-        access_by_lua_file lua/middleware/jwt_cookie.lua;
-        content_by_lua_file lua/handlers/protected.lua;
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
-    }
 
     # Static assets (legacy path)
     location /media/ {
@@ -662,8 +651,7 @@ ${viteAssetLocation}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # .me identity auth — POST { proof } → JWT cookie (Ed25519 challenge-response)
-    #                  or  POST { identityHash } → JWT cookie (legacy hash fallback)
+    # .me identity auth — POST { proof } (Ed25519 challenge-response) or { identityHash } (legacy hash fallback)
     location /me/auth {
         if ($request_method = OPTIONS) { return 204; }
         set $auth_action me_auth;
@@ -1341,17 +1329,6 @@ ${proxyHeaders}
         add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
-    location /test {
-        if ($request_method = OPTIONS) { return 204; }
-        access_by_lua_file lua/middleware/jwt_cookie.lua;
-        set $misc_action test_endpoint;
-        content_by_lua_file lua/handlers/misc.lua;
-        add_header 'Access-Control-Allow-Origin' $http_origin always;
-        add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
-        add_header 'Access-Control-Max-Age' 86400 always;
-    }
 `;
 
   // ─── Public domain server blocks (Let's Encrypt) ───────────────────────────
@@ -1523,7 +1500,6 @@ ${meshGatewayErrorLocation}
 #   local.host/@{handle}                 → identity-handle resolution — see localNetget.js's handle middleware
 #   local.cleaker/@{handle}              → same, via the legacy alias
 
-lua_shared_dict jwt_cache      10m;
 lua_shared_dict gateway_nonces  1m;
 
 log_format netget_access '$remote_addr - - [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"';

@@ -5,14 +5,13 @@
 -- here. Mirrors openresty.lua exactly (same auth model, same
 -- resolve_netget_bin/run_netget PATH workaround for launchd's stripped env).
 --
--- Trust: same model as openresty.lua -- HTTP/loopback caller is the
--- operator; HTTPS requires a verified JWT cookie.
+-- Trust: only a process on this machine (the real peer address, see lib/operator_access.lua).
+-- There is no token to present: not a Host header, not plain HTTP, not a cookie.
 
 local cjson = require "cjson.safe"
 local operator = require "lib.operator_access"
 
--- Control actions are for a process on this machine or a verified JWT (lib/operator_access.lua);
--- plain HTTP from elsewhere and a token signed with a guessable secret are both refused.
+-- Control actions are for a process on this machine (lib/operator_access.lua).
 local function auth_required()
   return operator.authorized_operator()
 end

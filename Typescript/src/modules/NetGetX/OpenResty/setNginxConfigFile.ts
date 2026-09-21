@@ -37,7 +37,6 @@ export function buildNginxConfigContent(layout: OpenRestyLayout = detectOpenRest
 
     const userLine = layout.userDirective ? `${layout.userDirective}\n` : '';
     const envLines = [
-        'env JWT_SECRET;',
         'env CORS_ALLOWED_ORIGINS;',
         'env NODE_ENV;',
         'env USE_HTTPS;',

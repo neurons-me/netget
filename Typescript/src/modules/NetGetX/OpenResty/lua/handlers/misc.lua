@@ -1,5 +1,4 @@
 local cjson = require "cjson.safe"
-local operator = require "lib.operator_access"
 local function getNetgetDataDir()
   -- Prefer env, fallback to nginx var, finally default to ~/.get
   local env_dir = os.getenv("NETGET_DATA_DIR")
@@ -17,10 +16,6 @@ local function set_json()
   ngx.header["Content-Type"] = "application/json; charset=utf-8"
 end
 
-local function auth_context()
-  return operator.jwt_payload()
-end
-
 local function healthcheck()
   set_json()
   ngx.say(cjson.encode({
@@ -29,17 +24,6 @@ local function healthcheck()
     service = "NetGet Instance",
     version = "2.56"
   }))
-end
-
-local function test_endpoint()
-  set_json()
-  local claims = auth_context()
-  if not claims then
-    ngx.status = 401
-    ngx.say(cjson.encode({ error = "Unauthorized" }))
-    return
-  end
-  ngx.say(cjson.encode({ message = "Test endpoint", identity = claims.username, context = claims }))
 end
 
 -- Very small IPv4-shape check -- xConfig.json's publicIP/localIP fields are
@@ -90,8 +74,6 @@ end
 local action = ngx.var.misc_action
 if action == "healthcheck" then
   return healthcheck()
-elseif action == "test_endpoint" then
-  return test_endpoint()
 elseif action == "ip_info" then
   return ip_info()
 elseif action == "port_info" then

@@ -1,0 +1,1 @@
+import{_ as a,o as t,c as i,a0 as n}from"./chunks/framework.CIbwkeYd.js";const m=JSON.parse('{"title":"netget","description":"","frontmatter":{},"headers":[],"relativePath":"index.md","filePath":"index.md"}'),s={name:"index.md"};function l(r,e,o,h,d,c){return t(),i("div",null,[...e[0]||(e[0]=[n("",9)])])}const g=a(s,[["render",l]]);export{m as __pageData,g as default};

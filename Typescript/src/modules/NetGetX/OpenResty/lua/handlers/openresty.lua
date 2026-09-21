@@ -19,21 +19,12 @@
 -- own server to shut down.
 
 local cjson = require "cjson.safe"
-local jwt = require "resty.jwt"
-local ck = require "resty.cookie"
+local operator = require "lib.operator_access"
 
-local JWT_SECRET = os.getenv("JWT_SECRET") or "dev_secret"
-
+-- Control actions are for a process on this machine or a verified JWT (lib/operator_access.lua);
+-- plain HTTP from elsewhere and a token signed with a guessable secret are both refused.
 local function auth_required()
-  local scheme = ngx.var.scheme or "http"
-  if scheme ~= "https" then
-    return true
-  end
-  local cookie = ck:new()
-  local token = cookie:get("token")
-  if not token then return false end
-  local obj = jwt:verify(JWT_SECRET, token)
-  return obj and obj.verified
+  return operator.authorized_operator()
 end
 
 -- io.popen inherits the OpenResty worker's own PATH, which under launchd is

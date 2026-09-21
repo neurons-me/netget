@@ -1,8 +1,5 @@
 local cjson = require "cjson.safe"
-local jwt = require "resty.jwt"
-local ck = require "resty.cookie"
-
-local JWT_SECRET = os.getenv("JWT_SECRET") or "dev_secret"
+local operator = require "lib.operator_access"
 local function getNetgetDataDir()
   -- Prefer env, fallback to nginx var, finally default to ~/.get
   local env_dir = os.getenv("NETGET_DATA_DIR")
@@ -21,14 +18,7 @@ local function set_json()
 end
 
 local function auth_context()
-  local cookie = ck:new()
-  local token = cookie:get("token")
-  if not token then return nil end
-  local obj = jwt:verify(JWT_SECRET, token)
-  if obj and obj.verified then
-    return obj.payload
-  end
-  return nil
+  return operator.jwt_payload()
 end
 
 local function healthcheck()

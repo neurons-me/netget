@@ -5,6 +5,7 @@
 // Changes bump domain-map.version so Nginx routing hot-reloads.
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { isRefusal, refusalMessage } from '../utils/adminAccess.js';
 import {
     Box,
     Button,
@@ -77,6 +78,7 @@ async function addDomain({ domain, target, type, email }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, target, type, email }),
     });
+    if (isRefusal(res)) throw new Error(refusalMessage('add-domain'));
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
@@ -88,6 +90,7 @@ async function provisionCert({ domain, email }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, email }),
     });
+    if (isRefusal(res)) throw new Error(refusalMessage('provision-cert', { domain }));
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? data.message ?? `${res.status}`);
     return data;
@@ -99,6 +102,7 @@ async function deleteDomain(domain) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain }),
     });
+    if (isRefusal(res)) throw new Error(refusalMessage('delete-domain'));
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
@@ -113,6 +117,7 @@ async function editDomainMetadata(session, domain, description) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, description }),
     });
+    if (isRefusal(res)) throw new Error(refusalMessage('domain-metadata'));
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         const detail = data.error ?? `${res.status}`;

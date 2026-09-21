@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isRefusal, refusalMessage } from '../../utils/adminAccess.js';
 import { Monad, Namespace, TabViews, useRegisterGuiNode } from 'this.gui';
 import './css/styles.css';
 
@@ -518,6 +519,10 @@ const WelcomeNetget = () => {
         const startedAt = performance.now();
         try {
             const response = await fetch(endpoint, { method: 'POST', cache: 'no-store', credentials: 'same-origin' });
+            if (isRefusal(response)) {
+                addRequestEntry('POWER', endpoint, response.status, refusalMessage(action === 'stop' ? 'openresty-stop' : 'openresty-restart'), 'warn');
+                return;
+            }
             const elapsedMs = Math.max(1, Math.round(performance.now() - startedAt));
             const body = await response.json().catch(() => null);
             const tone = response.ok && body?.ok !== false ? 'ok' : 'warn';

@@ -4,7 +4,7 @@ import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getNetgetDataDir } from '../../../utils/netgetPaths.js';
-import { detectOpenRestyLayout } from './platformDetect.ts';
+import { detectOpenRestyLayout, type OpenRestyLayout } from './platformDetect.ts';
 import {
   getActiveStaticRoot,
   resolveMainServerFrontendConfig,
@@ -141,10 +141,9 @@ function getAppFrontendDistLocations(): string {
   return blocks.join('\n');
 }
 
-export function getNetgetAppConfContent(): string {
+export function getNetgetAppConfContent(layout: OpenRestyLayout = detectOpenRestyLayout()): string {
   const xConfig = getNetgetDataDir();
   const netgetCliBin = resolveNetgetCliBinPath();
-  const layout = detectOpenRestyLayout();
   const frontend = resolveMainServerFrontendConfig();
   const isDevFrontend = frontend.mode === 'dev';
   // Ensure POSIX paths for nginx
@@ -212,7 +211,20 @@ map $scheme:$host $netget_force_https {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # The monad's internal credential belongs to processes on this machine that talk to it directly.
+        # Nothing that arrives through nginx may carry it, whatever the client sent.
+        proxy_set_header X-Monad-Internal-Token "";
         proxy_cache_bypass $http_upgrade;`;
+
+  // Locations that change what the gateway is or run commands on this machine. nginx decides by the
+  // real peer address -- a Host header proves nothing about who is asking -- and reads stay open: only
+  // a process on this machine may use the other methods. (The monad and the Lua handlers check again.)
+  const operatorOnly = `
+        limit_except GET HEAD OPTIONS {
+            allow 127.0.0.1;
+            allow ::1;
+            deny all;
+        }`;
 
   // Shared troubleshooting page for proxy_pass failures where the target was picked
   // from a live-looking registry entry but the connection itself failed — either
@@ -564,6 +576,7 @@ ${isDevFrontend ? netgetPanelErrorLocation : ''}
 
     # Networks API
     location /networks {
+${operatorOnly}
         if ($request_method = OPTIONS) { return 204; }
         content_by_lua_file lua/handlers/networks.lua;
         try_files $uri $uri/ /index.html;
@@ -742,6 +755,7 @@ ${viteAssetLocation}
     }
 
     location = /openresty-restart {
+${operatorOnly}
         if ($request_method = OPTIONS) { return 204; }
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action restart;
@@ -754,6 +768,7 @@ ${viteAssetLocation}
     }
 
     location = /openresty-stop {
+${operatorOnly}
         if ($request_method = OPTIONS) { return 204; }
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action stop;
@@ -783,6 +798,7 @@ ${viteAssetLocation}
     }
 
     location = /dev-server-start {
+${operatorOnly}
         if ($request_method = OPTIONS) { return 204; }
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $dev_server_action start;
@@ -795,6 +811,7 @@ ${viteAssetLocation}
     }
 
     location = /dev-server-stop {
+${operatorOnly}
         if ($request_method = OPTIONS) { return 204; }
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $dev_server_action stop;
@@ -1091,6 +1108,7 @@ ${proxyHeaders}
 ${proxyHeaders}
     }
     location /add-domain {
+${operatorOnly}
         # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
         # above for why (duplicate Access-Control-Allow-Origin on the proxied
         # response otherwise).
@@ -1106,6 +1124,7 @@ ${proxyHeaders}
 ${proxyHeaders}
     }
     location /update-domain {
+${operatorOnly}
         # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
         # above for why (duplicate Access-Control-Allow-Origin on the proxied
         # response otherwise).
@@ -1121,6 +1140,7 @@ ${proxyHeaders}
 ${proxyHeaders}
     }
     location /delete-domain {
+${operatorOnly}
         # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
         # above for why (duplicate Access-Control-Allow-Origin on the proxied
         # response otherwise).
@@ -1146,6 +1166,7 @@ ${proxyHeaders}
     # other /domains* location above, this one has no Lua-side business
     # logic to duplicate; Lua's job stops at verify-and-forward.
     location = /domains/metadata {
+${operatorOnly}
         # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
         # above for why (duplicate Access-Control-Allow-Origin on the proxied
         # response otherwise).
@@ -1189,6 +1210,7 @@ ${proxyHeaders}
     # netget provision-cert (netget.cli.ts -> certbotProvision.ts). Slow --
     # a real certbot round-trip, expect tens of seconds, not milliseconds.
     location /provision-cert {
+${operatorOnly}
         # CORS headers ONLY on the OPTIONS branch — see /main-server-namespace
         # above for why (duplicate Access-Control-Allow-Origin on the proxied
         # response otherwise).

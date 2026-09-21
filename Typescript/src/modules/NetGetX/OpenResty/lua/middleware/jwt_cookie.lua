@@ -1,47 +1,33 @@
 -- lua/middleware/jwt_cookie.lua
 -- Middleware: verify JWT stored in cookie 'token'
 -- Requires: lua-resty-jwt, lua-resty-cookie
--- Note: JWT verification is skipped for HTTP (local development), only enforced for HTTPS
-local jwt = require("resty.jwt")
-local cookie = require("resty.cookie")
+-- A process on this machine (the real peer address) needs no token; anyone else needs a verified one, over HTTPS only (lib/operator_access.lua).
 local cjson = require("cjson")
 
 local function jwt_cookie_middleware()
-  -- Check if connection is HTTPS
-  local scheme = ngx.var.scheme or "http"
-  local is_https = (scheme == "https")
+  local operator = require("lib.operator_access")
 
-  -- Skip JWT verification for HTTP (local development on local.netget)
-  if not is_https then
-    ngx.log(ngx.INFO, "Skipping JWT verification for HTTP connection (local development)")
-    ngx.ctx.user_claims = { username = "local_dev", local = true }
+  -- A process on this machine is the operator: no token needed (local development, the CLI).
+  if operator.is_loopback() then
+    ngx.ctx.user_claims = { username = "local_dev", ["local"] = true }
     return
   end
 
-  -- For HTTPS, enforce JWT verification
-  local JWT_SECRET = os.getenv("JWT_SECRET")
-  if not JWT_SECRET or JWT_SECRET == '' then
-    ngx.log(ngx.ERR, 'JWT_SECRET env variable missing')
-    return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
+  -- Anyone else needs a verified token, over HTTPS only, signed with a secret fit to sign with.
+  if (ngx.var.scheme or "http") ~= "https" then
+    ngx.status = ngx.HTTP_FORBIDDEN
+    ngx.say(cjson.encode({ error = 'HTTPS required' }))
+    return ngx.exit(ngx.HTTP_FORBIDDEN)
   end
-
-  local ck = cookie:new()
-  local token, err = ck:get("token")
-  if not token then
+  local payload = operator.jwt_payload()
+  if not payload then
     ngx.status = ngx.HTTP_UNAUTHORIZED
-    ngx.say(cjson.encode({ error = 'No token provided' }))
+    ngx.say(cjson.encode({ error = 'A valid token is required' }))
     return ngx.exit(ngx.HTTP_UNAUTHORIZED)
   end
 
-  local jwt_obj = jwt:verify(JWT_SECRET, token)
-  if not jwt_obj.verified then
-    ngx.status = ngx.HTTP_BAD_REQUEST
-    ngx.say(cjson.encode({ error = 'Invalid token', reason = jwt_obj.reason }))
-    return ngx.exit(ngx.HTTP_BAD_REQUEST)
-  end
-
   -- Expose claims to downstream handlers
-  ngx.ctx.user_claims = jwt_obj.payload
+  ngx.ctx.user_claims = payload
 end
 
 return jwt_cookie_middleware

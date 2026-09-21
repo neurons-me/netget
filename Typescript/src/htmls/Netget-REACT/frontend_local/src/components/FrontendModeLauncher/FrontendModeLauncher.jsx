@@ -9,6 +9,7 @@
 // HTTP routes added alongside this component (GET/POST /frontend-mode on
 // the local Express backend) — never reimplements that switch logic here.
 import * as React from 'react';
+import { isRefusal, refusalMessage } from '../../utils/adminAccess.js';
 import { Box, Typography, Icon, useRegisterGuiNode, useLauncherPopover } from 'this.gui';
 import Popper from '@mui/material/Popper';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
@@ -68,6 +69,7 @@ const FrontendModeLauncher = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: nextMode }),
             });
+            if (isRefusal(res)) throw new Error(refusalMessage('frontend-mode'));
             const data = await res.json().catch(() => null);
             if (!res.ok || !data?.ok) {
                 throw new Error(data?.message || `${res.status}`);

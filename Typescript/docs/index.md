@@ -19,4 +19,4 @@ netget
 - Live routing table — changes take effect immediately, no restart
 - Monads register via `POST /apps/report`
 
-[Front-end navigation →](./FrontEndNavigation) · [Architecture →](./Architecture) · [Domain Map →](./DomainMap) · [Gateway Claims Ledger →](./GatewayClaimsLedger) · [Placement →](./Placement)
+[Front-end navigation →](./FrontEndNavigation) · [Gateway access contract →](./GatewayAccessContract) · [Architecture →](./Architecture) · [Domain Map →](./DomainMap) · [Gateway Claims Ledger →](./GatewayClaimsLedger) · [Placement →](./Placement)

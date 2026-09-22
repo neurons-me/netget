@@ -341,6 +341,15 @@ from the door), but closing one does not close the other.
 6. **`ROLE` still reads the hostname (section 8's residual note).** Distinct build artifacts per role, or
    another non-hostname signal for the static-file case -- not decided.
 
+**Designed, not implemented (2026-09-22, netget branch `design/gateway-execution-route`):**
+[GatewayExecutionRoute.md](./GatewayExecutionRoute.md) takes on this decision from one layer below --
+not which document a door renders, but which server answers the local admin surface at all. Today
+`local.netget`/`local.host`/`local.cleaker` bypass `surface_proxy.lua` entirely, proxying straight to netget's
+own Express process (verified: `resolveGatewayUpstream()`'s fallback, `127.0.0.1:3000`) -- a second, parallel
+entry point, not an instance of the same mechanism every other namespace already uses. The design routes those
+aliases through the same mesh/self-dispatch mechanism instead, reusing `resolveSelfDispatch`, `MountReference`
+and the shared document unchanged. Sent for review; nothing wired in.
+
 ## 11. Order after acceptance (not started)
 
 1. Inventory the data and the internal callers; fill section 5's last column with real paths.

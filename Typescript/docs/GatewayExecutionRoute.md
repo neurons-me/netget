@@ -153,7 +153,7 @@ fixed target pointed at.
 ## 7. Order — one walkthrough, on disposable infrastructure only, proving continuity without conflating label,
 identity, state and transport
 
-Per this session's standing rule: never against the real ambient gateway. Not started.
+Per this session's standing rule: never against the real ambient gateway.
 
 1. **Dedicated namespace.** Configure one explicit, non-default namespace for this test alone (open decision 1)
    — never a value anything else on the machine could also fall back to.
@@ -171,3 +171,37 @@ Per this session's standing rule: never against the real ambient gateway. Not st
 This proves what actually matters: the connection can change without changing what you are anchored to. It does
 not require resolving the whole mesh, verifying anyone's cryptographic legitimacy (§3.3, explicitly still open),
 or retiring any of the existing paths yet.
+
+### Walkthrough executed, 2026-09-22 — on disposable infrastructure, real evidence, cleaned up after
+
+A dedicated `MONADS_HOME` (never the ambient `~/.monad/monads` registry), namespace `gwroute-test.local`,
+`SEED` generated with `openssl rand -hex 32` and written to `env.json` via `monads env` before the first
+`monads start` — steps 1-2, real.
+
+- **Namespace, before and after restart**: `GET /__provider` → `provider.namespace === "gwroute-test.local"`
+  both times.
+- **Identity, both markers, before and after restart**: kernel `identity_hash` (`monad.json`,
+  SEED-derived) identical across a real `monads restart` (new PID, same port, same value); surface
+  `surfaceEntry.monadId` (the monad's own Ed25519-derived id, §3.3's self-declared marker) also identical —
+  `self.keys.json` persists in the runtime dir, a restart never regenerates it.
+- **Persisted state, not just identity (§3.4)**: wrote `walkthrough.marker` with a timestamped value via
+  `POST /`, read it back via `GET /__provider/resolve?path=walkthrough.marker` (the same load-bearing read
+  path `GatewayAccessContract.md` §7 documents), restarted, read it again — identical value both times.
+- **Local render signal with the runtime off**: stopped the monad (`monads stop`, port confirmed unreachable),
+  then ran the ACTUAL shipped `fetchMountReference()` (GUI branch `feat/document-left-bar`, not a
+  reimplementation) against the dead endpoint — returned `{ status: 'unresolved', reason: 'FETCH_FAILED' }`,
+  the exact explicit state `GatewayMountBoundary` already renders a local document from. Only the underlying
+  signal was re-confirmed here for this specific disposable instance; the React-level rendering of that state
+  was already verified end to end in an earlier pass (`GatewayAccessContract.md` §7/§8) and was not re-run —
+  netget's actual admin bundle was not started for this walkthrough, so step 3 ("independent document")
+  is proven at the mechanism level (the mount reference a document would resolve), not by visually confirming
+  netget's own bundle rendering it.
+
+Cleaned up after: `monads delete`, temp `MONADS_HOME` and scratch files removed, no disposable process or
+state left running. Nothing in this walkthrough touched the real ambient gateway, monad registry, or any
+existing namespace.
+
+**What this does and does not prove, precisely**: mounting and continuity survive a restart without conflating
+label, identity, state and transport, on one explicitly-pinned destination. It does not demonstrate safe
+selection among several candidate monads, nor a hot namespace change on an already-open connection — both stay
+later steps, not attempted here.

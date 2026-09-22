@@ -114,28 +114,34 @@ A page is self-contained without any of this — it can render with no connectio
 tree this interface is mounted; it is not the node itself, and **it grants no identity and no permission** —
 resolving where you are and being authorized to act there stay two separate steps (sections 1, 4).
 
-- **Common description, two paths to it.** The monad already describes a mount reference as
-  `NamespaceProviderBoot` [code: `monad/src/http/provider.ts`] — today only ever a namespace root or a handle's own
-  namespace, not yet an arbitrary deeper node path (a real gap in the type, open below). A page gets this same
-  description one of two ways: **injected** — the monad writes it into the HTML it serves (confirmed live on
-  cleaker.me) — or **fetched** — the same shape read over HTTP, `GET /__provider` [code: `providerSurface.ts`]. Both
-  must describe one thing; today only the injected path is wired to a real page, the fetched path is unused by any
-  standalone file.
+- **Common description, two paths to it.** The monad describes a mount reference as `NamespaceProviderBoot` [code:
+  `monad/src/http/provider.ts`], now carrying `nodePath` (empty = the namespace's own root, a slash-form path = an
+  interior node). A page gets this same description one of two ways: **injected** — the monad writes it into the
+  HTML it serves (confirmed live on cleaker.me) — or **fetched** — the same shape read over HTTP, `GET /__provider`
+  [code: `providerSurface.ts`], which now accepts `?nodePath=`.
 - **Transport is separate from the reference.** Where you ask the provider (which origin, which proxy path) is not
-  the same fact as where the reference says you are mounted. `netget.site`'s own `/apps/<name>/...` proxy already
-  forwards any tail to that monad [conf, confirmed: `location ~ ^/apps/([^/]+)(/.*)?$`], so `GET
-  /apps/netget/__provider` would reach it today — but `netget` there is THIS installation's own monad name, a fact
-  of how this gateway is configured, never a name a standalone file may hardcode. The provider's address is boot
-  configuration the file receives (a query parameter, an injected value, a config it was built or served with), the
-  same way `cleakerEndpoint` is already required rather than guessed from `window.location` (see `CleakerLanding.tsx`
-  §2059) — for the same reason: a value this consequential is never assumed.
+  the same fact as where the reference says you are mounted. `netget.site`'s own `/apps/<name>/...` proxy forwards
+  any tail to that monad [conf, confirmed: `location ~ ^/apps/([^/]+)(/.*)?$`], so `GET /apps/netget/__provider`
+  reaches it — but `netget` there is THIS installation's own monad name, a fact of how this gateway is configured,
+  never a name a standalone file may hardcode. `fetchMountReference(providerOrigin, …)` [code:
+  `this.gui/runtime/mountReference.ts`] takes that origin as a plain parameter and never reads `window.location` —
+  the caller supplies it as boot configuration, the same way `cleakerEndpoint` is already required rather than
+  guessed (see `CleakerLanding.tsx` §2059).
 
-**Two real gaps, not yet closed:**
+**Both gaps closed — implemented and verified, not yet merged to `main` or deployed:**
 
-1. `NamespaceProviderBoot`'s `namespace` field cannot name a node deeper than a namespace or handle root — the mount
-   reference needs a general node path, not just those two shapes.
-2. No standalone file (`netget.site`'s static `index.html`) fetches `GET /__provider` today; the mechanism exists,
-   nothing calls it.
+1. `NamespaceProviderBoot.nodePath` (monad branch `feat/mount-reference-node-path`) — verified against a real monad:
+   an injected boot and a discovered one agree at a namespace root and at a handle host; discovery alone can also
+   resolve an interior node.
+2. `netget.site`'s standalone `index.html` now resolves its mount reference before rendering the gateway shell
+   (GUI branch `feat/document-left-bar`'s `mountReference.ts`; netget branch `feat/mount-reference-gate`'s
+   `GatewayMountBoundary` in `App.jsx`) instead of silently assuming it from the host. An unresolved reference shows
+   an explicit state (with a reason) rather than a silently-rendered shell — verified end to end: a disposable static
+   build behind a proxy that mirrors nginx's real `/apps/<name>/(.*)` passthrough, against a real monad; killing the
+   monad and reloading shows the explicit state.
+
+Not part of this: unifying the rest of the administrative routes (section 5), and none of this was deployed to the
+VM.
 
 ## 8. Open decisions
 
@@ -147,8 +153,6 @@ resolving where you are and being authorized to act there stay two separate step
 3. **Apps registry.** Move `apps.json` into the tree, or expose it as a view whose read rule is a tree path.
 4. **Session holder without a local runtime** (another device). A different scenario from the one this contract
    defines (an already-authenticated local runtime); it belongs to Vault B and does not block this contract.
-5. **Mount reference for a node deeper than a namespace/handle root** — the exact shape of the wider `node path`
-   (section 7, gap 1).
 
 ## 9. Order after acceptance (not started)
 

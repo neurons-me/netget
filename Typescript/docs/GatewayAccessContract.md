@@ -198,7 +198,46 @@ Found while writing this test, recorded, not fixed: the published `this.gui/runt
 plain Node/tsx (bundles unrelated MUI-touching chunks into the same import even for MUI-free functions) — worth its
 own fix so a future consumer isn't forced to import from source across the repo boundary the way this test does.
 
-## 8. The access guard: first piece done, not wired in, and does not fix the document-by-host contradiction
+## 8. The document-by-host contradiction, closed
+
+The problem, as first reported below and corrected by the user: netget's own admin pages
+(Dashboard/Domains/Logs) were merged because `frontendRole({host, boot})` said `ROLE === 'gateway'` — a
+hostname decision, exactly what section 1 rules out. The model, precisely: a door is an entry into a
+tree. Knowing what you can navigate needs your **mount reference** — which tree you belong to (the
+namespace's stable identity) and where within it (the node path, section 7) — never the door's own
+hostname. Mounting at a node (e.g. `apps/netget`) makes a relative route compose under it; it neither
+creates a second tree nor erases the reference to the root, and other routes of the SAME tree stay
+reachable, subject to permissions. In THIS deployment both doors mount the SAME namespace at its own
+root (empty node path) — the simple case: both enter the root, netget.site may open an admin screen
+FIRST, but that initial screen must never limit navigation to the rest of the tree.
+
+**Fixed (netget branch `fix/document-by-mount-reference-not-host`, on top of `feat/gateway-uses-root-shell`):**
+
+- `extensionApplies` now comes from the resolved mount reference, not `ROLE`. For netget.site
+  (unambiguously this app itself — no other namespace could load this exact static bundle without a
+  monad) the extension is this app's OWN local, bundled content: always present, never gated on a
+  network resolution succeeding. For a `cleaker` door (which could be ANY namespace's own page,
+  genuinely ambiguous) it applies only once the reference confirms this is the SAME gateway's own root
+  (`isGatewayMonad && nodePath === ''`) — synchronous for an injected boot, never left pending.
+- `GatewayMountBoundary` no longer blocks the whole shell. It is `useMountReference()` (a hook) plus a
+  small, non-blocking notice. **Local-first, corrected from the user's own model:** without a confirmed
+  mount, the interface still shows its own structure and local pages; only the parts that genuinely need
+  a live connection (MainServerView, the base document's namespace-declared sidebar layer,
+  GatewayDashboard's own fetches) show their own "not available" state — each already did, on its own,
+  without fabricating data.
+
+**Verified, real browser + real monad:** an injected-boot door and a static-file door, same bundle —
+`/dashboard`, `/domains`, `/logs` are reachable through BOTH by direct navigation; disconnecting the
+provider and reloading either still renders the local shell AND the visited page's own structure (its
+own fetch failures shown honestly), never a blank page or the old full-screen block.
+
+**Not done by this fix, named explicitly rather than implied by it passing:** the deeper equivalence this
+enables — that both doors resolve the SAME STABLE NAMESPACE IDENTITY (not just the same name, HTML or
+menu), and that the same route then returns the same node with the same authorization, through a live
+monad and real nginx (not the shared-definitions test of section 6/7, which stays a logic-only check).
+That is the equivalence test still owed, distinct from what closing this contradiction proves.
+
+## 9. The access guard: first piece done, not wired in, necessary but not sufficient on its own
 
 Neither Lua's loopback check nor `adminGate.mjs`'s single coarse `gateway:write` scope is what section 1 requires:
 the first ignores identity and capabilities entirely; the second checks identity but collapses every write into one
@@ -221,6 +260,14 @@ package's public surface so `netget/gateway` — mounted INTO the same monad pro
 directly, in-process, instead of through its own materialized cache (`GatewayClaimsManager`) the way
 `adminGate.mjs`'s current `isOwner` check does today.
 
+**Correction (2026-09-22, user review) — necessary, not sufficient.** "The owner has 'all'" describes only the
+IDENTITY's own standing on the gateway. A page or program acting nominally as the owner does not thereby inherit
+everything the owner can do: section 1's own rule is capabilities granted to the CALLER, never assumed from who is
+behind it. That second, caller-level grant (what THIS page was itself given, separate from what the identity holds)
+is a distinct mechanism this primitive does not provide and does not exist anywhere in this codebase yet — it
+belongs with the runtime/session work section 2 already defers to. A route guard built on `hasGatewayCapability`
+alone is real progress, not the complete answer to section 1.
+
 **This is the primitive, not the guard.** Still needed, none of it done here:
 
 1. Reclassify every route in section 5's table onto a NAMED capability (`domains:write`, `openresty:control`,
@@ -239,7 +286,7 @@ governs WHO may do WHAT; it says nothing about WHICH document a door renders. Bo
 (decide from the resolved reference — namespace/node for the document, identity/capability for the guard — never
 from the door), but closing one does not close the other.
 
-## 9. Open decisions
+## 10. Open decisions
 
 1. **Default disclosure.** Which fields of the public reads are closed to an anonymous identity by default
    (certificate paths, working directories, binary and directory paths are the candidates). Written as tree state,
@@ -249,12 +296,9 @@ from the door), but closing one does not close the other.
 3. **Apps registry.** Move `apps.json` into the tree, or expose it as a view whose read rule is a tree path.
 4. **Session holder without a local runtime** (another device). A different scenario from the one this contract
    defines (an already-authenticated local runtime); it belongs to Vault B and does not block this contract.
-5. **Document-by-host contradiction (section 8).** Netget's admin pages are merged by `ROLE`/hostname, not by the
-   resolved mount reference's node. Needs: what node they actually belong to, and how a door decides which document
-   to render from a resolved reference instead of from `window.location.hostname` -- not solved by the access
-   guard, and not solved here.
+5. ~~Document-by-host contradiction.~~ **Closed, section 8.**
 
-## 10. Order after acceptance (not started)
+## 11. Order after acceptance (not started)
 
 1. Inventory the data and the internal callers; fill section 5's last column with real paths.
 2. One guard, a function of (proven identity, path, operation, **capability**) over tree state, used by both doors --

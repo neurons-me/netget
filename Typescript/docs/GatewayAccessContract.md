@@ -107,7 +107,37 @@ two or more hostnames). For every route of section 5:
   every identity; TLS/redirect behaviour is unchanged; a session presented from an origin that was not granted the
   capability is refused (this last case depends on the runtime side of section 2).
 
-## 7. Open decisions
+## 7. Mount reference: how a standalone file ties to `.me`
+
+A page is self-contained without any of this — it can render with no connection. What ties it to `.me` is a
+**mount reference**: `namespace + node path` (an empty path means the namespace's own root). It says where in the
+tree this interface is mounted; it is not the node itself, and **it grants no identity and no permission** —
+resolving where you are and being authorized to act there stay two separate steps (sections 1, 4).
+
+- **Common description, two paths to it.** The monad already describes a mount reference as
+  `NamespaceProviderBoot` [code: `monad/src/http/provider.ts`] — today only ever a namespace root or a handle's own
+  namespace, not yet an arbitrary deeper node path (a real gap in the type, open below). A page gets this same
+  description one of two ways: **injected** — the monad writes it into the HTML it serves (confirmed live on
+  cleaker.me) — or **fetched** — the same shape read over HTTP, `GET /__provider` [code: `providerSurface.ts`]. Both
+  must describe one thing; today only the injected path is wired to a real page, the fetched path is unused by any
+  standalone file.
+- **Transport is separate from the reference.** Where you ask the provider (which origin, which proxy path) is not
+  the same fact as where the reference says you are mounted. `netget.site`'s own `/apps/<name>/...` proxy already
+  forwards any tail to that monad [conf, confirmed: `location ~ ^/apps/([^/]+)(/.*)?$`], so `GET
+  /apps/netget/__provider` would reach it today — but `netget` there is THIS installation's own monad name, a fact
+  of how this gateway is configured, never a name a standalone file may hardcode. The provider's address is boot
+  configuration the file receives (a query parameter, an injected value, a config it was built or served with), the
+  same way `cleakerEndpoint` is already required rather than guessed from `window.location` (see `CleakerLanding.tsx`
+  §2059) — for the same reason: a value this consequential is never assumed.
+
+**Two real gaps, not yet closed:**
+
+1. `NamespaceProviderBoot`'s `namespace` field cannot name a node deeper than a namespace or handle root — the mount
+   reference needs a general node path, not just those two shapes.
+2. No standalone file (`netget.site`'s static `index.html`) fetches `GET /__provider` today; the mechanism exists,
+   nothing calls it.
+
+## 8. Open decisions
 
 1. **Default disclosure.** Which fields of the public reads are closed to an anonymous identity by default
    (certificate paths, working directories, binary and directory paths are the candidates). Written as tree state,
@@ -117,8 +147,10 @@ two or more hostnames). For every route of section 5:
 3. **Apps registry.** Move `apps.json` into the tree, or expose it as a view whose read rule is a tree path.
 4. **Session holder without a local runtime** (another device). A different scenario from the one this contract
    defines (an already-authenticated local runtime); it belongs to Vault B and does not block this contract.
+5. **Mount reference for a node deeper than a namespace/handle root** — the exact shape of the wider `node path`
+   (section 7, gap 1).
 
-## 8. Order after acceptance (not started)
+## 9. Order after acceptance (not started)
 
 1. Inventory the data and the internal callers; fill section 5's last column with real paths.
 2. One guard, a function of (proven identity, path, operation) over tree state, used by both doors.

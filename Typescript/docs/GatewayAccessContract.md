@@ -167,6 +167,15 @@ read from this gateway's own monad, previously absent here; the `.me` launcher h
 Not part of this: unifying the rest of the administrative routes (section 5), any encrypted/portable app storage
 (a related idea under discussion, not this contract), and none of this was deployed to the VM.
 
+**Doors migration step 4, closed: the equivalence claim itself, tested.** `gatewayDoorEquivalence.test.ts` (netget
+branch `test/gateway-door-equivalence`) imports the REAL objects both doors render from — `GUI_DOCUMENT` unmerged
+(cleaker.me) and netget's own `GATEWAY_DOCUMENT_EXTENSION` merged on top (netget.site), the extension itself pulled
+out of `App.jsx` into a plain, JSX-free `gatewayDocument.js` so the test can import it directly rather than a copy.
+Proves: every route/sidebar item the base document declares renders through the identical component, id and label
+on both doors; the gateway's own additions are additive and never leak backwards onto cleaker.me's door; and the
+dynamic layer (what a namespace itself declares or hides, `resolveSidebarComposition`) composes identically through
+either door even though the two doors start from differently-sized builtin layers. Wired into `npm test`.
+
 ## 8. Open decisions
 
 1. **Default disclosure.** Which fields of the public reads are closed to an anonymous identity by default

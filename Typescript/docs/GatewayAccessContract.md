@@ -258,6 +258,20 @@ monad and real nginx (not the shared-definitions test of section 6/7, which stay
 is the equivalence test still owed. Namespace as a person-changeable runtime parameter, with isolation
 across contexts, is a distinct, larger feature, not started.
 
+**A residual limit, named rather than left implied by "closed" (2026-09-22, user review):** `ROLE` is still
+computed as `frontendRole({host: window.location.hostname, boot})` — the document choice no longer depends
+on the CONNECTED namespace (the actual bug), but it is still, mechanically, a hostname read. This has **not**
+been shown to be equivalent to "explicit package/entry-point configuration", only asserted to be. The honest
+reason it still reads the hostname: `frontend_local` is deliberately ONE built artifact serving all three
+roles (cleaker/host/gateway) — "a monad hands the same bundle to every namespace it serves... so which one
+actually loaded the page is branched client-side" (`App.jsx`'s own comment) — and for the plain-static-file
+case (`netget.site`, no monad, no server-side injection possible at all) there is no OTHER signal available
+to a client-side script than the address it was loaded from. Closing this for real would mean either (a)
+building distinct artifacts per role (so which file was deployed, not which host answered, decides — a real,
+separate build/deploy change) or (b) some other injected, non-hostname signal for the static case, which does
+not exist. Neither is done here — deliberately, to avoid adding a second abstraction layer while section 9's
+consent/credential design was still being completed. Recorded as open, not solved.
+
 ## 9. The access guard: first piece done, not wired in, necessary but not sufficient on its own
 
 Neither Lua's loopback check nor `adminGate.mjs`'s single coarse `gateway:write` scope is what section 1 requires:
@@ -324,12 +338,14 @@ from the door), but closing one does not close the other.
 4. **Session holder without a local runtime** (another device). A different scenario from the one this contract
    defines (an already-authenticated local runtime); it belongs to Vault B and does not block this contract.
 5. ~~Document-by-host contradiction.~~ **Closed, section 8.**
+6. **`ROLE` still reads the hostname (section 8's residual note).** Distinct build artifacts per role, or
+   another non-hostname signal for the static-file case -- not decided.
 
 ## 11. Order after acceptance (not started)
 
 1. Inventory the data and the internal callers; fill section 5's last column with real paths.
 2. One guard, a function of (proven identity, path, operation, **capability**) over tree state, used by both doors --
-   `capabilitiesOf`/`hasGatewayCapability` (section 8) is the first piece; still needed: the per-route capability
+   `capabilitiesOf`/`hasGatewayCapability` (section 9) is the first piece; still needed: the per-route capability
    table, wiring `adminGate.mjs` to it, and the machine identity as a real granted identity.
 3. `netget.site` sends these routes to the monad (as `/gateway-identity` already does) and stops deciding in Lua; keep
    the nginx loopback limits on destructive routes as a second layer until the equivalence tests pass.

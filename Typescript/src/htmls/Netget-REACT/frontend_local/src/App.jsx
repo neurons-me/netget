@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout, ThemeLauncher, LauncherPopoverProvider, GatewaySetup, createNetgetSetupClient } from 'this.gui';
 import { SeedSessionProvider, MeLauncher, CleakerLanding, HostSurface } from 'this.gui/react';
 import { DevToolsLauncher, SpecBoundary } from 'this.gui/devtools';
+import { fetchMountReference } from 'this.gui/runtime';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
 import Domains from './pages/Domains.jsx';
@@ -196,6 +198,49 @@ const CLEAKER_ENDPOINT = HOST === 'local.cleaker'
   ? 'http://local.cleaker'
   : namespaceEndpoint(PROVIDER_BOOT, typeof window !== 'undefined' ? window.location : null);
 
+// This page had NO boot injected (no monad served it -- netget.site's own index.html is a plain static
+// file, GatewayAccessContract.md §7's gap 2): it cannot assume where it is mounted in `.me` from its
+// hostname, so it fetches the same mount reference an injected boot would have carried
+// (`GET <providerOrigin>/__provider`, this.gui/runtime's fetchMountReference) before rendering the
+// gateway shell. `providerOrigin` is this app's own boot configuration (netgetMonadTransportOrigin(),
+// already the address every other request on this page uses) -- never guessed from window.location, and
+// this component reads no hostname either. An unresolved reference shows an explicit state instead of
+// silently rendering the shell as if resolution had succeeded.
+function GatewayMountBoundary({ children }) {
+  const [reference, setReference] = useState(() => (PROVIDER_BOOT ? { status: 'resolved' } : { status: 'checking' }));
+
+  useEffect(() => {
+    if (PROVIDER_BOOT) return undefined; // already have a description; nothing to fetch
+    let cancelled = false;
+    fetchMountReference(netgetMonadTransportOrigin()).then((result) => {
+      if (!cancelled) setReference(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (reference.status === 'checking') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
+  if (reference.status === 'unresolved') {
+    return (
+      <div style={{ maxWidth: 480, margin: '15vh auto', padding: '0 24px', textAlign: 'center' }}>
+        <h2 style={{ marginBottom: 8 }}>Can't tell where this gateway is in the namespace</h2>
+        <p style={{ opacity: 0.7, marginBottom: 4 }}>
+          This page could not resolve its own mount reference ({reference.reason}).
+        </p>
+        {reference.detail ? <p style={{ opacity: 0.5, fontSize: 13 }}>{reference.detail}</p> : null}
+      </div>
+    );
+  }
+  return children;
+}
+
 const App = () => (
   <SeedSessionProvider
     transportOrigin={netgetMonadTransportOrigin()}
@@ -208,11 +253,13 @@ const App = () => (
       ) : ROLE === 'host' ? (
         <HostSurface endpoint={netgetMonadTransportOrigin()} />
       ) : (
-        <Router>
-          <Routes>
-            <Route path="/*" element={<NetGetShell />} />
-          </Routes>
-        </Router>
+        <GatewayMountBoundary>
+          <Router>
+            <Routes>
+              <Route path="/*" element={<NetGetShell />} />
+            </Routes>
+          </Router>
+        </GatewayMountBoundary>
       )}
     </LauncherPopoverProvider>
   </SeedSessionProvider>

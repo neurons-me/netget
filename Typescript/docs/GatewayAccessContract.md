@@ -9,9 +9,12 @@ the public hosts on 2026-09-21 (read-only requests; the only POSTs were empty-bo
 
 ## 1. The rule
 
-> Same proven identity, same path, same operation, same state → same result, through either door.
+> Same proven identity, path, operation, state **and capabilities granted to the caller** → same result,
+> whichever door the request came through.
 
 - The door carries the request. **The state of the tree decides** what an identity may read or write.
+- "Caller" is the page (or program) making the request. The doors `netget.site` and `cleaker.me` do not change what
+  you may do; but an external page does not inherit everything you can do either: it has only what you granted it.
 - Without a session, both doors receive an anonymous request and apply the same rules.
 - Having an account is not enough: **each request must prove the identity** it acts as. A browser session is not
   shared automatically between domains (section 2 says where the identity lives instead).
@@ -23,10 +26,18 @@ the public hosts on 2026-09-21 (read-only requests; the only POSTs were empty-bo
 - Authenticating and authorizing a page are different things: it is still the same person, and each site can use
   only the capabilities that person granted it.
 - The present implementation keeps sessions and vaults **per origin** (browser storage). That is a limitation of the
-  implementation, not the behaviour sought. This contract only requires that the proof arrive with the request; how a
-  page obtains it from the runtime belongs to the identity-vault / runtime migration, not to this document.
-- Open: when no local monad is running (another device), which monad holds the session. Default in the identity-vault
-  design: the serving monad. Not decided here.
+  implementation, not the behaviour sought. This contract only requires that the proof, and the capabilities granted
+  to the calling page, arrive with the request.
+
+Two separate pieces of work, not to be merged:
+
+| | Local runtime | Vault B |
+|---|---|---|
+| What it does | Keeps namespace, identity and session; offers each page the capabilities granted to it | Recovers encrypted material to open a session where you do not have one yet |
+| Needed to keep moving between domains with an already-authenticated local monad | **Yes** | **No** |
+| Where it is specified | the runtime migration (this contract only depends on its outcome) | `identity-vault-design.md` (monad, branch `design/identity-vault`) |
+
+Connecting a page to the local monad's session is therefore not part of Vault B.
 
 ## 3. What a door may and may not do
 
@@ -90,6 +101,8 @@ two or more hostnames). For every route of section 5:
   `/openresty-status` (anonymous), every write with a valid session (netget.site);
 - assert that spoofing a door changes nothing: `Host: localhost`, `X-Forwarded-Host`, a loopback peer address, a
   forged internal-token header sent from outside;
+- assert that a page **without a grant** does not inherit the identity's capabilities: the same identity, same route,
+  same operation, called from a page that was granted less (or nothing) gets the result for what it was granted;
 - assert that transport protections still hold and decide nothing else: a foreign-origin browser call is refused for
   every identity; TLS/redirect behaviour is unchanged; a session presented from an origin that was not granted the
   capability is refused (this last case depends on the runtime side of section 2).
@@ -102,7 +115,8 @@ two or more hostnames). For every route of section 5:
 2. **Machine capabilities.** The exact list, from an inventory of the internal callers (monad heartbeat, netget CLI,
    Lua handlers, `monads` CLI).
 3. **Apps registry.** Move `apps.json` into the tree, or expose it as a view whose read rule is a tree path.
-4. **Session holder without a local monad** (section 2).
+4. **Session holder without a local runtime** (another device). A different scenario from the one this contract
+   defines (an already-authenticated local runtime); it belongs to Vault B and does not block this contract.
 
 ## 8. Order after acceptance (not started)
 

@@ -151,9 +151,21 @@ merged to `main` or deployed:**
    build behind a proxy that mirrors nginx's real `/apps/<name>/(.*)` passthrough, against a real monad; killing the
    monad and reloading shows the explicit state.
 
-Still open: parametrizing THIS installation's own boot configuration (the `/apps/netget` literal above). Not part
-of this: unifying the rest of the administrative routes (section 5), and none of this was deployed to the
-VM.
+Still open: parametrizing THIS installation's own boot configuration (the `/apps/netget` literal above).
+
+**Doors migration step 3, closed:** once a mount reference is resolved (by either path above), netget's own
+`App.jsx` now renders the SAME document-driven shell `cleaker.me`'s door already used (`CleakerLanding`), with
+Dashboard/Domains/Logs added as this app's own document extension — not a second, hand-written admin UI (netget
+branch `feat/gateway-uses-root-shell`). `/netget` (status + claim) needed no new wiring: it already exists in the
+base document. Disclosed, not hidden, behaviour changes this causes: `/` now renders the base document's Landing on
+every door alike (mergeGuiDocument refuses to let an extension override a route the base already serves — the
+status/claim screen moves to `/netget`, matching cleaker.me, rather than being lost); Users/Blockchain/URL now also
+read from this gateway's own monad, previously absent here; the `.me` launcher hardcoded to `local.cleaker`
+(FrontEndNavigation.md's flagged contradiction) is gone with the shell that carried it. Verified end to end:
+`/dashboard`, `/domains`, `/logs`, `/netget` each render their real, distinct content through the merged document.
+
+Not part of this: unifying the rest of the administrative routes (section 5), any encrypted/portable app storage
+(a related idea under discussion, not this contract), and none of this was deployed to the VM.
 
 ## 8. Open decisions
 

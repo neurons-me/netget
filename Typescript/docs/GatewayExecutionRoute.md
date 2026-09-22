@@ -58,10 +58,10 @@ namespace resolution *produces*. Which document loads (netget's admin bundle vs.
 app this is — authored, fixed, decided by which entry point was opened — exactly `GatewayAccessContract.md` §8's
 own corrected model: *"Document — authored, fixed, decided by which bundle/entry point this is... Namespace — a
 CONNECTION the document makes, a parameter."* What this design's mesh resolution decides is only the middle two
-layers of the diagram above — which transport, which runtime — never the top layer. A namespace's own tree MAY
-one day store or point at a document (the diagram doesn't rule that out), but that is optional future
-infrastructure, not a requirement this design imposes; a document is equally valid pre-authored and deployed, as
-every document is today.
+layers of the diagram above — which transport, which runtime — never the top layer. A document does not have to
+be a *result* of resolution, but it can also be stored and obtained from the tree — that storage question is
+separate from the point being made here: independence means the CONNECTED context never automatically redefines
+which app this is, not a claim about where a document's bytes happen to live.
 
 `netget`'s job, per `CLAUDE.md`'s own description, stays exactly "OpenResty config generation. Routes hostnames
 → monads via `surface_proxy.lua`." Its admin content ended up parallel to that mechanism because bootstrapping

@@ -205,3 +205,40 @@ existing namespace.
 label, identity, state and transport, on one explicitly-pinned destination. It does not demonstrate safe
 selection among several candidate monads, nor a hot namespace change on an already-open connection — both stay
 later steps, not attempted here.
+
+### One alias in disposable OpenResty, 2026-09-22 — the last bounded check of this walkthrough
+
+Same disposable monad pattern (isolated `MONADS_HOME`, explicit namespace `gwroute-alias-test.local`,
+explicit generated + persisted `SEED`), this time reached through one real OpenResty `server{}` block on a
+disposable port and prefix (`openresty -c /tmp/.../nginx.conf`, never the machine's own installed instance —
+confirmed still running, untouched, before and after). One `location /` proxying to the monad's own port —
+no `apps.json` lookup, no recency selection, exactly as asked.
+
+- **Mount reference + known value, through the alias**: `GET /__provider` and `/__provider/resolve` via the
+  alias (Host header matched against `server_name`) returned the same namespace and the same value already
+  proven direct-to-monad above.
+- **Restart, through the alias**: `monads restart`, then the same two reads through the alias again — same
+  `identity_hash`, same namespace, same value.
+- **Runtime off, through the alias**: `monads stop`; the alias itself now returns a real `502 Bad Gateway`
+  (nginx's own honest signal, not a hang or a stale cache); `fetchMountReference()` — the real shipped
+  function, connected to the alias's actual port with the alias's Host header, not simulated — read that 502
+  and returned `{ status: 'unresolved', reason: 'FETCH_FAILED', detail: 'HTTP 502' }`. The same explicit,
+  non-fabricated state as the direct-to-monad case, now proven to survive one more hop through a real proxy.
+
+**A real finding, worth recording precisely before the next step, not glossed over**: getting the alias to
+resolve the right namespace at all required the Host value to be the EXACT namespace string
+(`gwroute-alias-test.local`), matched by `readLocalIdentityNamespace()`'s existing check against
+`MONAD_SELF_HOSTNAME` (set by the process manager to the namespace itself). A first attempt using a
+genuinely *different*-looking alias name (as `local.netget` is to `local.cleaker` in the real case §1
+describes) resolved to `"unknown"` — correctly, by the security reasoning already in that function's own
+comment (an unrecognized Host must never be trusted as a namespace selector). `MONAD_SELF_TAGS` is the
+existing extension point for additional dotted alias names, but it is process-manager-managed today (not
+settable via `monads env`, and auto-filled with non-dotted values that its own filter excludes) — so
+**multiple genuinely different alias strings resolving to one namespace is not yet configurable at all**,
+separate from and prior to the recency-selection question §3.1/§3.3 already name. Not fixed here — this
+walkthrough deliberately used the namespace itself as the one alias, matching what was asked
+("sin ampliar a más alias"); the multi-alias case is real, unsolved, and now precisely located for whenever
+that later step comes.
+
+Cleaned up after: disposable OpenResty stopped, disposable monad deleted, all temp files removed. Confirmed
+after cleanup: the machine's own OpenResty (pid unchanged) and the real `netget` monad were never touched.

@@ -283,7 +283,7 @@ const VALID_RETURN_PATH = '/';
 }
 
 // 5b-2) "/netget" is the one deliberate second entry in
-// ALLOWED_CLAIM_RETURN_PATHS — the disposable cleakerHome demo pilot
+// ALLOWED_CLAIM_RETURN_PATHS — the disposable namespaceHome demo pilot
 // mounts GatewaySetup there (its own "/" is reserved for the real
 // CleakerLanding) — and must be accepted exactly like "/".
 {

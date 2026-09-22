@@ -361,8 +361,8 @@ export function verifyClaimCallback(state: string, returnOrigin: string, returnP
 
 // GatewaySetup.tsx's real production mount is netget's own root path
 // (App.jsx: `<Route path="/" element={<GatewayEntry />} />`). The one
-// deliberate exception is the disposable `cleakerHome` demo pilot
-// (packages/GUI/Typescript/demo/cleakerHome.main.tsx), which reserves "/"
+// deliberate exception is the disposable `namespaceHome` demo pilot
+// (packages/GUI/Typescript/demo/namespaceHome.main.tsx), which reserves "/"
 // for the real, unmodified CleakerLanding and mounts GatewaySetup at
 // "/netget" instead — netgetSetupClient.ts's `returnPath` override exists
 // specifically for that caller. This is still a real, exhaustive

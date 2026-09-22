@@ -13,12 +13,12 @@
 // /logs, /ip-info, /main-server-namespace AND /setup/verify-code,
 // /setup/challenge, /setup/claim, with nothing hand-rolled.
 //
-// Drives the cleakerHome demo pilot's "/netget" route tree: GatewaySetup
+// Drives the namespaceHome demo pilot's "/netget" route tree: GatewaySetup
 // (unclaimed) hands off, once claimed, to MainServerView + LogsView --
-// all real components, never demo-only stand-ins. The cleakerHome demo
+// all real components, never demo-only stand-ins. The namespaceHome demo
 // itself is the single origin for BOTH the "netget" surface (this
 // harness's endpoint) and the "Cleaker" surface (the real CleakerLanding
-// already mounted at cleakerHome's "/") -- so, unlike the two-port
+// already mounted at namespaceHome's "/") -- so, unlike the two-port
 // claim/logs harnesses, there is only ONE demo origin here, seeded into
 // this harness's own xConfig so /main-server-namespace resolves back to
 // it (see the xConfig write below).
@@ -74,7 +74,7 @@ const OPERATOR_MONAD_ORIGIN = process.env.HARNESS_OPERATOR_MONAD_ORIGIN || 'http
 // real authority actually lives. Set explicitly so the demo's own display
 // stays honest, not because the two concepts have been unified.
 process.env.NETGET_MONAD_NAMESPACE = OPERATOR_NAMESPACE;
-// The cleakerHome demo's own single origin -- both the real CleakerLanding
+// The namespaceHome demo's own single origin -- both the real CleakerLanding
 // ("/") and this harness's Netget surface ("/netget") are served from
 // here. Seeded into xConfig below so /main-server-namespace resolves back
 // to it, which is what makes CleakerNetgetClaimView's and
@@ -165,7 +165,7 @@ console.log(`[harness] NGINX_LOGS_PATH=${fakeLogsDir}`);
 }
 
 // One origin here (unlike the two-port claim/logs harnesses): the
-// cleakerHome demo serves both the Netget surface and the real
+// namespaceHome demo serves both the Netget surface and the real
 // CleakerLanding from the same dev server.
 const app = createLocalNetgetTestApp({ cors: { origin: [DEMO_ORIGIN] } });
 app.use('/', setupSessionRoutes);
@@ -214,5 +214,5 @@ app.listen(HARNESS_PORT, '127.0.0.1', () => {
   console.log(`[harness] xConfig.mainServerName seeded to ${DEMO_ORIGIN} -- claim/admin-sign redirects will land back there`);
   console.log(`[harness] POST /harness/new-setup-code to mint a setup code for GatewaySetup's UI`);
   console.log(`[harness] POST /harness/grant-admin {identityHash, username} to grant a signed-in identity 'gateway:read' for LogsView`);
-  console.log(`[harness] expects the cleakerHome demo at ${DEMO_ORIGIN} (DEMO=true DEMO_ROLE=cleakerHome DEMO_NETGET_ORIGIN=${DEMO_ORIGIN} npx vite --port 5178) pointed here via ?netgetEndpoint=http://127.0.0.1:${HARNESS_PORT}`);
+  console.log(`[harness] expects the namespaceHome demo at ${DEMO_ORIGIN} (DEMO=true DEMO_ROLE=namespaceHome DEMO_NETGET_ORIGIN=${DEMO_ORIGIN} npx vite --port 5178) pointed here via ?netgetEndpoint=http://127.0.0.1:${HARNESS_PORT}`);
 });

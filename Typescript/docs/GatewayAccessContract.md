@@ -122,17 +122,28 @@ resolving where you are and being authorized to act there stay two separate step
 - **Transport is separate from the reference.** Where you ask the provider (which origin, which proxy path) is not
   the same fact as where the reference says you are mounted. `netget.site`'s own `/apps/<name>/...` proxy forwards
   any tail to that monad [conf, confirmed: `location ~ ^/apps/([^/]+)(/.*)?$`], so `GET /apps/netget/__provider`
-  reaches it — but `netget` there is THIS installation's own monad name, a fact of how this gateway is configured,
-  never a name a standalone file may hardcode. `fetchMountReference(providerOrigin, …)` [code:
-  `this.gui/runtime/mountReference.ts`] takes that origin as a plain parameter and never reads `window.location` —
-  the caller supplies it as boot configuration, the same way `cleakerEndpoint` is already required rather than
-  guessed (see `CleakerLanding.tsx` §2059).
+  reaches it — but `netget` there is THIS installation's own monad name, a fact of how this gateway is configured.
+  `fetchMountReference(providerOrigin, …)` [code: `this.gui/runtime/mountReference.ts`], the general resolver, takes
+  that origin as a plain parameter and never reads `window.location` or hardcodes an app name. The concrete caller
+  (netget's own `App.jsx`) still supplies `"/apps/netget"` as a literal, the same way it already hardcodes
+  `cleakerEndpoint="http://local.cleaker"` for local dev — **still open**: parametrizing this installation's own
+  boot (so the literal moves to configuration netget.site is served with, not source) is not done.
+- **Injection and discovery describe the same thing, including an interior node.** Both paths accept the same
+  `?nodePath=`: `GET /?nodePath=…` (or any unmatched path, netget's catchAll) injects it, `GET
+  /__provider?nodePath=…` [code: `providerSurface.ts`] discovers it — a page the monad serves is not limited to
+  describing its own root the way a standalone file fetching it is not either.
+- **`nodePath` is load-bearing for reads, not a label.** `GET /__provider/resolve?path=…&nodePath=…` composes the
+  read UNDER the node — `path=title` at `nodePath=dashboard/status` reads `dashboard/status/title`, never the
+  namespace's own root `title` — so two different real values at the root and at an interior node read back
+  correctly from each, and a value that exists only at one 404s through the other.
 
-**Both gaps closed — implemented and verified, not yet merged to `main` or deployed:**
+**Both original gaps closed, and the two the first pass left open also closed — implemented and verified, not yet
+merged to `main` or deployed:**
 
-1. `NamespaceProviderBoot.nodePath` (monad branch `feat/mount-reference-node-path`) — verified against a real monad:
-   an injected boot and a discovered one agree at a namespace root and at a handle host; discovery alone can also
-   resolve an interior node.
+1. `NamespaceProviderBoot.nodePath`, carried by both injection and discovery, and load-bearing for reads (monad
+   branch `feat/mount-reference-node-path`) — verified against a real monad: an injected boot and a discovered one
+   agree at a namespace root, at a handle host, AND at the same interior node; a relative read composes under that
+   node with real, different data proving it.
 2. `netget.site`'s standalone `index.html` now resolves its mount reference before rendering the gateway shell
    (GUI branch `feat/document-left-bar`'s `mountReference.ts`; netget branch `feat/mount-reference-gate`'s
    `GatewayMountBoundary` in `App.jsx`) instead of silently assuming it from the host. An unresolved reference shows
@@ -140,7 +151,8 @@ resolving where you are and being authorized to act there stay two separate step
    build behind a proxy that mirrors nginx's real `/apps/<name>/(.*)` passthrough, against a real monad; killing the
    monad and reloading shows the explicit state.
 
-Not part of this: unifying the rest of the administrative routes (section 5), and none of this was deployed to the
+Still open: parametrizing THIS installation's own boot configuration (the `/apps/netget` literal above). Not part
+of this: unifying the rest of the administrative routes (section 5), and none of this was deployed to the
 VM.
 
 ## 8. Open decisions

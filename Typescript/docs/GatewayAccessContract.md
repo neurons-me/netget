@@ -211,31 +211,52 @@ reachable, subject to permissions. In THIS deployment both doors mount the SAME 
 root (empty node path) — the simple case: both enter the root, netget.site may open an admin screen
 FIRST, but that initial screen must never limit navigation to the rest of the tree.
 
-**Fixed (netget branch `fix/document-by-mount-reference-not-host`, on top of `feat/gateway-uses-root-shell`):**
+**Two layers, composed, never conflated — the corrected model (user, 2026-09-22):**
 
-- `extensionApplies` now comes from the resolved mount reference, not `ROLE`. For netget.site
-  (unambiguously this app itself — no other namespace could load this exact static bundle without a
-  monad) the extension is this app's OWN local, bundled content: always present, never gated on a
-  network resolution succeeding. For a `cleaker` door (which could be ANY namespace's own page,
-  genuinely ambiguous) it applies only once the reference confirms this is the SAME gateway's own root
-  (`isGatewayMonad && nodePath === ''`) — synchronous for an injected boot, never left pending.
-- `GatewayMountBoundary` no longer blocks the whole shell. It is `useMountReference()` (a hook) plus a
-  small, non-blocking notice. **Local-first, corrected from the user's own model:** without a confirmed
-  mount, the interface still shows its own structure and local pages; only the parts that genuinely need
-  a live connection (MainServerView, the base document's namespace-declared sidebar layer,
-  GatewayDashboard's own fetches) show their own "not available" state — each already did, on its own,
-  without fabricating data.
+- **Document** — "I am this app, with this structure, these pages, my own content." Authored, fixed,
+  decided by which bundle/entry point this is. Loads and renders the same regardless of whether it ever
+  connects to anything.
+- **Namespace** — "this is the context I offer: data, identity, permissions, extensions." A CONNECTION
+  the document makes, a parameter, not a fact about which document it is. `documento autocontenido +
+  contexto conectado = app en ejecución`. The same document connected to namespace A shows A's data and
+  capabilities; connected to B, B's; unconnected, its own local content. Authorship of the document and
+  the namespace chosen to connect it to do not have to coincide, and in principle the connection can
+  change at runtime (needs per-context data/request/subscription isolation and re-resolved permissions
+  on switch — not built).
 
-**Verified, real browser + real monad:** an injected-boot door and a static-file door, same bundle —
-`/dashboard`, `/domains`, `/logs` are reachable through BOTH by direct navigation; disconnecting the
-provider and reloading either still renders the local shell AND the visited page's own structure (its
-own fetch failures shown honestly), never a blank page or the old full-screen block.
+**First fix attempt (netget branch `fix/document-by-mount-reference-not-host`) still conflated the two
+layers, just more subtly:** it gated `extensionApplies` on `isGatewayMonad && nodePath === ''` — i.e. on
+whether the CONNECTED namespace happened to be "this gateway's own root". That is the same class of bug
+as the original `ROLE`/hostname gate: the document was still being decided by a fact about the
+connection, not by which app this is.
+
+**Fixed properly (netget branch `fix/document-is-authored-not-connection-decided`, on top of the above):**
+netget's own pages (Dashboard/Domains/Logs) exist because this bundle IS netget's admin app
+(`ROLE === 'gateway'`, unconditional — a fact of which entry point this is, never of what a namespace
+connection resolves to). A `cleaker` door — even one that resolves the very SAME monad netget.site does —
+correctly does NOT carry netget's document; it is a different, separately authored app. `useMountReference()`
+now only describes the connection (namespace + node); nothing about which document/pages exist reads
+`isGatewayMonad` any more. `GatewayMountBoundary` stays non-blocking (local-first, from the first fix):
+without a confirmed connection the document still renders its own structure and local pages; only the
+parts that genuinely need the connection (MainServerView, the base document's namespace-declared sidebar
+layer, GatewayDashboard's own fetches) show their own "not available" state, never fabricating data.
+
+**Verified, real browser + real monad**, corrected once more after a real gap in the verification itself:
+the first pass addressed the injected-boot door by a bare IP (`127.0.0.1:<port>`), which silently fails
+`frontendRole`'s own `hostIsNamespace` check and falls through to the gateway role — masking exactly the
+bug being fixed. Re-addressed as `cleaker.me` (matching how `frontendRole` actually decides), confirmed:
+the cleaker-door never shows netget's nav items and `/dashboard` there falls back to the base Landing, not
+`GatewayDashboard` — even though it resolves the identical monad netget.site uses. The gateway-door still
+always carries its own document, connected or not; `/dashboard`, `/domains`, `/logs` reachable by direct
+navigation, and disconnecting the provider still renders the local shell and the visited page's own
+structure, never blank or a full-screen block.
 
 **Not done by this fix, named explicitly rather than implied by it passing:** the deeper equivalence this
 enables — that both doors resolve the SAME STABLE NAMESPACE IDENTITY (not just the same name, HTML or
 menu), and that the same route then returns the same node with the same authorization, through a live
-monad and real nginx (not the shared-definitions test of section 6/7, which stays a logic-only check).
-That is the equivalence test still owed, distinct from what closing this contradiction proves.
+monad and real nginx (not the shared-definitions test of section 6/7, which stays a logic-only check) —
+is the equivalence test still owed. Namespace as a person-changeable runtime parameter, with isolation
+across contexts, is a distinct, larger feature, not started.
 
 ## 9. The access guard: first piece done, not wired in, necessary but not sufficient on its own
 

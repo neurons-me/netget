@@ -167,16 +167,79 @@ read from this gateway's own monad, previously absent here; the `.me` launcher h
 Not part of this: unifying the rest of the administrative routes (section 5), any encrypted/portable app storage
 (a related idea under discussion, not this contract), and none of this was deployed to the VM.
 
-**Doors migration step 4, closed: the equivalence claim itself, tested.** `gatewayDoorEquivalence.test.ts` (netget
-branch `test/gateway-door-equivalence`) imports the REAL objects both doors render from — `GUI_DOCUMENT` unmerged
-(cleaker.me) and netget's own `GATEWAY_DOCUMENT_EXTENSION` merged on top (netget.site), the extension itself pulled
-out of `App.jsx` into a plain, JSX-free `gatewayDocument.js` so the test can import it directly rather than a copy.
-Proves: every route/sidebar item the base document declares renders through the identical component, id and label
-on both doors; the gateway's own additions are additive and never leak backwards onto cleaker.me's door; and the
-dynamic layer (what a namespace itself declares or hides, `resolveSidebarComposition`) composes identically through
-either door even though the two doors start from differently-sized builtin layers. Wired into `npm test`.
+**Correction (2026-09-22, user review) — step 3 as shipped contradicts section 1.** `GATEWAY_DOCUMENT_EXTENSION` is
+merged in `App.jsx` because `frontendRole({host, boot})` says `ROLE === 'gateway'` — a decision made from the
+HOSTNAME, not from the resolved mount reference. Section 1's rule is explicit: which door a request came through
+never decides what an identity may see. If both doors resolve to the SAME node with the same identity and
+capabilities, Dashboard/Domains/Logs should be available on BOTH; if they resolve to DIFFERENT nodes, a different
+interface is legitimate, but that difference must come from the mount reference (namespace + node path, section 7)
+and the document it selects, never from `window.location.hostname`. The right shape: the gateway's admin pages are
+the document a specific NODE declares (e.g. an admin-app node under the installation's own branch), and whichever
+door's resolved mount reference points at that node renders them — cleaker.me's door would too, if it ever resolved
+there. **Not fixed. Tracked here as its own open item (below), related to but not solved by the access guard.**
 
-## 8. Open decisions
+**Doors migration step 4, done, scope corrected (2026-09-22, user review): equivalence of the SHARED DEFINITIONS,
+not closure of the migration.** `gatewayDoorEquivalence.test.ts` (netget branch `test/gateway-door-equivalence`)
+imports the REAL objects both doors render from — `GUI_DOCUMENT` unmerged (cleaker.me) and netget's own
+`GATEWAY_DOCUMENT_EXTENSION` merged on top (netget.site), the extension itself pulled out of `App.jsx` into a plain,
+JSX-free `gatewayDocument.js` so the test can import it directly rather than a copy. What it shows: every
+route/sidebar item the base document declares keeps the identical component, id and label whether read unmerged or
+merged; the dynamic layer (what a namespace itself declares or hides, `resolveSidebarComposition`) composes the
+same way regardless of which door's builtin layer it lands on. What it does **not** show, stated explicitly rather
+than implied by the passing result: that a browser actually mounts the named component correctly (same component
+NAME is not proof of correct mounting — only this session's separate, uncommitted, manual Playwright checks touched
+real rendering); anything about the COMPILED package the app consumes (`this.gui/runtime`'s dist stays unverified —
+this test had to import GUI package SOURCE directly because the dist doesn't run under plain Node, see below); real
+reads, real permissions, or equivalence through nginx (the dynamic-layer check runs on a hand-built fixture, no live
+monad, no HTTP/proxy layer). Call this "equivalence of the shared definitions" — a real, useful, permanent
+regression check — not proof the doors are equivalent in section 1's sense. Wired into `npm test`.
+
+Found while writing this test, recorded, not fixed: the published `this.gui/runtime` dist bundle does not run under
+plain Node/tsx (bundles unrelated MUI-touching chunks into the same import even for MUI-free functions) — worth its
+own fix so a future consumer isn't forced to import from source across the repo boundary the way this test does.
+
+## 8. The access guard: first piece done, not wired in, and does not fix the document-by-host contradiction
+
+Neither Lua's loopback check nor `adminGate.mjs`'s single coarse `gateway:write` scope is what section 1 requires:
+the first ignores identity and capabilities entirely; the second checks identity but collapses every write into one
+undifferentiated scope, and only cleaker.me's door ever reaches it. **Moving Lua's rule list into a JavaScript list
+would repeat the same mistake in a different language — the fix is both doors consulting the same tree-derived
+answer, not a second hardcoded list anywhere.**
+
+That tree-derived answer already exists, mostly unused: `daemon.gateways.<gatewayId>` (`gatewayAuthority.ts`) is
+real, signed, kernel-backed state with `owner`, `admins` and `grants` (opaque scope strings per identity — "never a
+netget-specific type", the file's own words). `capabilitiesOf`/`hasGatewayCapability` (monad branch
+`feat/gateway-capabilities`, `claim/gatewayCapabilities.ts`) is the single question every route's own check should
+reduce to: what does THIS identity hold, per THIS record — the owner unconditionally (`'all'`; confirmed real that
+`bootstrapGatewayAuthority` leaves the owner's own `grants` entry empty, so owner authority is never expressed as a
+grant), an admin exactly the scopes in `grants[identityHash]`, anyone else nothing. Verified against a real,
+signed record produced by the actual bootstrap/grant/revoke HTTP + Ed25519 flow (`gatewayCapabilities.test.ts`), not
+a hand-typed fixture: owner keeps `'all'` even with an empty grants array; a granted admin has exactly what was
+granted, nothing more; a revoked admin has nothing, immediately; an unrelated identity or an unbootstrapped gateway
+fails closed rather than throwing. `readGatewayAuthority`/`GatewayAuthorityRecord` are newly exported from the
+package's public surface so `netget/gateway` — mounted INTO the same monad process — can consult canonical state
+directly, in-process, instead of through its own materialized cache (`GatewayClaimsManager`) the way
+`adminGate.mjs`'s current `isOwner` check does today.
+
+**This is the primitive, not the guard.** Still needed, none of it done here:
+
+1. Reclassify every route in section 5's table onto a NAMED capability (`domains:write`, `openresty:control`,
+   `apps:report`, …) instead of one coarse `gateway:write` — a real design pass over the actual route table, not
+   invented in passing.
+2. Wire `adminGate.mjs` to call `hasGatewayCapability` per the route's own named capability instead of its current
+   single-scope check.
+3. `netget.site` sends these routes to the monad (section 9's own step 3, already planned) so Lua stops deciding
+   anything and the SAME check governs both doors — not a second implementation of the same idea in Lua.
+4. The machine identity (section 4) becomes a REAL identity with its OWN `grants` entry in this same record (a
+   synthetic identityHash, each capability tied to a real caller: heartbeat, netget CLI, `monads` CLI) instead of
+   `isInternalRequest`'s blanket bypass — "local" stops being a capability in itself.
+
+**The document-by-host contradiction above is a separate, related problem this guard does not fix.** The guard
+governs WHO may do WHAT; it says nothing about WHICH document a door renders. Both need the same underlying idea
+(decide from the resolved reference — namespace/node for the document, identity/capability for the guard — never
+from the door), but closing one does not close the other.
+
+## 9. Open decisions
 
 1. **Default disclosure.** Which fields of the public reads are closed to an anonymous identity by default
    (certificate paths, working directories, binary and directory paths are the candidates). Written as tree state,
@@ -186,12 +249,21 @@ either door even though the two doors start from differently-sized builtin layer
 3. **Apps registry.** Move `apps.json` into the tree, or expose it as a view whose read rule is a tree path.
 4. **Session holder without a local runtime** (another device). A different scenario from the one this contract
    defines (an already-authenticated local runtime); it belongs to Vault B and does not block this contract.
+5. **Document-by-host contradiction (section 8).** Netget's admin pages are merged by `ROLE`/hostname, not by the
+   resolved mount reference's node. Needs: what node they actually belong to, and how a door decides which document
+   to render from a resolved reference instead of from `window.location.hostname` -- not solved by the access
+   guard, and not solved here.
 
-## 9. Order after acceptance (not started)
+## 10. Order after acceptance (not started)
 
 1. Inventory the data and the internal callers; fill section 5's last column with real paths.
-2. One guard, a function of (proven identity, path, operation) over tree state, used by both doors.
+2. One guard, a function of (proven identity, path, operation, **capability**) over tree state, used by both doors --
+   `capabilitiesOf`/`hasGatewayCapability` (section 8) is the first piece; still needed: the per-route capability
+   table, wiring `adminGate.mjs` to it, and the machine identity as a real granted identity.
 3. `netget.site` sends these routes to the monad (as `/gateway-identity` already does) and stops deciding in Lua; keep
    the nginx loopback limits on destructive routes as a second layer until the equivalence tests pass.
 4. The dashboard presents the proof it has instead of calling routes that cannot authorize it.
-5. The equivalence tests become part of `npm test`.
+5. The equivalence tests become part of `npm test` (the shared-definitions test, section 6/7, already is; the
+   identity/capability equivalence table of section 6 is not).
+6. Separately: the document a door renders comes from the resolved mount reference's node, never from the hostname
+   (open decision 5) -- needed before netget.site's admin pages stop being a host-based special case.

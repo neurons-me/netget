@@ -30,6 +30,14 @@ export function isGatewayMonad(boot) {
   return Array.isArray(boot && boot.modules) && boot.modules.includes(GATEWAY_MODULE);
 }
 
+// Where under `namespace` this boot's own page is mounted -- '' at the namespace's own root, a
+// slash-form path at an interior node (GatewayAccessContract.md §7's mount reference). Never
+// derived from the host; the monad states it, the same way GET /__provider does for a page that
+// has to fetch it instead of being handed it.
+export function bootNodePath(boot) {
+  return String((boot && boot.nodePath) || '').trim();
+}
+
 // Is this page loaded from the namespace the monad serves -- its root, www, or a
 // handle under it (cleaker.me, www.cleaker.me, ana.cleaker.me)?
 export function hostIsNamespace(host, boot) {

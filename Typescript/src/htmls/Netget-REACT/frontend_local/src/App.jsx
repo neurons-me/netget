@@ -10,7 +10,7 @@ import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
-import { readProviderBoot, frontendRole, namespaceEndpoint } from './session/providerBoot.js';
+import { readProviderBoot, frontendRole, namespaceEndpoint, isGatewayMonad, bootNodePath } from './session/providerBoot.js';
 import { GATEWAY_DOCUMENT_EXTENSION } from './session/gatewayDocument.js';
 
 // Home/Domains/Logs are plain components that take no props, so they never forward
@@ -37,52 +37,58 @@ const GATEWAY_PAGE_REGISTRY = {
   PrivacyPolicy: () => <MediaPage><PrivacyPolicy /></MediaPage>,
 };
 
-// This page had NO boot injected (no monad served it -- netget.site's own index.html is a plain static
-// file, GatewayAccessContract.md §7's gap 2): it cannot assume where it is mounted in `.me` from its
-// hostname, so it fetches the same mount reference an injected boot would have carried
-// (`GET <providerOrigin>/__provider`, this.gui/runtime's fetchMountReference) before rendering the
-// gateway shell. `providerOrigin` is this app's own boot configuration (netgetMonadTransportOrigin(),
-// already the address every other request on this page uses) -- never guessed from window.location, and
-// this component reads no hostname either. An unresolved reference shows an explicit state instead of
-// silently rendering the shell as if resolution had succeeded.
-//
-// This does not "discover" where the page belongs on its own initiative -- it asks the provider this
-// app was configured with, the same way a reference handed down by a router (netget's own domain
-// routing, still a separate idea, not built here) would arrive already resolved instead of fetched.
-// Either way, once a reference is in hand, the shell below works the same.
-function GatewayMountBoundary({ children }) {
-  const [reference, setReference] = useState(() => (PROVIDER_BOOT ? { status: 'resolved' } : { status: 'checking' }));
+// Never a full-page gate: "unresolved" means this page could not confirm its own place in the
+// namespace right now, not that it has nothing to show. Local structure and pages render regardless
+// (GatewayAccessContract.md §8 correction) -- only the parts that genuinely need a live connection
+// (MainServerView, the base document's namespace-declared sidebar layer, GatewayDashboard's own
+// fetches) show their own "not available" state, each already doing that on its own. This is only a
+// small, non-blocking note that a connection wasn't confirmed.
+function MountReferenceNotice({ reference }) {
+  if (reference.status !== 'unresolved') return null;
+  return (
+    <div style={{ padding: '4px 16px', fontSize: 12, opacity: 0.6, borderBottom: '1px solid rgba(127,127,127,0.2)' }}>
+      Not connected to this gateway's own namespace ({reference.reason}) — showing local content only.
+    </div>
+  );
+}
+
+// The mount reference (GatewayAccessContract.md §7): namespace + node path, and whether that
+// namespace is this installation's own gateway monad. For a page the monad injected a boot into,
+// this is already in hand (synchronous, no fetch). For a standalone file (netget.site's static
+// index.html), it is fetched once from the SAME configured provider every other request on this
+// page already uses (netgetMonadTransportOrigin(), never window.location). A resolution reached
+// through `/apps/netget` is, by the same convention netgetMonadTransportOrigin() already relies on,
+// this installation's own gateway monad -- not a guess this hook adds on its own.
+function useMountReference() {
+  const [reference, setReference] = useState(() =>
+    PROVIDER_BOOT
+      ? {
+          status: 'resolved',
+          namespace: PROVIDER_BOOT.namespace,
+          rootNamespace: PROVIDER_BOOT.rootNamespace,
+          nodePath: bootNodePath(PROVIDER_BOOT),
+          isGatewayMonad: isGatewayMonad(PROVIDER_BOOT),
+        }
+      : { status: 'checking' }
+  );
 
   useEffect(() => {
     if (PROVIDER_BOOT) return undefined; // already have a description; nothing to fetch
     let cancelled = false;
     fetchMountReference(netgetMonadTransportOrigin()).then((result) => {
-      if (!cancelled) setReference(result);
+      if (cancelled) return;
+      setReference(
+        result.status === 'resolved'
+          ? { status: 'resolved', namespace: result.namespace, rootNamespace: result.rootNamespace, nodePath: result.nodePath, isGatewayMonad: true }
+          : result
+      );
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (reference.status === 'checking') {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div className="spinner" />
-      </div>
-    );
-  }
-  if (reference.status === 'unresolved') {
-    return (
-      <div style={{ maxWidth: 480, margin: '15vh auto', padding: '0 24px', textAlign: 'center' }}>
-        <h2 style={{ marginBottom: 8 }}>Can't tell where this gateway is in the namespace</h2>
-        <p style={{ opacity: 0.7, marginBottom: 4 }}>
-          This page could not resolve its own mount reference ({reference.reason}).
-        </p>
-        {reference.detail ? <p style={{ opacity: 0.5, fontSize: 13 }}>{reference.detail}</p> : null}
-      </div>
-    );
-  }
-  return children;
+  return reference;
 }
 
 // Three distinct jobs, decided by where this page was loaded (see
@@ -102,13 +108,16 @@ function GatewayMountBoundary({ children }) {
 //     the fuller local.host/@user/namespace grammar this is a first step
 //     toward: today this is a fixed view, not yet real path resolution.
 //   gateway  → everything else (local.netget, netget.site, the machine
-//     hostname, ...): the SAME shell cleaker's door renders, with this app's
-//     own pages (Dashboard/Domains/Logs) merged on top -- not a second,
-//     hand-written admin app. `/` still renders the base document's Landing
-//     (sign-in), same as any other door: an extension may add parts, never
-//     replace the one the base already serves at `/` (mergeGuiDocument's own
-//     rule, tested). Which door's default screen is administration is a
-//     real, separate decision -- not made here.
+//     hostname, ...): the SAME shell cleaker's door renders.
+//
+// Which door renders netget's own extra pages (Dashboard/Domains/Logs) is decided by the RESOLVED
+// mount reference, never by ROLE/hostname (GatewayAccessContract.md §8 correction: this was the
+// door-decides-content violation section 1 rules out). In this deployment both doors resolve the
+// SAME namespace at its own root, so both get the extension -- a door onto some OTHER namespace's
+// own monad (isGatewayMonad false there) correctly does not. `/` still renders the base document's
+// Landing on every door alike (mergeGuiDocument refuses to let an extension override a route the
+// base already serves) -- which door's INITIAL screen is administration is a separate, further
+// decision, not this one.
 const HOST = typeof window !== 'undefined' ? window.location.hostname : '';
 const PROVIDER_BOOT = readProviderBoot();
 const ROLE = frontendRole({ host: HOST, boot: PROVIDER_BOOT });
@@ -125,30 +134,45 @@ const CLEAKER_ENDPOINT = HOST === 'local.cleaker'
 // same as every other door.
 const GATEWAY_ENDPOINT = typeof window !== 'undefined' ? window.location.origin : '';
 
-const App = () => (
-  <SeedSessionProvider
-    transportOrigin={netgetMonadTransportOrigin()}
-    resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-    sessionBackend="cleaker"
-  >
-    <LauncherPopoverProvider>
-      {ROLE === 'cleaker' ? (
-        <CleakerLanding cleakerEndpoint={CLEAKER_ENDPOINT} netgetMonadOrigin={CLEAKER_MONAD_ORIGIN} />
-      ) : ROLE === 'host' ? (
-        <HostSurface endpoint={netgetMonadTransportOrigin()} />
-      ) : (
-        <GatewayMountBoundary>
-          <CleakerLanding
-            cleakerEndpoint={GATEWAY_ENDPOINT}
-            netgetMonadOrigin={netgetMonadTransportOrigin()}
-            document={GATEWAY_DOCUMENT_EXTENSION}
-            pages={GATEWAY_PAGE_REGISTRY}
-            footerExtras={[{ type: 'action', props: { label: 'Frontend Mode', element: <FrontendModeLauncher />, tooltip: false } }]}
-          />
-        </GatewayMountBoundary>
-      )}
-    </LauncherPopoverProvider>
-  </SeedSessionProvider>
-);
+const App = () => {
+  const reference = useMountReference();
+  // netget.site (ROLE 'gateway') unambiguously IS this app -- its own pages are local, bundled
+  // content, available regardless of whether the mount reference ever resolves (the "sin anclaje:
+  // muestra su documento local" case). A 'cleaker' door might be ANY namespace's own page, so THERE
+  // the extension only applies once the resolved reference confirms this is genuinely the same
+  // gateway's own root -- for an injected boot that confirmation is already synchronous (no network
+  // wait), never left pending.
+  const extensionApplies =
+    ROLE === 'gateway' || (reference.status === 'resolved' && reference.nodePath === '' && reference.isGatewayMonad);
+
+  return (
+    <SeedSessionProvider
+      transportOrigin={netgetMonadTransportOrigin()}
+      resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
+      sessionBackend="cleaker"
+    >
+      <LauncherPopoverProvider>
+        {ROLE === 'host' ? (
+          <HostSurface endpoint={netgetMonadTransportOrigin()} />
+        ) : (
+          <>
+            <MountReferenceNotice reference={reference} />
+            <CleakerLanding
+              cleakerEndpoint={ROLE === 'cleaker' ? CLEAKER_ENDPOINT : GATEWAY_ENDPOINT}
+              netgetMonadOrigin={ROLE === 'cleaker' ? CLEAKER_MONAD_ORIGIN : netgetMonadTransportOrigin()}
+              document={extensionApplies ? GATEWAY_DOCUMENT_EXTENSION : undefined}
+              pages={extensionApplies ? GATEWAY_PAGE_REGISTRY : undefined}
+              footerExtras={
+                extensionApplies
+                  ? [{ type: 'action', props: { label: 'Frontend Mode', element: <FrontendModeLauncher />, tooltip: false } }]
+                  : undefined
+              }
+            />
+          </>
+        )}
+      </LauncherPopoverProvider>
+    </SeedSessionProvider>
+  );
+};
 
 export default App;

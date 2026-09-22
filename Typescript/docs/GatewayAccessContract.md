@@ -289,6 +289,12 @@ is a distinct mechanism this primitive does not provide and does not exist anywh
 belongs with the runtime/session work section 2 already defers to. A route guard built on `hasGatewayCapability`
 alone is real progress, not the complete answer to section 1.
 
+**Designed, not implemented (2026-09-22, monad branch `design/page-grants`):** `page-grants-design.md` is that
+caller-level mechanism — the identity holds the capability AND gave it to this specific page (an `AND`, never an
+`OR`), the grant lives with the identity (not the gateway), identified by the caller's origin for v1 with that
+limit named explicitly against this session's own document/namespace model (§8: one app, several legitimate
+origins). Sent for review; nothing wired in.
+
 **This is the primitive, not the guard.** Still needed, none of it done here:
 
 1. Reclassify every route in section 5's table onto a NAMED capability (`domains:write`, `openresty:control`,

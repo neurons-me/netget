@@ -11,6 +11,7 @@ import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
 import { readProviderBoot, frontendRole, namespaceEndpoint } from './session/providerBoot.js';
+import { GATEWAY_DOCUMENT_EXTENSION } from './session/gatewayDocument.js';
 
 // Home/Domains/Logs are plain components that take no props, so they never forward
 // data-gui-node-id/data-gui-component to any DOM element -- renderGuiDocumentPage injects both onto
@@ -26,46 +27,8 @@ function withNodeAnchor(Component) {
   };
 }
 
-// What THIS app adds on top of the root GUI's document (GatewayAccessContract.md §7, doors migration
-// step 3): its own pages and their left-bar entries, merged into the same document cleaker.me's own
-// door already renders from -- not a second application. `/netget` (status + claim) is already in the
-// base document; nothing netget-specific needs to be added for it.
-const GATEWAY_DOCUMENT_EXTENSION = {
-  GUI: {
-    children: {
-      bars: {
-        children: {
-          left: {
-            children: {
-              dashboard: { label: 'Dashboard', to: '/dashboard', icon: 'dashboard' },
-              domains: { label: 'Domains', to: '/domains', icon: 'language' },
-              logs: { label: 'Logs', to: '/logs', icon: 'article' },
-            },
-          },
-        },
-      },
-      content: {
-        children: {
-          dashboard: {
-            label: 'Dashboard', component: 'Dashboard', route: '/dashboard',
-            note: 'Renders GatewayDashboard (netget.gui/compounds) — REST-polled (/gateway-identity, /apps), no kernel binding.',
-          },
-          domains: {
-            label: 'Domains', component: 'Domains', route: '/domains',
-            note: 'Domain routing CRUD — REST-backed (fetch to /domains, /add-domain, /delete-domain, /provision-cert), no kernel binding.',
-          },
-          logs: {
-            label: 'Logs', component: 'Logs', route: '/logs',
-            note: 'Nginx log viewer — REST-backed (fetch to /logs), optional client-side auto-refresh, no kernel binding.',
-          },
-          termsAndConditions: { component: 'TermsAndConditions', route: '/terms-and-conditions' },
-          privacyPolicy: { component: 'PrivacyPolicy', route: '/privacy-policy' },
-        },
-      },
-    },
-  },
-};
-
+// The document shape itself lives in gatewayDocument.js (plain data, no JSX) so
+// tests/gatewayDoorEquivalence.test.ts can import the REAL extension directly, not a copy of it.
 const GATEWAY_PAGE_REGISTRY = {
   Dashboard: withNodeAnchor(Home),
   Domains: withNodeAnchor(Domains),

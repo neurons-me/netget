@@ -1,18 +1,34 @@
 /**
- * gatewayDoorEquivalence.test.ts -- doors migration step 4 (GatewayAccessContract.md §7):
- * same namespace + identity → same sidebar items and same component per route, on either door.
+ * gatewayDoorEquivalence.test.ts -- equivalence of the SHARED DEFINITIONS between the base document
+ * (cleaker.me's door) and netget's own extension merged on top of it (netget.site's door). This is
+ * NOT a closure of the doors migration and NOT proof the two doors are equivalent in the sense
+ * GatewayAccessContract.md §1 means it (identity/path/operation/state/capabilities, never the door) --
+ * see the corrections below, made explicit rather than left implied by the file's own name.
  *
- * Imports the REAL objects both doors render from, not copies: `cleaker.me`'s door renders the GUI
- * package's own GUI_DOCUMENT unmerged; netget.site's door merges netget's own real
- * GATEWAY_DOCUMENT_EXTENSION (frontend_local/src/session/gatewayDocument.js) on top of it
- * (App.jsx). This proves the merge that actually ships, not a stand-in for it.
+ * What this genuinely shows, using the REAL objects both doors render from (not an invented copy):
+ * every route/sidebar item the BASE document declares keeps the same id/component/label whether read
+ * unmerged (as cleaker.me's door does) or merged with netget's extension (as netget.site's door does),
+ * and the dynamic namespace-declared layer composes the same way regardless of which door's builtin
+ * layer it is layered onto.
  *
- * "Equivalence" here does not mean "identical" -- netget.site's door legitimately adds Dashboard,
- * Domains and Logs, which cleaker.me's door does not have (GatewayAccessContract.md §7: "administrative
- * screens... don't have to use the API's prefix", and are declared as an app's own extension). What must
- * be identical is the SHARED part of the tree: every route/sidebar item the base document declares
- * renders through the exact same component, unchanged, on both doors; the gateway's extra items are
- * additive, never a replacement, and never leak backwards into cleaker.me's own door.
+ * What it does NOT show, and must not be read as showing:
+ *   - That a browser actually mounts the named component correctly -- same component NAME is not
+ *     proof of correct mounting; only a real render (this session's separate, uncommitted, manual
+ *     Playwright checks) touched that, and those are not repeatable here.
+ *   - Anything about the COMPILED package the app actually consumes (`this.gui/runtime`'s dist) --
+ *     this test imports the GUI package's SOURCE directly (see below) specifically because the dist
+ *     bundle does not run under plain Node, which means the dist itself stays unverified by this file.
+ *   - Real reads, real permissions, or equivalence through nginx -- resolveSidebarComposition here
+ *     runs on a hand-built ScopeData fixture, not a live monad, and no HTTP/proxy layer is in the loop.
+ *
+ * A separate, real problem this test's own passing result does NOT excuse (recorded in
+ * GatewayAccessContract.md, not fixed here): today Dashboard/Domains/Logs are merged into
+ * netget.site's door because of ROLE (`frontendRole({host, boot})`, App.jsx), not because of what node
+ * the resolved mount reference points at. That is exactly the door-decides-content violation §1 rules
+ * out. If both doors resolved to the SAME node with the SAME identity and capabilities, both should see
+ * these pages; a difference in what renders must come from a difference in the mount reference and the
+ * document, never from the hostname. This test cannot catch that, because it feeds each door its
+ * CURRENT, real (host-derived) document input rather than asserting what that input ought to be.
  */
 import assert from 'node:assert/strict';
 // Straight from source (not the published this.gui/runtime dist, which bundles unrelated MUI-touching
@@ -49,7 +65,9 @@ const gatewayDoor = mergeGuiDocument(GUI_DOCUMENT, GATEWAY_DOCUMENT_EXTENSION);
   }
   assert.ok(cleakerRoutes.size > 0, 'sanity: the base document actually declares routes');
 
-  // the gateway's own routes are ADDITIONS, not present on cleaker.me's door at all
+  // As currently wired (App.jsx, by ROLE/host -- see this file's own header), the gateway's own
+  // routes exist only on this door. That is a fact about today's code, not a claim that it is right:
+  // per section 1, which door served the page should never be why a route exists or doesn't.
   for (const extra of ['/dashboard', '/domains', '/logs']) {
     assert.ok(!cleakerRoutes.has(extra), `${extra}: must not leak onto cleaker.me's own door`);
     assert.ok(gatewayRoutes.has(extra), `${extra}: missing on the gateway door that declared it`);
@@ -76,7 +94,8 @@ const gatewayDoor = mergeGuiDocument(GUI_DOCUMENT, GATEWAY_DOCUMENT_EXTENSION);
         assert.deepEqual(match.props, el.props, `authenticated=${authenticated} ${slot}: "${el.props.id}" differs on the gateway door`);
       }
     }
-    // the gateway's own extra items are additions to `defaults`, not a replacement of cleaker's
+    // Same caveat as above: this documents what the current, host-derived wiring does, not an
+    // endorsement of deciding it by host.
     assert.ok(
       idsOf(gatewaySlots.defaults).length > idsOf(cleakerSlots.defaults).length,
       `authenticated=${authenticated}: the gateway door should have MORE default items, not the same set`

@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout, ThemeLauncher, LauncherPopoverProvider, GatewaySetup, createNetgetSetupClient } from 'this.gui';
-import { SeedSessionProvider, MeLauncher, CleakerLanding, HostSurface } from 'this.gui/react';
+import { SeedSessionProvider, MeLauncher, Namespace, HostSurface } from 'this.gui/react';
 import { DevToolsLauncher, SpecBoundary } from 'this.gui/devtools';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
@@ -204,7 +204,7 @@ const App = () => (
   >
     <LauncherPopoverProvider>
       {ROLE === 'cleaker' ? (
-        <CleakerLanding cleakerEndpoint={CLEAKER_ENDPOINT} netgetMonadOrigin={CLEAKER_MONAD_ORIGIN} />
+        <Namespace cleakerEndpoint={CLEAKER_ENDPOINT} netgetMonadOrigin={CLEAKER_MONAD_ORIGIN} />
       ) : ROLE === 'host' ? (
         <HostSurface endpoint={netgetMonadTransportOrigin()} />
       ) : (

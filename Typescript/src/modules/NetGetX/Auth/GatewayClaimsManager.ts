@@ -778,6 +778,21 @@ export class GatewayClaimsManager {
      * Calling on an already-bootstrapped gateway throws to prevent accidental
      * owner replacement.
      *
+     * LEGACY / self-owned-ledger installs only — same status as
+     * {@link grantAdmin}, {@link revokeAdmin} and {@link transferOwner}.
+     * The ledger write goes through the OLD, unsigned `writeToMonad()`
+     * path, which a real monad rejects by design: an unclaimed namespace
+     * refuses `netget.*` writes (`NETGET_PATH_REQUIRES_CLAIM`, monad's
+     * `isNetgetReservedPath` guard) and a claimed one requires a signature
+     * (`NAMESPACE_WRITE_FORBIDDEN`). It has no production caller; it is kept
+     * only for `gateway-claims.test.ts`'s self-owned-ledger coverage, which
+     * runs against an in-memory ledger client, and for the local-only
+     * `{ ledger: false }` mode. Never call it against a real monad. On a
+     * namespace-derived gateway, bootstrap through
+     * `gatewaySetupSession.ts`'s `commitSignedClaim` (which ends in monad's
+     * signed `/api/v1/gateway/:id/bootstrap`) and read the result back with
+     * {@link materializeFromGatewayAuthority}.
+     *
      * The bootstrapping identity is simultaneously set as:
      *   - `owner`
      *   - entry in `admins`

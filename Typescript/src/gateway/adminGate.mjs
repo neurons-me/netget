@@ -34,7 +34,6 @@ export const PUBLIC_ROUTES = new Set([
   'GET /port-info',
   'GET /cleaker/resolve',
   'GET /apps',
-  'GET /openresty-status',
   'GET /frontend-mode',
   'GET /apps/:name/frontend-mode',
 ]);

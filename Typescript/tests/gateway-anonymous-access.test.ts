@@ -41,6 +41,9 @@ const { classifyRoute, gatewayAdminGate, WRITE_SCOPE } = await import('../src/ga
 // ── 1. the policy ───────────────────────────────────────────────────────────
 assert.equal(classifyRoute('GET', '/domains'), 'public');
 assert.equal(classifyRoute('GET', '/main-server-namespace'), 'public');
+// operational state of the gateway's own infrastructure (mode, ports, binary, service): the operator's plane, not the
+// namespace's public one -- the Lua handler already answers 401 to anyone who is not on this machine
+assert.equal(classifyRoute('GET', '/openresty-status'), 'trusted');
 assert.equal(classifyRoute('POST', '/setup/claim'), 'own');
 assert.equal(classifyRoute('POST', '/admin-session/verify'), 'own');
 assert.equal(classifyRoute('GET', '/logs'), 'own');

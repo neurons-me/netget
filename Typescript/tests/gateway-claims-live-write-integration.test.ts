@@ -48,7 +48,7 @@ const { startNetgetMonad, getGatewayRootNamespace } = await import('../src/kerne
 const { GatewayClaimsManager } = await import('../src/modules/NetGetX/Auth/GatewayClaimsManager.ts');
 const { grantGatewayAdmin, revokeGatewayAdmin, transferGatewayOwner } =
   await import('../src/modules/NetGetX/Auth/gatewayAdminActions.ts');
-const { deleteMonadProcess, issueInstallationAuthorization, readMonadRecord } = await import('monad.ai');
+const { deleteMonadProcess, issueInstallationAuthorization, readMonadRecord, restartMonadProcess } = await import('monad.ai');
 // Same reasoning as admin-session-live-keychain.test.ts's identical import:
 // 'this.me' (published) lacks these newer primitives; reach the local
 // workspace build directly.
@@ -255,6 +255,42 @@ try {
   const realRevoke = await signedRevoke(owner, ownerKeyId, ownerKey, admin.identityHash);
   assert.equal(realRevoke.ok, true, `revokeGatewayAdmin must succeed: ${(realRevoke as any).message}`);
   assert.equal(mgr.read()?.admins[admin.identityHash], undefined, 'local cache reflects the revocation');
+
+  // Effective rejection, not just data disappearing from a display: the
+  // exact primitives a real access check calls must flip for the revoked
+  // identity while the owner stays intact. (gateway-revoke-admin.test.ts
+  // proved this via the LEGACY unsigned bootstrapOwner()/revokeAdmin() path
+  // against a real monad, which that monad now rejects by design: unclaimed
+  // namespaces refuse netget.* writes, claimed ones require signatures.)
+  assert.equal(mgr.isAdmin(admin.identityHash), false, 'revoked identity must no longer be recognized as admin');
+  assert.equal(mgr.hasScope(admin.identityHash, 'apps:read'), false, 'revoked identity must no longer hold any scope');
+  assert.deepEqual(mgr.getScopes(admin.identityHash), []);
+  assert.equal(mgr.isOwner(owner.identityHash), true, 'owner must be untouched by revoking a different identity');
+
+  // Authority branch read directly over HTTP (not through the manager's own
+  // materialization), so this doesn't just trust the cache it just wrote.
+  const authorityRes = await fetch(`${origin}/api/v1/gateway/${GATEWAY_ID}/authority`);
+  const authority = ((await authorityRes.json()) as any).record;
+  assert.equal(admin.identityHash in (authority.admins || {}), false, 'authority branch must not list the revoked admin');
+  assert.equal(admin.identityHash in (authority.grants || {}), false, "authority branch must not keep the revoked admin's grants");
+  assert.equal(authority.admins[owner.identityHash], true);
+  assert.equal(authority.owner, owner.identityHash);
+
+  // Persistence, the half the retired gateway-revoke-admin.test.ts existed
+  // for ("a revoked admin keeps coming back"). The signed revoke does NOT go
+  // through operator:'-' -- gatewayAuthority.ts's revokeGatewayAdmin() drops
+  // the keys from the in-memory record and kernelSet()s the whole record +
+  // saveSnapshot() -- so gateway-delete-operator-restart.test.ts doesn't
+  // cover it. A REAL process restart (same on-disk state) must not resurrect
+  // the revoked admin.
+  const restarted = await restartMonadProcess(TEST_MONAD_NAME);
+  assert.ok(restarted.pidAlive, `monad must actually be running after a real restart: ${restarted.error || restarted.status}`);
+  const restartedRecord = await readMonadRecord(TEST_MONAD_NAME);
+  assert.equal(restartedRecord?.endpoint, origin, 'restart must reuse the same port (the origin guard only allows that one)');
+  const authorityAfterRestart = ((await (await fetch(`${origin}/api/v1/gateway/${GATEWAY_ID}/authority`)).json()) as any).record;
+  assert.equal(admin.identityHash in (authorityAfterRestart.admins || {}), false, 'a revoked admin must stay revoked across a real process restart');
+  assert.equal(admin.identityHash in (authorityAfterRestart.grants || {}), false);
+  assert.equal(authorityAfterRestart.owner, owner.identityHash, 'owner survives the same restart');
 
   // Transfer requires the ACTING identity to be owner -- re-grant admin1
   // first (revoked above), then transfer to them, then confirm the

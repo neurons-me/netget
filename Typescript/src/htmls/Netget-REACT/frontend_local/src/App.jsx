@@ -129,14 +129,13 @@ const ROLE = frontendRole({ host: HOST, boot: PROVIDER_BOOT });
 // This document's own pages exist because of WHICH APP this is (ROLE), never because of what a
 // namespace connection resolves to -- see this file's own header.
 const IS_GATEWAY_DOCUMENT = ROLE === 'gateway';
-// The monad the landing reads its directory from (Users, Blockchain). On
-// local.cleaker that stays netget's own monad through /apps/netget (the
-// Namespace default); on a namespace served by its own monad it is that
-// monad, at the address the page came from.
-const CLEAKER_MONAD_ORIGIN = HOST === 'local.cleaker' || !PROVIDER_BOOT ? undefined : netgetMonadTransportOrigin();
-const CLEAKER_ENDPOINT = HOST === 'local.cleaker'
-  ? 'http://local.cleaker'
-  : namespaceEndpoint(PROVIDER_BOOT, typeof window !== 'undefined' ? window.location : null);
+// The monad the landing reads its directory from (Users, Blockchain). Only reachable for ROLE
+// 'cleaker' below, which (since frontendRole's fix above) now requires a REAL boot from a foreign
+// namespace's own monad -- so PROVIDER_BOOT is always truthy here, and `local.cleaker` (no boot at
+// all) never selects this branch any more. Left as `!PROVIDER_BOOT ? undefined : ...` rather than
+// assuming truthiness, so this stays correct if that invariant ever changes.
+const CLEAKER_MONAD_ORIGIN = !PROVIDER_BOOT ? undefined : netgetMonadTransportOrigin();
+const CLEAKER_ENDPOINT = namespaceEndpoint(PROVIDER_BOOT, typeof window !== 'undefined' ? window.location : null);
 // This document's OFFERED, default connection target -- the namespace this page's own address
 // suggests, not the only one it could ever connect to (see this file's own header). Namespace
 // re-verifies it (useVerifiedCleakerRoot) rather than trusting it outright, same as every other door.

@@ -48,11 +48,20 @@ export function hostIsNamespace(host, boot) {
 
 // One monad can be both a namespace and the gateway (its identities and the
 // gateway's authority must live on the same monad), so the monad alone does not
-// say which screens a page gets -- the address does: the namespace's own hosts
-// get the Cleaker app (which reaches the gateway at /netget), any other host
-// the monad answers for (netget.site) the admin screens.
+// say which screens a page gets -- the address does, but only through a REAL
+// boot: `local.cleaker` used to be a second, hardcoded way in ('cleaker'
+// unconditionally, before ever checking boot), which is exactly the
+// door-decides-content violation gatewayDoorEquivalence.test.ts documents --
+// it made `local.cleaker` diverge from `local.netget` even though nginx serves
+// both from the SAME static file with no boot at all (confirmed live,
+// 2026-09-27: both resolve their mount reference from the same monad). A page
+// with no boot proves nothing about being served by a foreign namespace, so it
+// falls through to this bundle's own identity ('gateway') like any other
+// undetermined local door -- `local.host` is the one address this bundle
+// itself still special-cases, a deliberately different, non-namespace surface
+// (see HostSurface.tsx's own header). The namespace's own hosts (a REAL boot,
+// checked below) still get the Cleaker app, reaching the gateway at /netget.
 export function frontendRole({ host, boot }) {
-  if (host === 'local.cleaker') return 'cleaker';
   if (host === 'local.host') return 'host';
   if (boot) {
     if (hostIsNamespace(host, boot)) return 'cleaker';

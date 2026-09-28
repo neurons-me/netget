@@ -36,8 +36,15 @@ assert.equal(frontendRole({ host: 'cleaker.me', boot: bothBoot }), 'cleaker');
 assert.equal(frontendRole({ host: 'www.cleaker.me', boot: bothBoot }), 'cleaker');
 assert.equal(frontendRole({ host: 'ana.cleaker.me', boot: bothBoot }), 'cleaker');
 assert.equal(frontendRole({ host: 'netget.site', boot: bothBoot }), 'gateway', 'the gateway host still gets the admin screens');
-assert.equal(frontendRole({ host: 'local.cleaker', boot: null }), 'cleaker');
-assert.equal(frontendRole({ host: 'local.host', boot: null }), 'host');
+// local.cleaker and local.netget: real nginx serves both from the SAME static file, with no boot
+// at all (confirmed live, 2026-09-27) -- 'local.cleaker' used to be a hardcoded second way into
+// 'cleaker' checked BEFORE boot, which is exactly the door-decides-content violation
+// gatewayDoorEquivalence.test.ts documents. With no boot, neither door can prove it was served by
+// a foreign namespace, so both must converge on the SAME role -- this is the actual equivalence
+// the fix closes, not merely an unchanged pin.
+assert.equal(frontendRole({ host: 'local.cleaker', boot: null }), frontendRole({ host: 'local.netget', boot: null }), 'no boot on either door: same role, not decided by which name happened to answer');
+assert.equal(frontendRole({ host: 'local.cleaker', boot: null }), 'gateway', 'no boot proves nothing about a foreign namespace, so this bundle\'s own identity applies');
+assert.equal(frontendRole({ host: 'local.host', boot: null }), 'host', 'local.host is a genuinely different, non-namespace surface (HostSurface) -- still hostname-special-cased on purpose');
 assert.equal(frontendRole({ host: 'cleaker.me', boot: namespaceBoot }), 'cleaker');
 assert.equal(frontendRole({ host: 'www.cleaker.me', boot: namespaceBoot }), 'cleaker', 'www is the namespace');
 assert.equal(frontendRole({ host: 'ana.cleaker.me', boot: { namespace: 'ana.cleaker.me', modules: [] } }), 'cleaker');

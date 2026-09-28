@@ -6,9 +6,9 @@ Proof-of-concept doc. Written the day the circuit first worked end-to-end
 **See also** — this spans three packages; each has its own piece of the
 contract, cross-linked from here rather than duplicated:
 
-- [NRP v0.3.0 §9](https://neurons-me.github.io/monad/Typescript/typedocs/NRP-v0.3.0.html#9-gateway-binding-notes) —
+- [NRP v0.3.0](https://neurons-me.github.io/NRP/v.0.3.0.html) §9 —
   where `/apps/:name`/`/monads/:name` sit in the gateway binding.
-- [NRP v0.3.0 §11](https://neurons-me.github.io/monad/Typescript/typedocs/NRP-v0.3.0.html#11-websocket-binding-nrp) —
+- [NRP v0.3.0](https://neurons-me.github.io/NRP/v.0.3.0.html) §11 —
   the full `/nrp` WebSocket message contract (`nrp.open`, `read`,
   `subscribe`, `data`, `stream`, …) that the "live-semantic loop" section
   below only summarizes.
@@ -62,7 +62,7 @@ building it:
    setup step for every new app, every new dev machine.
 2. It reads like it should be backed by NRP's `[selector]` bracket syntax —
    it isn't. Read the spec closely
-   (`modules/monad/Typescript/typedocs/NRP-v0.3.0.md`): `selector` in
+   ([NRP v0.3.0](https://neurons-me.github.io/NRP/v.0.3.0.html)): `selector` in
    `me://namespace[selector]/path` picks a **monad/device instance for an
    already-existing namespace** —
 

@@ -733,9 +733,13 @@ export const setNginxConfigFile = async (): Promise<void> => {
  * the wildcard cert-lookup fallback (both landed in buildNginxConfigContent)
  * had to be hand-patched onto a live server because nothing regenerated it.
  * Returns true if the file was written (created or updated).
+ *
+ * `layout` is only ever passed by a test, so it can point every path this
+ * writes (configFilePath, confDDir, logDir) at a sandbox: with no argument
+ * this is the machine's REAL nginx.conf, and a test that reaches it that way
+ * overwrites the live one.
  */
-export const syncNginxConfigFile = async (): Promise<boolean> => {
-    const layout = detectOpenRestyLayout();
+export const syncNginxConfigFile = async (layout: OpenRestyLayout = detectOpenRestyLayout()): Promise<boolean> => {
     if (!layout.isSupported) return false;
 
     const expectedContent = buildNginxConfigContent(layout);

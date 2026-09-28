@@ -21,6 +21,11 @@
 import assert from 'node:assert/strict';
 import { reservePort } from '../src/kernel/testing/reservePort.ts';
 
+// The monads this test starts inherit process.env. Left alone, each one heartbeats to http://127.0.0.1 -- the machine's
+// REAL gateway on port 80 -- and lands in the real ~/.get/runtime/apps.json (2026-09-26: six "statedir-lock-test" entries,
+// still alive). Registration is off for these disposable processes.
+process.env.MONAD_NETGET_DISABLED = '1';
+
 const { startMonadProcess, getMonadStatus, deleteMonadProcess } = await import('monad.ai');
 
 const NAME = `statedir-lock-test-${process.pid}-${Date.now()}`;
@@ -31,12 +36,21 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Every process this test starts, by its OWN reported pid. deleteMonadProcess(NAME) goes through the shared monad.json
+// record, which in the race below can name the LOSER's pid -- it then kills the wrong process and the survivor keeps
+// running after the test ends (a leaked monad per run).
+const started: number[] = [];
+const track = (r: { record: { pid: number } }) => { started.push(r.record.pid); return r; };
+function killStarted() {
+  for (const pid of started) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
+}
+
 try {
   // ── Guarantee 1: two genuinely concurrent starts, different ports,
   // same name (same stateDir) — at most one process ever ends up alive. ──
   const [resA, resB] = await Promise.allSettled([
-    startMonadProcess({ name: NAME, port: portA, namespace: 'statedir-lock-test.local', seed: 'statedir-lock-seed' }),
-    startMonadProcess({ name: NAME, port: portB, namespace: 'statedir-lock-test.local', seed: 'statedir-lock-seed' }),
+    startMonadProcess({ name: NAME, port: portA, namespace: 'statedir-lock-test.local', seed: 'statedir-lock-seed' }).then(track),
+    startMonadProcess({ name: NAME, port: portB, namespace: 'statedir-lock-test.local', seed: 'statedir-lock-seed' }).then(track),
   ]);
 
   // Whichever of the two calls actually returned a record (fulfilled),
@@ -66,12 +80,13 @@ try {
   // end to end through the real CLI process-management path this repo
   // actually uses): after a real crash, a fresh start recovers cleanly. ──
   await deleteMonadProcess(NAME).catch(() => {});
-  const recovered = await startMonadProcess({ name: NAME, namespace: 'statedir-lock-test.local', seed: 'statedir-lock-seed' });
+  const recovered = track(await startMonadProcess({ name: NAME, namespace: 'statedir-lock-test.local', seed: 'statedir-lock-seed' }));
   await sleep(1000);
   const recoveredStatus = await getMonadStatus(recovered.record);
   assert.ok(recoveredStatus.pidAlive && recoveredStatus.healthy, 'a fresh start after full cleanup must succeed normally');
 } finally {
   await deleteMonadProcess(NAME).catch(() => {});
+  killStarted();
 }
 
 console.log('monad-statedir-lock ok');

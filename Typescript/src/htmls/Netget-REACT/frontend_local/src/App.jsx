@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { LauncherPopoverProvider } from 'this.gui';
-import { SeedSessionProvider, Namespace, HostSurface } from 'this.gui/react';
+import { Cleaker, HostSurface } from 'this.gui/react';
 import { fetchMountReference } from 'this.gui/runtime';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
@@ -103,7 +103,7 @@ function useMountReference() {
 // every admin-block hostname, and a monad hands the same bundle to every
 // namespace it serves, so which one actually loaded the page is branched
 // client-side, the same way main.jsx's document.title already does:
-//   cleaker  → a namespace's own landing (this.gui's Namespace, entire
+//   cleaker  → a namespace's own landing (this.gui's Cleaker, entire
 //     page, same session as everywhere else). local.cleaker, and any monad
 //     that serves this bundle without mounting the gateway: the namespace is
 //     the one the monad reports (www.cleaker.me is cleaker.me).
@@ -144,33 +144,41 @@ const GATEWAY_ENDPOINT = typeof window !== 'undefined' ? window.location.origin 
 const App = () => {
   const reference = useMountReference();
 
+  // `Cleaker` replaces manually assembling <SeedSessionProvider> +
+  // <Namespace> (this.gui v5.0.0 -- see its own RELEASE_NOTES and
+  // Cleaker.tsx's own header comment for the full `me` contract). This app
+  // has no live `.me` kernel to pass as `me` -- its destination is resolved
+  // from page/boot context instead (CLEAKER_ENDPOINT/GATEWAY_ENDPOINT,
+  // CLEAKER_MONAD_ORIGIN, exactly as before) -- so `cleakerEndpoint`/
+  // `netgetMonadOrigin` are passed explicitly, which Cleaker's own prop
+  // doc comments confirm is the intended path for a caller with its own
+  // already-correct destination logic. `transportOrigin`/
+  // `resolveSeedFromCredentials` are this app's own real per-deployment
+  // session config, now passed straight through to Cleaker instead of to a
+  // SeedSessionProvider this file assembled itself.
   return (
-    <SeedSessionProvider
-      transportOrigin={netgetMonadTransportOrigin()}
-      resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-      sessionBackend="cleaker"
-    >
-      <LauncherPopoverProvider>
-        {ROLE === 'host' ? (
-          <HostSurface endpoint={netgetMonadTransportOrigin()} />
-        ) : (
-          <>
-            <MountReferenceNotice reference={reference} />
-            <Namespace
-              cleakerEndpoint={ROLE === 'cleaker' ? CLEAKER_ENDPOINT : GATEWAY_ENDPOINT}
-              netgetMonadOrigin={ROLE === 'cleaker' ? CLEAKER_MONAD_ORIGIN : netgetMonadTransportOrigin()}
-              document={IS_GATEWAY_DOCUMENT ? GATEWAY_DOCUMENT_EXTENSION : undefined}
-              pages={IS_GATEWAY_DOCUMENT ? GATEWAY_PAGE_REGISTRY : undefined}
-              footerExtras={
-                IS_GATEWAY_DOCUMENT
-                  ? [{ type: 'action', props: { label: 'Frontend Mode', element: <FrontendModeLauncher />, tooltip: false } }]
-                  : undefined
-              }
-            />
-          </>
-        )}
-      </LauncherPopoverProvider>
-    </SeedSessionProvider>
+    <LauncherPopoverProvider>
+      {ROLE === 'host' ? (
+        <HostSurface endpoint={netgetMonadTransportOrigin()} />
+      ) : (
+        <>
+          <MountReferenceNotice reference={reference} />
+          <Cleaker
+            cleakerEndpoint={ROLE === 'cleaker' ? CLEAKER_ENDPOINT : GATEWAY_ENDPOINT}
+            netgetMonadOrigin={ROLE === 'cleaker' ? CLEAKER_MONAD_ORIGIN : netgetMonadTransportOrigin()}
+            transportOrigin={netgetMonadTransportOrigin()}
+            resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
+            document={IS_GATEWAY_DOCUMENT ? GATEWAY_DOCUMENT_EXTENSION : undefined}
+            pages={IS_GATEWAY_DOCUMENT ? GATEWAY_PAGE_REGISTRY : undefined}
+            footerExtras={
+              IS_GATEWAY_DOCUMENT
+                ? [{ type: 'action', props: { label: 'Frontend Mode', element: <FrontendModeLauncher />, tooltip: false } }]
+                : undefined
+            }
+          />
+        </>
+      )}
+    </LauncherPopoverProvider>
   );
 };
 

@@ -104,10 +104,30 @@ for (const gone of ['handlers/protected.lua', 'middleware/jwt_cookie.lua']) asse
 // the config itself: the internal credential is stripped wherever nginx proxies, and never set from anything
 assert.match(appConf, /proxy_set_header X-Monad-Internal-Token "";/);
 assert.doesNotMatch(appConf, /X-Monad-Internal-Token\s+(?!"")\S/i, 'nginx never sets the internal credential from anything');
-for (const location of ['/openresty-restart', '/openresty-stop', '/dev-server-start', '/dev-server-stop', '/add-domain', '/update-domain', '/delete-domain', '/provision-cert', '/domains/metadata', '/networks']) {
+for (const location of ['/add-domain', '/update-domain', '/delete-domain', '/provision-cert', '/domains/metadata', '/networks']) {
   const at = appConf.search(new RegExp(`location (= )?${location.replace('/', '\\/')} \\{`));
   assert.ok(at >= 0, `${location} has a location`);
   assert.match(appConf.slice(at, at + 400), /limit_except GET HEAD OPTIONS \{\s*allow 127\.0\.0\.1;\s*allow ::1;\s*deny all;/, `${location} is for a process on this machine`);
+}
+// /openresty-restart, /openresty-stop, /dev-server-start, /dev-server-stop are NOT on limit_except
+// (unlike the group above, which all proxy_pass to the monad) -- confirmed live 2026-10-03, isolated
+// with a minimal standalone nginx config varying one directive at a time: `limit_except <methods> {
+// allow ...; deny all; }` breaks content_by_lua_file/content_by_lua_block/a plain `return` as the
+// location's own content handler for any method outside the listed ones, even when the peer IS
+// allowed -- nginx falls through to its default (static-file) content handler instead, which 404s.
+// proxy_pass is unaffected, which is why the group above can still use it safely. These four use
+// content_by_lua_file directly (they shell out, no daemon in the path), so they instead reject any
+// non-POST/OPTIONS method with a plain 405 before any IP check, then use a bare (non-limit_except)
+// allow/deny for POST, then verify a real X-Me-Proof + capability (see lib/operator_access.lua's
+// has_capability()) -- loopback is necessary but no longer sufficient on its own for these two actions.
+for (const location of ['/openresty-restart', '/openresty-stop', '/dev-server-start', '/dev-server-stop']) {
+  const at = appConf.search(new RegExp(`location (= )?${location.replace('/', '\\/')} \\{`));
+  assert.ok(at >= 0, `${location} has a location`);
+  const body = appConf.slice(at, at + 1300);
+  assert.doesNotMatch(body, /limit_except/, `${location} does not use the broken limit_except gate`);
+  assert.match(body, /if \(\$request_method != POST\) \{ return 405; \}/, `${location} rejects non-POST before any check`);
+  assert.match(body, /allow 127\.0\.0\.1;\s*allow ::1;\s*deny all;/, `${location} is for a process on this machine`);
+  assert.match(body, /middleware\/me_sig\.lua/, `${location} verifies a real X-Me-Proof`);
 }
 
 let nginx: import('node:child_process').ChildProcess | null = null;

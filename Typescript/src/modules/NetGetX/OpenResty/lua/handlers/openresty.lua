@@ -115,6 +115,22 @@ end
 local action = ngx.var.openresty_action
 local result
 
+-- restart/stop are a different trust level than status: real process
+-- control, not a read. The location for each already ran middleware/me_sig.lua
+-- in its access phase (see setNginxConfigRoutes.ts) before this file's
+-- content phase runs, so ngx.ctx.me_is_owner/me_scopes are already populated
+-- here -- being loopback (auth_required() above) is necessary but, since the
+-- GET/HEAD-bypass-of-limit_except fix removed the old blanket IP-only gate
+-- for these two actions, no longer sufficient by itself. status is
+-- deliberately left on the simple loopback-only check above -- read-only,
+-- no state change, unchanged scope.
+local CAPABILITY = { restart = "gateway:control:openresty-restart", stop = "gateway:control:openresty-stop" }
+if CAPABILITY[action] and not operator.has_capability(CAPABILITY[action]) then
+  ngx.status = 403
+  ngx.say(cjson.encode({ ok = false, error = "CAPABILITY_DENIED", required = CAPABILITY[action] }))
+  return
+end
+
 if action == "status" then
   result = run_netget("status")
 elseif action == "restart" then

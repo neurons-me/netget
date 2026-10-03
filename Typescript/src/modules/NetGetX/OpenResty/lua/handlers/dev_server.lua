@@ -82,6 +82,19 @@ end
 local action = ngx.var.dev_server_action
 local result
 
+-- start/stop are process control, a different trust level than status.
+-- Mirrors openresty.lua's own restart/stop gate -- see its comment for the
+-- full reasoning. The location for each already ran
+-- middleware/me_sig.lua in its access phase (setNginxConfigRoutes.ts)
+-- before this file's content phase, so ngx.ctx.me_is_owner/me_scopes are
+-- already populated here. status stays loopback-only, unchanged.
+local CAPABILITY = { start = "gateway:control:dev-server-start", stop = "gateway:control:dev-server-stop" }
+if CAPABILITY[action] and not operator.has_capability(CAPABILITY[action]) then
+  ngx.status = 403
+  ngx.say(cjson.encode({ ok = false, error = "CAPABILITY_DENIED", required = CAPABILITY[action] }))
+  return
+end
+
 if action == "status" then
   result = run_netget("dev-server-status")
 elseif action == "start" then

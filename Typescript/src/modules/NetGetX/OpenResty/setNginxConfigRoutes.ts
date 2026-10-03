@@ -929,36 +929,50 @@ ${controlActionGate}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+    # upsert/delete/spawn are the catalog's real mutation surface -- spawn in
+    # particular runs the catalog entry's own 'cmd' via io.popen (see
+    # apps.lua), so writing an entry and then spawning it is, end to end, an
+    # arbitrary-shell-command primitive. Confirmed live 2026-10-03 on
+    # disposable infra: a simulated cross-origin request chain (Origin:
+    # https://evil.example, no credentials beyond being on this machine)
+    # upserted a catalog entry and spawned it, and the shell command
+    # genuinely ran -- is_local_request() alone (apps.lua's own loopback
+    # check, same shape as operator_access.is_loopback()) doesn't
+    # distinguish a real operator from a browser on this machine that a
+    # malicious page tricked into sending the request. controlActionGate
+    # (same gate /openresty-restart etc. use) closes that: 405 for anything
+    # but POST/OPTIONS, loopback-only, then a real X-Me-Proof. apps.lua's
+    # own has_capability() checks make the actual capability decision.
     location = /apps/catalog/upsert {
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $apps_action catalog_upsert;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /apps/catalog/delete {
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $apps_action catalog_delete;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /apps/catalog/spawn {
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $apps_action catalog_spawn;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 

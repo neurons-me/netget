@@ -299,6 +299,14 @@ end
 -- its access phase (setNginxConfigRoutes.ts's controlActionGate), so
 -- ngx.ctx.me_scopes is already populated here -- has_capability() is the
 -- actual capability decision, same model as openresty.lua's restart/stop.
+--
+-- gateway:control:apps-catalog-upsert is not a narrow "edit a config record"
+-- permission -- cmd is stored and later run verbatim by spawn (gated
+-- separately below). Granting upsert to an identity that can ALSO reach
+-- spawn is, in practice, granting it arbitrary command execution as the
+-- gateway's own process. Treat an upsert grant with that weight; it is not
+-- interchangeable with a narrower capability like apps-catalog-delete just
+-- because all three sit in the same CATALOG_CAPABILITY table.
 local CATALOG_CAPABILITY = {
   upsert = "gateway:control:apps-catalog-upsert",
   delete = "gateway:control:apps-catalog-delete",

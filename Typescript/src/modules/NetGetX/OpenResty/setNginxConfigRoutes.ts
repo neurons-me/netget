@@ -227,6 +227,63 @@ map $scheme:$host $netget_force_https {
             deny all;
         }`;
 
+  // Gate for a POST-only gateway control action (restart/stop a process) --
+  // used instead of operatorOnly for /openresty-restart, /openresty-stop,
+  // /dev-server-start, /dev-server-stop. operatorOnly's own limit_except
+  // cannot be reused here: confirmed live (2026-10-03, isolated with a
+  // minimal standalone nginx config varying one directive at a time) that
+  // `limit_except <methods> { allow ...; deny all; }` breaks content_by_lua_
+  // file/content_by_lua_block/a plain `return` as the location's content
+  // handler for any method OUTSIDE the listed ones, even when the peer IS
+  // allowed -- nginx falls through to its default (static-file) content
+  // handler instead, which 404s. proxy_pass is unaffected (confirmed in the
+  // same isolation), which is why none of the /domains* locations below hit
+  // this. The real, practical effect before this fix: the INTENDED method
+  // (POST, from loopback) never reached the Lua handler at all here --
+  // restart/stop were broken for everyone, not just insecure for GET/HEAD.
+  //
+  // This gate: OPTIONS answers the CORS preflight and nothing else; any
+  // method that is not POST or OPTIONS is rejected with 405 before any IP or
+  // identity check runs, so GET/HEAD can never reach the action (closes the
+  // actual vulnerability -- confirmed live the same session: a bare GET to
+  // these locations from loopback, with no other credential, executed the
+  // action); a bare (non-limit_except) allow/deny -- confirmed safe for
+  // content_by_lua_file in the same isolation -- then restricts the
+  // remaining POST path to this machine; middleware/me_sig.lua (the same
+  // Ed25519 X-Me-Proof verification /domains/metadata already uses, loaded
+  // via loadfile()() for the same ngx.exit()-across-a-C-call-boundary reason
+  // documented at that location) verifies the caller's identity and exposes
+  // ngx.ctx.me_is_owner/me_scopes; the handler itself (openresty.lua/
+  // dev_server.lua) makes the actual capability decision via
+  // lib/operator_access.lua's has_capability() -- loopback alone is
+  // necessary (this gate) but not sufficient (the handler's own check),
+  // mirroring the daemon's own capability-separation model (see
+  // GatewayCapabilityModel.md) even though there is no daemon in this path
+  // to defer to -- these handlers shell out directly, so the decision has to
+  // live here instead.
+  const controlActionGate = `
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
+        if ($request_method != POST) { return 405; }
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        # Unlike /domains/metadata below, nothing here proxies away to the
+        # daemon -- openresty.lua/dev_server.lua read ngx.ctx.me_is_owner/
+        # me_scopes directly in the same request's content phase, so there's
+        # no need to round-trip them through nginx variables the way a
+        # proxy_set_header handoff would require.
+        access_by_lua_block {
+            local me_sig_chunk = loadfile("${layout.luaDir}/middleware/me_sig.lua")
+            me_sig_chunk()
+        }`;
+
   // Shared troubleshooting page for proxy_pass failures where the target was picked
   // from a live-looking registry entry but the connection itself failed — either
   // surface_proxy.lua's mesh reduction (apps.json) or monad_proxy.lua's /monads/:name
@@ -751,28 +808,26 @@ ${proxyHeaders}
     }
 
     location = /openresty-restart {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action restart;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /openresty-stop {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action stop;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
@@ -794,28 +849,26 @@ ${operatorOnly}
     }
 
     location = /dev-server-start {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $dev_server_action start;
         content_by_lua_file lua/handlers/dev_server.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /dev-server-stop {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $dev_server_action stop;
         content_by_lua_file lua/handlers/dev_server.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 

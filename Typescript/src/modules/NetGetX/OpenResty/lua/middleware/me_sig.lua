@@ -7,16 +7,34 @@
 --
 -- The proof is what cleaker(me, namespace).prove() returns.
 -- The challenge inside the proof encodes the request itself:
---   JSON.stringify({ method, path, bodyHash, nonce, timestamp })  ← sorted keys
+--   JSON.stringify({ method, path, query, bodyHash, nonce, timestamp })  ← sorted keys
 -- bodyHash = sha256(exact request body, or "" for GET/no body), hex-encoded.
--- Binds the signature to the payload, not just the endpoint — without it,
--- a valid proof shows "this identity authorized calling this endpoint just
--- now", not "authorized this value". See docs/GatewayCapabilityModel.md.
+-- query = lib/query_canon.lua's canonicalize() of the request's query
+-- string — binds the signature to WHICH resource/operation the query
+-- selects, not just the path. Binds the signature to the payload, not
+-- just the endpoint — without it, a valid proof shows "this identity
+-- authorized calling this endpoint just now", not "authorized this
+-- value". See docs/GatewayCapabilityModel.md.
+--
+-- Query binding (added after live-confirmed gap: a proof signed for a bare
+-- path, e.g. "/logs", was valid for ANY query string on that path, e.g. both
+-- "?type=access" and "?type=error" — the signature never committed to which
+-- resource the query selected). `query` is OPTIONAL in the challenge for
+-- backward compatibility with routes that never carry a query string at
+-- all — but it is never silently skipped when the actual request DOES carry
+-- query parameters: a proof with no `query` field is only accepted when the
+-- live request's own canonicalized query is the empty set. See
+-- lib/query_canon.lua and signedRequest.ts's canonicalizeQuery(), which
+-- both parties must use identically (same decoding, same pair ORDER —
+-- never sorted, since order itself can be operationally significant for a
+-- repeated query key — same JSON-array-of-pairs encoding) since the
+-- comparison here is byte-exact string equality, same as path/bodyHash.
 --
 -- Verification steps:
 --   1. Decode proof from header
---   2. Parse challenge → extract method, path, bodyHash, nonce, timestamp
+--   2. Parse challenge → extract method, path, query, bodyHash, nonce, timestamp
 --   3. method + path must match the actual request
+--   3b. query must match the actual request's canonicalized query
 --   4. bodyHash must match sha256(actual request body)
 --   5. timestamp must be within ±60s of server time
 --   6. nonce must not have been used before (anti-replay)
@@ -31,6 +49,7 @@
 local cjson         = require "cjson.safe"
 local ffi           = require "ffi"
 local resty_sha256  = require "resty.sha256"
+local query_canon   = require "lib.query_canon"
 
 -- ── SHA-256, hex-encoded (bundled OpenResty lib, no site-lualib dependency) ──
 
@@ -214,6 +233,10 @@ local function verify_request()
   -- 3. method + path must match actual request
   local req_method   = type(req.method)   == "string" and req.method   or ""
   local req_path     = type(req.path)     == "string" and req.path     or ""
+  -- req_query stays nil (not "") when the challenge never signed a query
+  -- field at all, so it can be told apart from a challenge that explicitly
+  -- signed the empty set ("[]") — see the query-binding check below.
+  local req_query    = type(req.query)    == "string" and req.query    or nil
   local req_bodyhash = type(req.bodyHash) == "string" and req.bodyHash or ""
   local req_nonce    = type(req.nonce)    == "string" and req.nonce    or ""
   local req_ts       = type(req.timestamp) == "number" and req.timestamp or 0
@@ -224,11 +247,32 @@ local function verify_request()
     return
   end
 
-  -- path check: compare without query string
+  -- path check: compare without query string (the query itself is bound
+  -- separately, right below)
   local actual_path = ngx.var.uri or ""
   if req_path ~= actual_path then
     deny(401, "ME_PROOF_PATH_MISMATCH",
       "Signed path '" .. req_path .. "' does not match request path '" .. actual_path .. "'.")
+    return
+  end
+
+  -- 3b. query must match the actual request's canonicalized query. A
+  -- challenge that never signed a `query` field at all (old format, or a
+  -- caller that never saw a query string) is accepted ONLY when the real
+  -- request also carries no query parameters — never when it does, since
+  -- that would let a bare-path proof silently cover any query on that path,
+  -- the exact gap this check closes.
+  local actual_query = query_canon.canonicalize(ngx.var.args)
+  if req_query == nil then
+    if actual_query ~= "[]" then
+      deny(401, "ME_PROOF_QUERY_UNBOUND",
+        "Request carries query parameters but the signed proof did not bind any query. " ..
+        "Re-sign the request including its query string.")
+      return
+    end
+  elseif req_query ~= actual_query then
+    deny(401, "ME_PROOF_QUERY_MISMATCH",
+      "Signed query does not match the actual request query string.")
     return
   end
 

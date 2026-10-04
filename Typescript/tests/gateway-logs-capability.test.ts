@@ -25,26 +25,36 @@
 // capability is 403 CAPABILITY_DENIED (admin alone included); the exact
 // grant actually returns real log content; POST is rejected.
 //
-// A reviewed-and-confirmed, NOT-fixed-here open question, documented
-// instead of silently assumed away: me_sig.lua's own challenge binds
-// {method, path, bodyHash, nonce, timestamp} -- path is checked against
-// ngx.var.uri, which is path-only and never includes a query string; a GET
-// also has no body, so bodyHash is always sha256(""). A proof signed for
-// nothing more specific than the bare path /logs therefore authorizes "GET
-// /logs with ANY query string," not "GET /logs?type=access specifically" --
-// proven directly below (category 2b): two different, validly-signed
-// proofs, both signed for just /logs, each successfully read a DIFFERENT
-// actual log file. Not a privilege escalation on its own (the capability
-// grant is still required for either, and a captured proof is still
-// single-use per the nonce-replay protection), but it does mean "this proof
-// signs the complete request" is a narrower claim than it sounds for any
-// GET route gated this way. Fixing it fully would mean widening
-// me_sig.lua's own challenge to cover the query string -- a change to
-// shared middleware every capability-gated route in this audit pass
-// depends on (/domains/metadata, /openresty-restart, /openresty-stop,
-// /dev-server-start, /dev-server-stop, /apps/catalog/*, /apps/restart-all,
-// /networks, this file), not something to change unilaterally as a side
-// effect of auditing one of its callers.
+// UPDATE 2026-10-04: the query-binding gap below is now closed. me_sig.lua's
+// challenge binds {method, path, query, bodyHash, nonce, timestamp}; `query`
+// is the canonicalized (decoded, sorted) query string, produced identically
+// by signedRequest.ts's canonicalizeQuery() client-side and me_sig.lua's
+// canonicalize_query() server-side. Category [2b] below now proves the
+// FIX, not the gap: a proof signed for one query no longer works for a
+// different one on the same path, each case checked with its own
+// independently-signed, fresh-nonce proof (never reusing one accepted proof
+// across variants -- that would conflate replay-protection, already covered
+// by category 1, with query-binding, which [2b] exists to prove on its
+// own). An old-format proof that never signed a query field at all is still
+// accepted on a route that genuinely has none ([2c]), but never silently
+// accepted the moment the real request carries query parameters ([2d]) --
+// this is what makes the fix a strict tightening, not a parallel escape
+// hatch.
+//
+// (Original finding, left for context: me_sig.lua's challenge used to bind
+// only {method, path, bodyHash, nonce, timestamp} -- path was checked
+// against ngx.var.uri, which is path-only and never included the query
+// string; a GET also has no body, so bodyHash was always sha256(""). A
+// proof signed for nothing more specific than the bare path /logs therefore
+// authorized "GET /logs with ANY query string," not "GET /logs?type=access
+// specifically". Not a privilege escalation on its own even then -- the
+// capability grant was still required for either, and a captured proof was
+// still single-use per the nonce-replay protection -- but it meant "this
+// proof signs the complete request" was a narrower claim than it sounded
+// for any GET route gated this way. Fixed by widening me_sig.lua's own
+// challenge to cover the query string -- shared middleware every
+// capability-gated route in this audit pass depends on, so the fix lives
+// there plus signedRequest.ts, not in any one caller.)
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -143,12 +153,27 @@ function canonicalJson(obj: Record<string, unknown>): string {
 function genNonce(): string { return crypto.randomBytes(16).toString('hex'); }
 function sha256Hex(data: string): string { return crypto.createHash('sha256').update(data, 'utf8').digest('hex'); }
 
-async function signedRequest(node: any, hostname: string, method: string, p: string, opts: { noProof?: boolean; origin?: string } = {}) {
-  // me_sig.lua's challenge binds to ngx.var.uri, which is path-only (no
-  // query string) -- sign that, even when the actual request (sent below)
-  // carries a query string too.
-  const pathOnly = p.split('?')[0];
-  const signed = { method, path: pathOnly, bodyHash: sha256Hex(''), nonce: genNonce(), timestamp: Date.now() };
+// Mirrors signedRequest.ts's canonicalizeQuery() exactly: decoded key/value
+// pairs, JSON-array-of-pairs encoded, in EXACT appearance order -- never
+// sorted (a repeated query key's order can be operationally significant,
+// see lib/query_canon.lua's header comment). Must stay byte-for-byte
+// identical to the production implementation and to me_sig.lua's own
+// query_canon.canonicalize() -- all three are compared with string
+// equality, not semantic equality.
+function canonicalizeQuery(qs: string): string {
+  return JSON.stringify(Array.from(new URLSearchParams(qs).entries()));
+}
+
+async function signedRequest(node: any, hostname: string, method: string, p: string, opts: { noProof?: boolean; origin?: string; omitSignedQuery?: boolean; signedQuery?: string } = {}) {
+  const [pathOnly, actualQuery = ''] = p.split('?');
+  const signed: Record<string, unknown> = { method, path: pathOnly, bodyHash: sha256Hex(''), nonce: genNonce(), timestamp: Date.now() };
+  // Normally sign the query that's actually being sent. Tests that need to
+  // prove tampering/omission detection pass signedQuery (a DIFFERENT query
+  // than what's sent) or omitSignedQuery (simulate an old-format proof that
+  // never bound a query at all).
+  if (!opts.omitSignedQuery) {
+    signed.query = canonicalizeQuery(opts.signedQuery !== undefined ? opts.signedQuery : actualQuery);
+  }
   const headers: Record<string, string> = { host: 'localhost', connection: 'close' };
   if (opts.origin) headers['origin'] = opts.origin;
   if (!opts.noProof) {
@@ -230,26 +255,54 @@ try {
     check('real log content comes back', Array.isArray(r.json.logs) && r.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(r.json));
   }
 
-  // me_sig.lua's challenge binds {method, path, bodyHash, nonce, timestamp}
-  // -- path is compared against ngx.var.uri, which is path-only and never
-  // includes the query string at all. A GET also has no body, so bodyHash
-  // is always sha256("") regardless of ?type=. This means a proof signed
-  // for the bare path /logs authorizes "GET /logs with ANY query string,"
-  // not "GET /logs?type=access specifically" -- not a privilege escalation
-  // (the gateway:control:logs-read capability already had to be granted to
-  // get any response at all, and a captured proof is still single-use, per
-  // category 1's nonce-replay coverage), but it does mean "signs the
-  // complete request" is a narrower claim than it sounds: two DIFFERENT
-  // valid proofs, both signed for nothing more specific than /logs, read
-  // two DIFFERENT actual resources below -- proven directly against a
-  // second, distinguishable log file, not inferred.
-  console.log('\n[2b] a proof signed only for the bare path (no query) works for ANY ?type= -- the query string is not part of what is signed');
+  // The fix: the query string is now part of what me_sig.lua's challenge
+  // binds. Each case below is its own independently-signed request with its
+  // own fresh nonce (signedRequest() calls genNonce() internally every
+  // time it's invoked) -- never one proof reused across variants, so a
+  // failure here proves query-binding specifically, not replay-protection
+  // (already covered by category 1).
+  console.log('\n[2b] query tampering after signing invalidates the proof -- each case its own fresh-nonce request');
   {
     anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
-    const r1 = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
-    check('a proof signed for /logs, sent as ?type=access -> 200, real access log', r1.status === 200 && Array.isArray(r1.json.logs) && r1.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(r1.json));
-    const r2 = await signedRequest(node, 'localhost', 'GET', '/logs?type=error');
-    check('a DIFFERENT (fresh-nonce) proof, ALSO signed for nothing more specific than /logs, sent as ?type=error -> 200, real error log (a different resource than r1 above, same signing scope)', r2.status === 200 && Array.isArray(r2.json.logs) && r2.json.logs.some((l: string) => l.includes('DISTINCT_ERROR_LOG_MARKER')), JSON.stringify(r2.json));
+    const rCorrect = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
+    check('correctly-matching request (signed query == sent query) -> 200, real access log', rCorrect.status === 200 && Array.isArray(rCorrect.json.logs) && rCorrect.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(rCorrect.json));
+
+    const rModified = await signedRequest(node, 'localhost', 'GET', '/logs?type=access', { signedQuery: 'type=error' });
+    check('MODIFIED param (signed for ?type=error, sent as ?type=access) -> 401 ME_PROOF_QUERY_MISMATCH', rModified.status === 401 && rModified.json.error === 'ME_PROOF_QUERY_MISMATCH', JSON.stringify(rModified.json));
+
+    const rAdded = await signedRequest(node, 'localhost', 'GET', '/logs?type=access&extra=1', { signedQuery: 'type=access' });
+    check('ADDED param (signed for ?type=access, sent as ?type=access&extra=1) -> 401 ME_PROOF_QUERY_MISMATCH', rAdded.status === 401 && rAdded.json.error === 'ME_PROOF_QUERY_MISMATCH', JSON.stringify(rAdded.json));
+
+    const rRemoved = await signedRequest(node, 'localhost', 'GET', '/logs?type=access', { signedQuery: 'type=access&extra=1' });
+    check('REMOVED param (signed for ?type=access&extra=1, sent as ?type=access) -> 401 ME_PROOF_QUERY_MISMATCH', rRemoved.status === 401 && rRemoved.json.error === 'ME_PROOF_QUERY_MISMATCH', JSON.stringify(rRemoved.json));
+
+    // The exact exploit this whole category used to demonstrate: a proof
+    // signed for ?type=access must NOT also work for ?type=error.
+    const rCrossResource = await signedRequest(node, 'localhost', 'GET', '/logs?type=error', { signedQuery: 'type=access' });
+    check('a proof signed for ?type=access can no longer read ?type=error -> 401 ME_PROOF_QUERY_MISMATCH (the original gap, now closed)', rCrossResource.status === 401 && rCrossResource.json.error === 'ME_PROOF_QUERY_MISMATCH', JSON.stringify(rCrossResource.json));
+  }
+
+  console.log('\n[2c] an old-format proof (no query field at all) still works on a route with genuinely no query string');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs', { omitSignedQuery: true });
+    check('no query field signed, no query sent -> 200 (backward compatible)', r.status === 200, JSON.stringify(r.json));
+  }
+
+  console.log('\n[2d] an old-format proof (no query field) is NOT silently accepted when the real request DOES carry query parameters');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs?type=access', { omitSignedQuery: true });
+    check('no query field signed, but request has ?type=access -> 401 ME_PROOF_QUERY_UNBOUND (not silently accepted)', r.status === 401 && r.json.error === 'ME_PROOF_QUERY_UNBOUND', JSON.stringify(r.json));
+  }
+
+  console.log('\n[2e] a correctly re-signed request for each distinct query still succeeds -- the fix narrows, it does not break legitimate use');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const rAccess = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
+    check('freshly, correctly signed ?type=access -> 200, real access log', rAccess.status === 200 && Array.isArray(rAccess.json.logs) && rAccess.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(rAccess.json));
+    const rError = await signedRequest(node, 'localhost', 'GET', '/logs?type=error');
+    check('freshly, correctly signed ?type=error -> 200, real error log (a genuinely different, correctly-authorized resource)', rError.status === 200 && Array.isArray(rError.json.logs) && rError.json.logs.some((l: string) => l.includes('DISTINCT_ERROR_LOG_MARKER')), JSON.stringify(rError.json));
   }
 
   console.log('\n[3] POST is rejected');

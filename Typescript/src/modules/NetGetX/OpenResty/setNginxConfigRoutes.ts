@@ -632,16 +632,33 @@ ${proxyHeaders}
 ${rootLocation}
 ${isDevFrontend ? netgetPanelErrorLocation : ''}
 
-    # Networks API
+    # Networks API -- networks.lua itself owns authorization (is_local_request()
+    # for reads, middleware/me_sig.lua + has_capability() for the POST/PUT/
+    # DELETE mutations), NOT limit_except: confirmed live 2026-10-03 (same
+    # audit as the catalog/apps-registry fixes) that limit_except breaks
+    # content_by_lua_file for any method outside its own GET/HEAD/OPTIONS
+    # list even when the peer is allowed -- the exact bug fixed on
+    # /openresty-restart etc. This location also found with ZERO handler-side
+    # auth at all (unlike openresty.lua/dev_server.lua, which at least had
+    # is_local_request()) -- networks.lua relied entirely on the broken
+    # limit_except. $NETGET_LUA_DIR lets networks.lua loadfile() me_sig.lua
+    # itself (Lua can't read the TS-side layout.luaDir the generator used for
+    # /domains/metadata's own inline access_by_lua_block); see that file's
+    # own comment for why this must be a fresh loadfile()() per request, not
+    # require() (require() would cache and skip verification after the
+    # first call in a worker). try_files below still shadows this handler
+    # entirely for now (a separate, already-flagged bug) -- protecting the
+    # handler FIRST, before that routing bug is fixed, is deliberate: fixing
+    # the routing first would have made an unauthorized handler reachable.
     location /networks {
-${operatorOnly}
+        set $NETGET_LUA_DIR "${layout.luaDir}";
         if ($request_method = OPTIONS) { return 204; }
         content_by_lua_file lua/handlers/networks.lua;
         try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 

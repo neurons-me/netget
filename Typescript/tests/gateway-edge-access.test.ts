@@ -104,10 +104,29 @@ for (const gone of ['handlers/protected.lua', 'middleware/jwt_cookie.lua']) asse
 // the config itself: the internal credential is stripped wherever nginx proxies, and never set from anything
 assert.match(appConf, /proxy_set_header X-Monad-Internal-Token "";/);
 assert.doesNotMatch(appConf, /X-Monad-Internal-Token\s+(?!"")\S/i, 'nginx never sets the internal credential from anything');
-for (const location of ['/add-domain', '/update-domain', '/delete-domain', '/provision-cert', '/domains/metadata', '/networks']) {
+for (const location of ['/add-domain', '/update-domain', '/delete-domain', '/provision-cert', '/domains/metadata']) {
   const at = appConf.search(new RegExp(`location (= )?${location.replace('/', '\\/')} \\{`));
   assert.ok(at >= 0, `${location} has a location`);
   assert.match(appConf.slice(at, at + 400), /limit_except GET HEAD OPTIONS \{\s*allow 127\.0\.0\.1;\s*allow ::1;\s*deny all;/, `${location} is for a process on this machine`);
+}
+// /networks is neither of the two shapes above: unlike the proxy_pass group,
+// it uses content_by_lua_file directly (so limit_except would break it, same
+// reasoning as the control-action group below); unlike that group, it also
+// serves real GET reads, which a POST-only 405 gate would wrongly block. Its
+// authorization lives entirely inside lua/handlers/networks.lua itself --
+// operator_access.is_loopback() for every request, middleware/me_sig.lua +
+// has_capability('gateway:control:networks-write') additionally for
+// mutations (see gateway-networks-capability.test.ts for the live-verified
+// behavior; that handler is still unreachable through this exact location
+// today because of the try_files line below, a separate, already-flagged,
+// deliberately-not-fixed-here routing bug).
+{
+  const at = appConf.search(/location \/networks \{/);
+  assert.ok(at >= 0, '/networks has a location');
+  const body = appConf.slice(at, at + 700);
+  assert.doesNotMatch(body, /limit_except/, '/networks does not use the broken limit_except gate');
+  assert.match(body, /set \$NETGET_LUA_DIR/, '/networks gives its handler a path to load middleware/me_sig.lua from');
+  assert.match(body, /try_files \$uri \$uri\/ \/index\.html;/, '/networks is still shadowed by try_files (expected, not fixed here)');
 }
 // /openresty-restart, /openresty-stop, /dev-server-start, /dev-server-stop are NOT on limit_except
 // (unlike the group above, which all proxy_pass to the monad) -- confirmed live 2026-10-03, isolated
@@ -222,10 +241,19 @@ try {
     // from another peer address, whatever Host it sends
     for (const host of [...HOSTS, lan]) {
       for (const [method, p] of [['POST', '/openresty-stop'], ['POST', '/openresty-restart'], ['POST', '/dev-server-start'], ['POST', '/dev-server-stop'],
-        ['POST', '/add-domain'], ['POST', '/update-domain'], ['POST', '/delete-domain'], ['POST', '/provision-cert'], ['POST', '/domains/metadata'], ['POST', '/networks']] as const) {
+        ['POST', '/add-domain'], ['POST', '/update-domain'], ['POST', '/delete-domain'], ['POST', '/provision-cert'], ['POST', '/domains/metadata']] as const) {
         const r = await call(lan, 'http', host, method, p, { body: {} });
         assert.equal(r.status, 403, `${method} ${p} from ${lan} with Host ${host} answered ${r.status}`);
       }
+      // /networks is still shadowed by try_files (the separate, already-
+      // flagged, deliberately-not-fixed-here routing bug) -- a POST never
+      // reaches lua/handlers/networks.lua's own operator_access.is_loopback()
+      // check at all here; it's caught first by nginx's static-file module,
+      // which rejects any non-GET/HEAD method with its own bare 405. Still
+      // safe (nothing is exposed), just a different status for a different
+      // reason than the Lua-level check gateway-networks-capability.test.ts
+      // proves directly against the handler.
+      assert.equal((await call(lan, 'http', host, 'POST', '/networks', { body: {} })).status, 405, `POST /networks from ${lan} with Host ${host}`);
       // reads that reach a Lua handler are refused there: plain HTTP is not a credential from another peer
       assert.equal((await call(lan, 'http', host, 'GET', '/openresty-status')).status, 401, `status from ${lan}, Host ${host}`);
       assert.equal((await call(lan, 'http', host, 'GET', '/dev-server-status')).status, 401);

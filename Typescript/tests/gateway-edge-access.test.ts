@@ -189,11 +189,19 @@ try {
   // ═══ 1. the gateway as it is ═════════════════════════════════════════════════════
   await startNginx({});
 
-  // from this machine (also the logs, which the machine's own operator may read)
+  // from this machine
   const status = await call('127.0.0.1', 'http', 'localhost', 'GET', '/openresty-status');
   assert.equal(status.status, 200, `a process on this machine may ask: ${status.text.slice(0, 120)}`);
   assert.deepEqual(ran().slice(-1), ['status'], 'and it reached the handler');
-  assert.notEqual((await call('127.0.0.1', 'http', 'localhost', 'GET', '/logs?type=access')).status, 401, 'and may read the server logs');
+  // /logs used to be loopback-only, like /openresty-status above -- found
+  // live 2026-10-03 that its own CORS headers reflect any Origin with
+  // credentials, so loopback alone (satisfied by this machine's own
+  // browser, regardless of which page's script sent the request) let the
+  // response be read cross-origin too. Elevated to require a real
+  // X-Me-Proof + the gateway:control:logs-read capability -- a bare
+  // loopback call with no proof now correctly gets 401, proven in full
+  // (capability separation included) by gateway-logs-capability.test.ts.
+  assert.equal((await call('127.0.0.1', 'http', 'localhost', 'GET', '/logs?type=access')).status, 401, 'logs now require a real proof, not just loopback');
 
   // /gateway-identity has ONE answer: the gateway's own route. Through nginx and straight from the monad it is the
   // same, unclaimed and claimed (it used to be a Lua handler with another contract: adminCount without the owner, no

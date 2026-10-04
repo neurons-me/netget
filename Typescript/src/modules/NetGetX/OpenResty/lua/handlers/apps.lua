@@ -84,6 +84,47 @@ local function now_ms()
   return ngx.now() * 1000
 end
 
+-- Confirms a claimed port is actually answering as a real monad surface --
+-- not just that something is listening there. Found live 2026-10-03: before
+-- this, report_app() stored whatever `port` a caller sent with zero
+-- verification, and restart_all() later ran `lsof -ti tcp:<port>` + `kill`
+-- against it -- a loopback-only caller (the same browser-mediated CSRF this
+-- file's own catalog fix closes elsewhere) could register an attacker-chosen
+-- port belonging to a completely unrelated process and have restart_all
+-- terminate it. tonumber()-gating port/pid before interpolating them into
+-- the shell command (already in place) rules out command injection there,
+-- but says nothing about whether the SELECTED process is actually one this
+-- service manages -- a different failure, in authorization and process
+-- selection, not in shell quoting.
+--
+-- This does not perform full claim verification (checking the surface
+-- payload's own self-signature against an identity this gateway already
+-- trusts, the way checkMonadSurfaceClaim does on the GUI side) -- closing
+-- that fully is gap #1/#2 in CLAUDE.md (surface identity / claim
+-- verification), explicitly future work. What this closes: an arbitrary,
+-- unrelated local process can no longer be registered or restarted just by
+-- naming its port -- the port must actually speak the monad surface
+-- protocol, at both report time and (re-checked fresh below) restart time.
+-- curl (not lsof) is used deliberately: confirmed live in this same session
+-- that OpenResty's io.popen() hands the command to a /bin/sh whose PATH
+-- (/usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:.) includes /usr/bin (where
+-- curl lives) but not /usr/sbin (where lsof lives).
+local function probe_monad_surface(port)
+  local p = tonumber(port)
+  if not p or p <= 0 or p > 65535 then return nil end
+  local cmd = string.format("curl -s --max-time 2 http://127.0.0.1:%d/__surface 2>/dev/null", p)
+  local h = io.popen(cmd)
+  if not h then return nil end
+  local out = h:read("*a")
+  h:close()
+  if not out or out == "" then return nil end
+  local ok, parsed = pcall(cjson.decode, out)
+  if not ok or type(parsed) ~= "table" then return nil end
+  local monadId = parsed.monadId or (type(parsed.monad) == "table" and parsed.monad.id) or nil
+  if type(monadId) ~= "string" or monadId == "" then return nil end
+  return { monadId = monadId }
+end
+
 -- Read the gateway claims snapshot (written by GatewayClaimsManager).
 -- Returns {} when the file is absent or unparseable — safe fallback to guest.
 local function read_claims()
@@ -123,6 +164,9 @@ local function report_app()
   if not is_local_request() then
     return json(403, { success = false, error = "Apps can only report to the local NetGet agent." })
   end
+  if ngx.req.get_method() ~= "POST" then
+    return json(405, { success = false, error = "Use POST." })
+  end
 
   ngx.req.read_body()
   local body = ngx.req.get_body_data()
@@ -137,6 +181,19 @@ local function report_app()
   if not app.id or not app.name then
     return json(400, { success = false, error = "App id and name are required." })
   end
+
+  -- Evidence the reported port is actually a monad this service manages,
+  -- not just a number the caller picked -- see probe_monad_surface()'s own
+  -- comment for what this does and does not close.
+  local claimedPort = tonumber(app.port)
+  if not claimedPort or claimedPort <= 0 then
+    return json(400, { success = false, error = "A valid port is required." })
+  end
+  local surface = probe_monad_surface(claimedPort)
+  if not surface then
+    return json(422, { success = false, error = "PORT_NOT_VERIFIED", message = "port " .. claimedPort .. " did not answer as a monad surface." })
+  end
+  app.verifiedMonadId = surface.monadId
 
   local registry = scrub_dead_apps(read_registry())
   app.lastSeenMs = now_ms()
@@ -193,6 +250,9 @@ local function release_app()
   if not is_local_request() then
     return json(403, { success = false, error = "Apps can only release from the local NetGet agent." })
   end
+  if ngx.req.get_method() ~= "POST" then
+    return json(405, { success = false, error = "Use POST." })
+  end
 
   ngx.req.read_body()
   local body = ngx.req.get_body_data()
@@ -216,6 +276,13 @@ local function release_app()
   return json(200, { success = true, id = req.id })
 end
 
+-- /usr/sbin, not just /bin:/usr/bin -- lsof lives there on macOS, and (see
+-- probe_monad_surface's comment) io.popen()'s /bin/sh does not have it on
+-- PATH by default. Deliberately an absolute path, not a PATH export: this
+-- function only ever reaches lsof/kill AFTER re-verifying the target below,
+-- so there is no reason to also widen what io.popen can resolve generally.
+local LSOF_BIN = "/usr/sbin/lsof"
+
 local function restart_all()
   if not is_local_request() then
     return json(403, { success = false, error = "Only local requests can restart monads." })
@@ -228,15 +295,26 @@ local function restart_all()
   for _, app in pairs(registry.apps or {}) do
     local port = tonumber(app.port)
     if port and port > 0 then
-      local handle = io.popen(string.format("lsof -ti tcp:%d 2>/dev/null", port))
-      local pid_str = handle and handle:read("*l")
-      if handle then handle:close() end
-      local pid = tonumber(pid_str)
-      if pid then
-        os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
-        table.insert(restarted, { name = app.name, port = port, pid = pid })
+      -- Re-verify fresh, right before terminating anything -- report_app()
+      -- already checked this port once at registration time, but trusting
+      -- that stale check here would leave a TOCTOU window open: the port
+      -- could have gone quiet and been reassigned to something else
+      -- entirely in the time since. Only ever kill what answers as a real
+      -- monad surface RIGHT NOW, not what a registry entry merely claims.
+      local surface = probe_monad_surface(port)
+      if surface then
+        local handle = io.popen(string.format("%s -ti tcp:%d 2>/dev/null", LSOF_BIN, port))
+        local pid_str = handle and handle:read("*l")
+        if handle then handle:close() end
+        local pid = tonumber(pid_str)
+        if pid then
+          os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+          table.insert(restarted, { name = app.name, port = port, pid = pid, monadId = surface.monadId })
+        else
+          table.insert(skipped, { name = app.name, port = port, reason = "pid not found" })
+        end
       else
-        table.insert(skipped, { name = app.name, port = port })
+        table.insert(skipped, { name = app.name, port = port, reason = "not verified as a monad surface" })
       end
     end
   end

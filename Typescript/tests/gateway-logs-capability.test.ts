@@ -24,6 +24,27 @@
 // on disposable infra: no proof is 401; a valid proof without the exact
 // capability is 403 CAPABILITY_DENIED (admin alone included); the exact
 // grant actually returns real log content; POST is rejected.
+//
+// A reviewed-and-confirmed, NOT-fixed-here open question, documented
+// instead of silently assumed away: me_sig.lua's own challenge binds
+// {method, path, bodyHash, nonce, timestamp} -- path is checked against
+// ngx.var.uri, which is path-only and never includes a query string; a GET
+// also has no body, so bodyHash is always sha256(""). A proof signed for
+// nothing more specific than the bare path /logs therefore authorizes "GET
+// /logs with ANY query string," not "GET /logs?type=access specifically" --
+// proven directly below (category 2b): two different, validly-signed
+// proofs, both signed for just /logs, each successfully read a DIFFERENT
+// actual log file. Not a privilege escalation on its own (the capability
+// grant is still required for either, and a captured proof is still
+// single-use per the nonce-replay protection), but it does mean "this proof
+// signs the complete request" is a narrower claim than it sounds for any
+// GET route gated this way. Fixing it fully would mean widening
+// me_sig.lua's own challenge to cover the query string -- a change to
+// shared middleware every capability-gated route in this audit pass
+// depends on (/domains/metadata, /openresty-restart, /openresty-stop,
+// /dev-server-start, /dev-server-stop, /apps/catalog/*, /apps/restart-all,
+// /networks, this file), not something to change unilaterally as a side
+// effect of auditing one of its callers.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -94,6 +115,11 @@ fs.copyFileSync('/opt/homebrew/etc/openresty/mime.types', path.join(prefix, 'con
 fs.cpSync(path.join(netgetTsRoot, 'src/modules/NetGetX/OpenResty/lua'), path.join(prefix, 'lua'), { recursive: true });
 // Something real for logs.lua to actually read back.
 fs.writeFileSync(path.join(prefix, 'logs', 'netget_access.log'), '127.0.0.1 - - [01/Jan/2026:00:00:00 +0000] "GET /sensitive-looking-path?token=abc123 HTTP/1.1" 200 12 "-" "curl"\n');
+// A second, distinguishable log -- used below to check whether a proof
+// signed for the bare path /logs (no query string -- me_sig.lua's challenge
+// binds ngx.var.uri, which never includes one) can be used to read a
+// DIFFERENT ?type= than whichever one it might have been intended for.
+fs.writeFileSync(path.join(prefix, 'logs', 'netget_error.log'), '2026/01/01 00:00:00 [error] DISTINCT_ERROR_LOG_MARKER something went wrong\n');
 
 let nginx: import('node:child_process').ChildProcess | null = null;
 const stopNginx = () => { try { execFileSync(openrestyBin, ['-p', prefix, '-c', path.join(prefix, 'conf', 'nginx.conf'), '-s', 'stop'], { stdio: 'ignore' }); } catch { } nginx?.kill(); nginx = null; };
@@ -202,6 +228,28 @@ try {
     const r = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
     check('valid proof + exact grant -> 200', r.status === 200, JSON.stringify(r.json));
     check('real log content comes back', Array.isArray(r.json.logs) && r.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(r.json));
+  }
+
+  // me_sig.lua's challenge binds {method, path, bodyHash, nonce, timestamp}
+  // -- path is compared against ngx.var.uri, which is path-only and never
+  // includes the query string at all. A GET also has no body, so bodyHash
+  // is always sha256("") regardless of ?type=. This means a proof signed
+  // for the bare path /logs authorizes "GET /logs with ANY query string,"
+  // not "GET /logs?type=access specifically" -- not a privilege escalation
+  // (the gateway:control:logs-read capability already had to be granted to
+  // get any response at all, and a captured proof is still single-use, per
+  // category 1's nonce-replay coverage), but it does mean "signs the
+  // complete request" is a narrower claim than it sounds: two DIFFERENT
+  // valid proofs, both signed for nothing more specific than /logs, read
+  // two DIFFERENT actual resources below -- proven directly against a
+  // second, distinguishable log file, not inferred.
+  console.log('\n[2b] a proof signed only for the bare path (no query) works for ANY ?type= -- the query string is not part of what is signed');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const r1 = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
+    check('a proof signed for /logs, sent as ?type=access -> 200, real access log', r1.status === 200 && Array.isArray(r1.json.logs) && r1.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(r1.json));
+    const r2 = await signedRequest(node, 'localhost', 'GET', '/logs?type=error');
+    check('a DIFFERENT (fresh-nonce) proof, ALSO signed for nothing more specific than /logs, sent as ?type=error -> 200, real error log (a different resource than r1 above, same signing scope)', r2.status === 200 && Array.isArray(r2.json.logs) && r2.json.logs.some((l: string) => l.includes('DISTINCT_ERROR_LOG_MARKER')), JSON.stringify(r2.json));
   }
 
   console.log('\n[3] POST is rejected');

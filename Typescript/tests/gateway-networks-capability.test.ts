@@ -29,6 +29,19 @@
 // gateway:control:networks-write capability (lib/operator_access.lua's
 // has_capability(), no owner/admin bypass -- same model as every other fix
 // in this audit pass).
+//
+// A first pass at this test only checked "the authorized request wasn't
+// 401/403" for the actual mutations, reasoning that networks_db.lua's own
+// hardcoded /opt/.get/networks.json path (a separate, pre-existing bug --
+// deliberate per that file's own header comment, "to mirror prior location
+// semantics") made the real write untestable without touching that real
+// path. A review correctly rejected that as insufficient: clearing an
+// authorization gate is not the same as proving the authorized operation
+// actually happened. Fixed with a controlled substitution -- lua/lib/
+// networks_db.lua is copied into THIS test's own disposable Lua tree (never
+// the real file in the repo) with CONFIG_DIR redirected to the test's own
+// isolated dataDir -- so add/update/delete are now verified against real
+// on-disk state, not just the HTTP response code.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -125,6 +138,26 @@ fs.writeFileSync(path.join(prefix, 'conf', 'nginx.conf'), highPorts(buildNginxCo
 fs.writeFileSync(path.join(prefix, 'conf.d', 'netget_app.conf'), highPorts(appConf));
 fs.copyFileSync('/opt/homebrew/etc/openresty/mime.types', path.join(prefix, 'conf', 'mime.types'));
 fs.cpSync(path.join(netgetTsRoot, 'src/modules/NetGetX/OpenResty/lua'), path.join(prefix, 'lua'), { recursive: true });
+// Controlled substitution, in THIS disposable copy only -- the real
+// lua/lib/networks_db.lua hardcodes CONFIG_DIR = "/opt/.get" (its own
+// header comment: deliberate, "to mirror prior location semantics"), which
+// this test must never write to -- that's a real, shared, non-disposable
+// system path, not something to create or touch just to make a test's
+// writes land somewhere. Overwriting the COPIED file (not the real one in
+// the repo) with CONFIG_DIR pointed at this test's own disposable dataDir
+// is what lets the assertions below verify the actual, real effect of an
+// authorized write (not just "the response wasn't 401/403") without
+// changing networks_db.lua's real, deployed behavior at all.
+const realNetworksDb = fs.readFileSync(path.join(netgetTsRoot, 'src/modules/NetGetX/OpenResty/lua/lib/networks_db.lua'), 'utf8');
+assert.match(realNetworksDb, /local CONFIG_DIR = "\/opt\/\.get"/, 'networks_db.lua still hardcodes /opt/.get as expected (confirms this substitution is still needed, not stale)');
+const testNetworksDbDir = path.join(dataDir, 'networks-db-test-isolated');
+fs.mkdirSync(testNetworksDbDir, { recursive: true });
+const substitutedNetworksDb = realNetworksDb.replace(
+  /local CONFIG_DIR = "\/opt\/\.get"/,
+  `local CONFIG_DIR = ${JSON.stringify(testNetworksDbDir)}`,
+);
+assert.notEqual(substitutedNetworksDb, realNetworksDb, 'the substitution actually changed something');
+fs.writeFileSync(path.join(prefix, 'lua', 'lib', 'networks_db.lua'), substitutedNetworksDb);
 
 let nginx: import('node:child_process').ChildProcess | null = null;
 const stopNginx = () => { try { execFileSync(openrestyBin, ['-p', prefix, '-c', path.join(prefix, 'conf', 'nginx.conf'), '-s', 'stop'], { stdio: 'ignore' }); } catch { } nginx?.kill(); nginx = null; };
@@ -243,30 +276,44 @@ try {
     check('admin alone -> still 403', r.status === 403 && r.json.error === 'CAPABILITY_DENIED', JSON.stringify(r.json));
   }
 
-  // networks_db.lua persists to a hardcoded /opt/.get/networks.json
-  // (unlike every other handler in this tree, it ignores NETGET_DATA_DIR
-  // entirely -- its own header comment says this is deliberate, "to mirror
-  // prior location semantics"). That's a separate, pre-existing bug, not
-  // introduced or fixed here -- out of scope for an authorization pass, and
-  // not something to create real paths on this machine for just to make a
-  // disposable test's DB writes succeed. What these checks prove instead:
-  // the authorization gate itself gets out of the way for a correctly
-  // authorized caller (no more 401/403) -- whatever happens after that is
-  // networks_db.lua's own concern, already failing the same way before this
-  // fix existed.
-  console.log('\n[3] the exact grant clears the authorization gate (the DB write itself hits an unrelated, pre-existing /opt/.get path bug -- not fixed here, see comment above)');
+  // networks_db.lua's own real persistence -- redirected to this test's
+  // isolated dataDir via the controlled substitution above (never the real
+  // hardcoded /opt/.get) -- so these checks can verify the ACTUAL effect of
+  // an authorized write, not just that the response wasn't 401/403. Reading
+  // the substituted file directly, independent of the API's own GET (which
+  // goes through the same networks_db.lua, so wouldn't be an independent
+  // check on its own).
+  const networksJsonPath = path.join(testNetworksDbDir, 'networks.json');
+  const readNetworksFile = (): any[] => {
+    if (!fs.existsSync(networksJsonPath)) return [];
+    try {
+      const parsed = JSON.parse(fs.readFileSync(networksJsonPath, 'utf8'));
+      // cjson.encode({}) on an empty Lua table (e.g. after the last entry is
+      // deleted) produces a JSON object "{}", not an array -- Lua tables
+      // don't distinguish the two when empty.
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  };
+
+  console.log('\n[3] the exact grant performs the real operation -- verified against isolated storage, not just "not 401/403"');
   {
     anchor({ admin: true, scopes: ['gateway:control:networks-write'] });
     const r = await signedRequest(node, 'localhost', 'POST', '/__test_networks_direct', '/networks', { name: 'n1', ip: '10.0.0.1', owner: 'x' });
-    check('POST (add) with the exact grant -> past the auth gate (not 401/403)', r.status !== 401 && r.status !== 403, JSON.stringify(r.json));
+    check('POST (add) with the exact grant -> 201', r.status === 201 && r.json.success === true, JSON.stringify(r.json));
+    const onDisk = readNetworksFile();
+    check('the network is genuinely on disk, in the isolated store', onDisk.some((n) => n.name === 'n1' && n.ip === '10.0.0.1' && n.owner === 'x'), JSON.stringify(onDisk));
   }
   {
     const r = await signedRequest(node, 'localhost', 'PUT', '/__test_networks_direct/n1', '/networks/n1', { ip: '10.0.0.99' });
-    check('PUT (update) with the same grant -> past the auth gate', r.status !== 401 && r.status !== 403, JSON.stringify(r.json));
+    check('PUT (update) with the same grant -> 200', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+    const onDisk = readNetworksFile();
+    check('the IP genuinely changed on disk', onDisk.some((n) => n.name === 'n1' && n.ip === '10.0.0.99'), JSON.stringify(onDisk));
   }
   {
     const r = await signedRequest(node, 'localhost', 'DELETE', '/__test_networks_direct/n1', '/networks/n1', undefined);
-    check('DELETE with the same grant -> past the auth gate', r.status !== 401 && r.status !== 403, JSON.stringify(r.json));
+    check('DELETE with the same grant -> 200', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+    const onDisk = readNetworksFile();
+    check('the entry is genuinely gone from disk', !onDisk.some((n) => n.name === 'n1'), JSON.stringify(onDisk));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

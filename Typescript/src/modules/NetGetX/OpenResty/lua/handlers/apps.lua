@@ -97,18 +97,26 @@ end
 -- service manages -- a different failure, in authorization and process
 -- selection, not in shell quoting.
 --
--- This does not perform full claim verification (checking the surface
--- payload's own self-signature against an identity this gateway already
--- trusts, the way checkMonadSurfaceClaim does on the GUI side) -- closing
--- that fully is gap #1/#2 in CLAUDE.md (surface identity / claim
--- verification), explicitly future work. What this closes: an arbitrary,
--- unrelated local process can no longer be registered or restarted just by
+-- This answers ONE question: "is something genuinely speaking the monad
+-- surface protocol on this port, right now." It does not answer "is the
+-- caller allowed to register or kill it" (that's restart_all()'s own
+-- has_capability() check, a separate, required layer -- a port answering
+-- here never substitutes for it), and it does not perform full claim
+-- verification (checking the surface payload's own self-signature against
+-- an identity this gateway already trusts, the way checkMonadSurfaceClaim
+-- does on the GUI side, which would additionally answer "is this the
+-- SPECIFIC monad netget believes it to be," i.e. actual ownership/
+-- provenance, not just protocol-shape) -- closing that fully is gap #1/#2
+-- in CLAUDE.md (surface identity / claim verification), explicitly future
+-- work, not attempted here. What this closes, narrowly: an arbitrary,
+-- unrelated local process can no longer be registered or targeted just by
 -- naming its port -- the port must actually speak the monad surface
--- protocol, at both report time and (re-checked fresh below) restart time.
--- curl (not lsof) is used deliberately: confirmed live in this same session
--- that OpenResty's io.popen() hands the command to a /bin/sh whose PATH
--- (/usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:.) includes /usr/bin (where
--- curl lives) but not /usr/sbin (where lsof lives).
+-- protocol, at both report time and (re-checked fresh, narrowing but not
+-- eliminating the TOCTOU gap -- see restart_all()'s own comment) restart
+-- time. curl (not lsof) is used deliberately: confirmed live in this same
+-- session that OpenResty's io.popen() hands the command to a /bin/sh whose
+-- PATH (/usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:.) includes /usr/bin
+-- (where curl lives) but not /usr/sbin (where lsof lives).
 local function probe_monad_surface(port)
   local p = tonumber(port)
   if not p or p <= 0 or p > 65535 then return nil end
@@ -283,12 +291,38 @@ end
 -- so there is no reason to also widen what io.popen can resolve generally.
 local LSOF_BIN = "/usr/sbin/lsof"
 
+local RESTART_ALL_CAPABILITY = "gateway:control:apps-restart-all"
+
 local function restart_all()
   if not is_local_request() then
     return json(403, { success = false, error = "Only local requests can restart monads." })
   end
   if ngx.req.get_method() ~= "POST" then
     return json(405, { success = false, error = "Use POST." })
+  end
+  -- probe_monad_surface() below (and report_app()'s own call to it) answers
+  -- "is something genuinely speaking the monad protocol on this port right
+  -- now" -- it does NOT answer "is THIS caller allowed to kill it" or "does
+  -- netget actually administer this process." Identity and permission are
+  -- different questions, same distinction the capability model draws
+  -- everywhere else in this pass -- found live 2026-10-04 (a direct
+  -- follow-up review of the port-verification fix above) that this
+  -- function still conflated them: verifying the TARGET answers as a real
+  -- monad said nothing about whether the REQUESTER had any standing to ask
+  -- for it to be killed. A real signed proof + this exact capability is
+  -- the actual authorization; loopback is necessary but was never
+  -- sufficient on its own, the same as every other control action in this
+  -- audit pass. middleware/me_sig.lua must actually run here first -- it is
+  -- what verifies the X-Me-Proof and populates ngx.ctx.me_scopes/me_is_owner
+  -- that has_capability() reads; loaded fresh via loadfile()() (never
+  -- require(), which would cache the module and skip verification after the
+  -- first call in this worker). Its own deny() sends 401 and ngx.exit()s
+  -- outright if the proof is missing/invalid/expired/replayed, before
+  -- has_capability() is ever reached.
+  local me_sig_chunk = loadfile(ngx.var.NETGET_LUA_DIR .. "/middleware/me_sig.lua")
+  me_sig_chunk()
+  if not operator.has_capability(RESTART_ALL_CAPABILITY) then
+    return json(403, { success = false, error = "CAPABILITY_DENIED", required = RESTART_ALL_CAPABILITY })
   end
   local registry = scrub_dead_apps(read_registry())
   local restarted, skipped = {}, {}
@@ -297,10 +331,18 @@ local function restart_all()
     if port and port > 0 then
       -- Re-verify fresh, right before terminating anything -- report_app()
       -- already checked this port once at registration time, but trusting
-      -- that stale check here would leave a TOCTOU window open: the port
-      -- could have gone quiet and been reassigned to something else
-      -- entirely in the time since. Only ever kill what answers as a real
-      -- monad surface RIGHT NOW, not what a registry entry merely claims.
+      -- that stale check here would leave a larger window for the port to
+      -- have gone quiet and been reassigned to something else entirely in
+      -- the time since. This narrows that window to the gap between this
+      -- probe and the kill below -- it does not close it: the port can
+      -- still change what is listening there between this check and the
+      -- os.execute() a few lines down. Only ever kill what answered as a
+      -- real monad surface just now, not what a registry entry merely
+      -- claims -- but "just now" is not "atomically, at the moment of
+      -- kill." Closing that fully would need the kill itself to be
+      -- conditioned on the same identity it just probed (e.g. matching
+      -- monadId again post-kill, or a kill primitive that can assert
+      -- target identity) -- not attempted here.
       local surface = probe_monad_surface(port)
       if surface then
         local handle = io.popen(string.format("%s -ti tcp:%d 2>/dev/null", LSOF_BIN, port))

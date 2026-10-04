@@ -19,31 +19,50 @@
 // lsof reachable (or a fixed PATH) would have killed it for real. This fix
 // does not rely on lsof being broken.
 //
-// Fix: probe_monad_surface(port) (apps.lua) confirms a claimed port is
-// actually answering as a real monad surface (GET /__surface, checked for a
-// real monadId) before report_app() accepts it, AND restart_all()
-// re-verifies fresh immediately before each kill (closing the TOCTOU window
-// a registration-time-only check would leave open -- a port can go quiet
-// and be reassigned between heartbeats). This does not perform full claim
-// signature verification (gap #1/#2 in CLAUDE.md, explicitly future work);
-// what it closes is simpler and immediate: an arbitrary, unrelated local
-// process can no longer be registered or restarted just by naming its port
-// -- the port must actually speak the monad surface protocol, checked live,
-// not merely be claimed.
+// Fix, two separate layers (found live 2026-10-04 that the first pass only
+// ever shipped the first one -- a direct review correctly rejected
+// "verified as a monad" as a stand-in for "the requester is authorized"):
+//   1. probe_monad_surface(port) (apps.lua) confirms a claimed port is
+//      actually answering as a real monad surface (GET /__surface, checked
+//      for a real monadId) before report_app() accepts it, AND restart_all()
+//      re-verifies fresh immediately before each kill. This narrows -- does
+//      NOT eliminate -- the TOCTOU gap a registration-time-only check would
+//      leave open (the port can still change what's listening there between
+//      this probe and the kill a few lines later). It also does not perform
+//      full claim signature verification (gap #1/#2 in CLAUDE.md, explicitly
+//      future work) -- it answers "is a monad here," never "is this THE
+//      monad netget believes it to be," i.e. not actual ownership/
+//      provenance.
+//   2. restart_all() additionally requires a real signed X-Me-Proof + the
+//      exact gateway:control:apps-restart-all capability
+//      (lib/operator_access.lua's has_capability(), no owner/admin bypass).
+//      Verifying the TARGET is a real monad surface was never a substitute
+//      for authorizing the REQUESTER -- identity and permission are
+//      different questions. report_app()/release_app() remain on
+//      loopback + port-verification only (no capability) -- they write a
+//      registry entry, not kill anything; the destructive step is where
+//      authorization was added.
 //
 // This file proves, entirely on disposable infra: an unverified port is
 // rejected by /apps/report and never reaches the registry; a real throwaway
-// monad's own port passes; restart-all leaves an unrelated real process
-// alone (confirmed with an actual separate OS process, a genuine PID,
-// listening on a real port) and only terminates a genuine, currently-live
-// monad surface.
+// monad's own port passes; restart-all without a proof, or with a proof but
+// no capability (admin alone included), kills nothing at all -- not even a
+// genuinely-verified, currently-live monad surface; restart-all leaves an
+// unrelated real process alone regardless (confirmed with an actual
+// separate OS process, a genuine PID, listening on a real port); only a
+// valid proof + the exact capability actually terminates a genuine,
+// currently-live monad surface (a separate real process, confirmed by its
+// actual exit).
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import ME from 'this.me';
+import cleaker from 'cleaker';
 
 const openrestyBin = ['/opt/homebrew/bin/openresty', '/usr/local/bin/openresty', '/usr/bin/openresty'].find((p) => fs.existsSync(p));
 if (!openrestyBin) { console.log('skipped: no openresty on this machine'); process.exit(0); }
@@ -133,6 +152,62 @@ const call = (method: string, p: string, bodyObj?: Record<string, unknown>): Pro
   req.end();
 });
 
+// ── signing helpers for the restart-all authorization layer ────────────────
+function canonicalJson(obj: Record<string, unknown>): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(obj).sort(([a], [b]) => a.localeCompare(b))));
+}
+function genNonce(): string { return crypto.randomBytes(16).toString('hex'); }
+function sha256Hex(data: string): string { return crypto.createHash('sha256').update(data, 'utf8').digest('hex'); }
+
+async function signedCall(node: any, method: string, p: string, bodyObj?: Record<string, unknown>, opts: { noProof?: boolean } = {}): Promise<{ status: number; json: any }> {
+  const bodyStr = bodyObj ? JSON.stringify(bodyObj) : '';
+  const headers: Record<string, string> = { host: 'localhost', connection: 'close' };
+  if (bodyStr) headers['content-type'] = 'application/json';
+  if (!opts.noProof) {
+    const signed = { method, path: p, bodyHash: sha256Hex(bodyStr), nonce: genNonce(), timestamp: Date.now() };
+    const challenge = canonicalJson(signed);
+    const proof = await node.prove({ rootNamespace: 'localhost', challenge });
+    headers['x-me-proof'] = Buffer.from(JSON.stringify(proof)).toString('base64url');
+  }
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: HTTP_PORT, method, path: p, timeout: 8000, headers }, (res) => {
+      let text = ''; res.setEncoding('utf8'); res.on('data', (c) => { text += c; });
+      res.on('end', () => { let json: any = {}; try { json = JSON.parse(text); } catch { /* not json */ } resolve({ status: res.statusCode || 0, json }); });
+    });
+    req.on('error', reject); req.on('timeout', () => req.destroy(new Error('timeout')));
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+const claimsPath = path.join(dataDir, 'runtime', 'gateway-claims.json');
+function readClaims(): any {
+  if (!fs.existsSync(claimsPath)) return { pubkeys: {}, grants: {}, admins: {}, usernames: {}, owner: null };
+  return JSON.parse(fs.readFileSync(claimsPath, 'utf8'));
+}
+function writeClaims(claims: any) { fs.writeFileSync(claimsPath, JSON.stringify(claims), 'utf8'); }
+
+const ME_RESEED = Symbol.for('me.internal.reseed');
+const me = new (ME as any)();
+(me as any)[ME_RESEED]('registry-verify-identity', 'registry-verify-secret-do-not-reuse');
+const node = cleaker(me as any, 'localhost');
+const idProof = await node.prove({ rootNamespace: 'localhost', challenge: null });
+const identityHash = idProof.identityHash;
+const publicKey = idProof.publicKey;
+
+function anchor(opts: { admin?: boolean; scopes?: string[] } = {}) {
+  const claims = readClaims();
+  claims.pubkeys = claims.pubkeys || {};
+  claims.grants = claims.grants || {};
+  claims.admins = claims.admins || {};
+  claims.usernames = claims.usernames || {};
+  claims.pubkeys[identityHash] = publicKey;
+  claims.usernames[identityHash] = 'registry-verify-identity';
+  if (opts.admin) claims.admins[identityHash] = true; else delete claims.admins[identityHash];
+  if (opts.scopes) claims.grants[identityHash] = opts.scopes; else delete claims.grants[identityHash];
+  writeClaims(claims);
+}
+
 let pass = 0; let fail = 0;
 const check = (label: string, cond: boolean, detail?: unknown) => {
   if (cond) { pass += 1; console.log(`  ✓ ${label}`); }
@@ -182,7 +257,54 @@ try {
   // test the positive (should-be-killed) case safely.
   await call('POST', '/apps/release', { id: 'real-monad-1' });
 
-  console.log('\n[3] restart-all only terminates what is CURRENTLY live and verified -- an unrelated real process survives');
+  console.log('\n[3] restart-all requires a real signed proof + the exact capability -- verified as a monad is not enough');
+  // A genuine, SEPARATE child process (its own PID, unlike the in-process
+  // monad above) that answers /__surface with a real-shaped monadId --
+  // enough for probe_monad_surface() to accept it, without risking this
+  // test script's own process. Used across [3] and [4] below: it survives
+  // every unauthorized attempt, then is actually terminated once a proof
+  // with the exact capability is presented.
+  const fakeMonadPort = await freePort();
+  const fakeMonadScript = `
+    require('http').createServer((req, res) => {
+      if (req.url === '/__surface') {
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ monadId: 'monad:fake-for-restart-all-case' }));
+      } else {
+        res.end('ok');
+      }
+    }).listen(${fakeMonadPort}, '127.0.0.1', () => console.log('FAKE_MONAD_READY'));
+  `;
+  const fakeMonadProc = spawn('node', ['-e', fakeMonadScript], { stdio: ['ignore', 'pipe', 'ignore'] });
+  await new Promise<void>((resolve, reject) => {
+    let out = ''; fakeMonadProc.stdout!.on('data', (d) => { out += d; if (out.includes('FAKE_MONAD_READY')) resolve(); });
+    fakeMonadProc.on('error', reject); setTimeout(() => reject(new Error('timeout')), 5000);
+  });
+  let fakeMonadExited = false;
+  fakeMonadProc.on('exit', () => { fakeMonadExited = true; });
+  {
+    const r = await call('POST', '/apps/report', { id: 'fake-monad-2', name: 'restart-target', port: fakeMonadPort });
+    check('reporting the separate fake-monad process -> 200 (it genuinely answers /__surface)', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+  }
+  {
+    const r = await signedCall(node, 'POST', '/apps/restart-all', {}, { noProof: true });
+    check('restart-all with NO X-Me-Proof at all -> 401', r.status === 401, JSON.stringify(r.json));
+    check('the verified, currently-live monad surface was NOT killed', !fakeMonadExited);
+  }
+  {
+    anchor({}); // valid identity, no capability at all
+    const r = await signedCall(node, 'POST', '/apps/restart-all', {});
+    check('valid proof, NO capability -> 403 CAPABILITY_DENIED', r.status === 403 && r.json.error === 'CAPABILITY_DENIED', JSON.stringify(r.json));
+    check('still not killed', !fakeMonadExited);
+  }
+  {
+    anchor({ admin: true }); // admin alone, still no explicit grant
+    const r = await signedCall(node, 'POST', '/apps/restart-all', {});
+    check('admin alone -> still 403 CAPABILITY_DENIED', r.status === 403 && r.json.error === 'CAPABILITY_DENIED', JSON.stringify(r.json));
+    check('still not killed -- being a genuinely-verified monad surface never substituted for requester authorization', !fakeMonadExited);
+  }
+
+  console.log('\n[4] restart-all only terminates what is CURRENTLY live and verified, from an authorized requester -- an unrelated real process survives even then');
   const unrelatedPort = await freePort();
   const unrelated = spawn('node', ['-e', `require('http').createServer((q,r)=>r.end('alive')).listen(${unrelatedPort},'127.0.0.1',()=>console.log('up'))`], { stdio: ['ignore', 'pipe', 'ignore'] });
   const unrelatedPid = unrelated.pid!;
@@ -204,48 +326,15 @@ try {
   registry.apps['stale-unverified-entry'] = { id: 'stale-unverified-entry', name: 'stale', port: unrelatedPort, lastSeenMs: Date.now(), localOnly: true };
   fs.writeFileSync(appsPath, JSON.stringify(registry));
 
-  const restartRes = await call('POST', '/apps/restart-all', {});
-  console.log(`  /apps/restart-all -> ${restartRes.status} ${JSON.stringify(restartRes.json)}`);
+  anchor({ admin: true, scopes: ['gateway:control:apps-restart-all'] }); // the exact grant, finally
+  const restartRes = await signedCall(node, 'POST', '/apps/restart-all', {});
+  console.log(`  /apps/restart-all (authorized) -> ${restartRes.status} ${JSON.stringify(restartRes.json)}`);
   await new Promise((r) => setTimeout(r, 500));
-  check('the unrelated real process was NOT killed', !unrelatedExited);
-  check('restart-all reports it as skipped, not restarted', (restartRes.json.skipped || []).some((s: any) => s.port === unrelatedPort));
+  check('the unrelated real process was still NOT killed (not a monad surface)', !unrelatedExited);
+  check('restart-all reports the unrelated one as skipped, not restarted', (restartRes.json.skipped || []).some((s: any) => s.port === unrelatedPort));
+  check('the genuinely-verified fake-monad WAS killed, now that the requester is authorized', fakeMonadExited, JSON.stringify(restartRes.json));
+  check('restart-all reports it as restarted', (restartRes.json.restarted || []).some((x: any) => x.port === fakeMonadPort), JSON.stringify(restartRes.json));
   try { unrelated.kill(); } catch { /* already gone if this assertion is wrong */ }
-
-  console.log('\n[4] restart-all DOES terminate a currently-live, genuinely-verified monad surface');
-  // A genuine, SEPARATE child process (its own PID, unlike the in-process
-  // monad above) that answers /__surface with a real-shaped monadId --
-  // enough for probe_monad_surface() to accept it, without risking this
-  // test script's own process.
-  const fakeMonadPort = await freePort();
-  const fakeMonadScript = `
-    require('http').createServer((req, res) => {
-      if (req.url === '/__surface') {
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ monadId: 'monad:fake-for-restart-all-positive-case' }));
-      } else {
-        res.end('ok');
-      }
-    }).listen(${fakeMonadPort}, '127.0.0.1', () => console.log('FAKE_MONAD_READY'));
-  `;
-  const fakeMonadProc = spawn('node', ['-e', fakeMonadScript], { stdio: ['ignore', 'pipe', 'ignore'] });
-  await new Promise<void>((resolve, reject) => {
-    let out = ''; fakeMonadProc.stdout!.on('data', (d) => { out += d; if (out.includes('FAKE_MONAD_READY')) resolve(); });
-    fakeMonadProc.on('error', reject); setTimeout(() => reject(new Error('timeout')), 5000);
-  });
-  let fakeMonadExited = false;
-  fakeMonadProc.on('exit', () => { fakeMonadExited = true; });
-  {
-    const r = await call('POST', '/apps/report', { id: 'fake-monad-2', name: 'restart-target', port: fakeMonadPort });
-    check('reporting the separate fake-monad process -> 200 (it genuinely answers /__surface)', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
-  }
-  {
-    const r = await call('POST', '/apps/restart-all', {});
-    console.log(`  /apps/restart-all -> ${r.status} ${JSON.stringify(r.json)}`);
-    const restartedIt = (r.json.restarted || []).some((x: any) => x.port === fakeMonadPort);
-    check('restart-all reports it as restarted', restartedIt, JSON.stringify(r.json));
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    check('the fake-monad process actually received SIGTERM and exited', fakeMonadExited);
-  }
   if (!fakeMonadExited) { try { fakeMonadProc.kill(); } catch { /* already gone */ } }
 
   console.log('\n[5] /apps/release requires POST');

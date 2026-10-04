@@ -942,14 +942,25 @@ ${controlActionGate}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+    # restart-all's own fresh-probe fix (apps.lua's probe_monad_surface())
+    # answers "is something genuinely speaking the monad protocol on this
+    # port right now" -- it does NOT answer "is the caller allowed to kill
+    # it" or "does netget actually administer this process." Identity and
+    # permission are different questions (the same distinction the
+    # capability model already draws everywhere else in this pass) --
+    # confirmed live 2026-10-04 that this location still had neither: any
+    # loopback-reachable caller could trigger a real sweep over whatever is
+    # currently registered. $NETGET_LUA_DIR lets apps.lua loadfile()
+    # me_sig.lua itself, same as the catalog fix.
     location = /apps/restart-all {
+        set $NETGET_LUA_DIR "${layout.luaDir}";
         if ($request_method = OPTIONS) { return 204; }
         set $apps_action restart_all;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 

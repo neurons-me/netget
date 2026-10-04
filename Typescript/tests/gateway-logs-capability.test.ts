@@ -1,0 +1,221 @@
+// gateway-logs-capability.test.ts
+//
+// /logs. Found live 2026-10-03 (same audit pass as the other fixes in this
+// branch): gated only by operator_access.is_loopback() (logs.lua's own
+// verify_cookie(), a stale name for the same check), while this location's
+// own CORS headers reflect any Origin with credentials. The response
+// (remote_addr, the full request line including query string, referer,
+// user-agent -- log_format netget_access in setNginxConfigRoutes.ts) is
+// genuinely readable cross-origin: a page on ANY origin already satisfies
+// "loopback" the same way every other fix in this audit pass closes (the
+// browser making the request IS the loopback peer, regardless of which
+// origin's script triggered it) -- and because this location reflects
+// Origin with credentials, that page can also read the response back, not
+// just trigger the request blindly. "Requires loopback" was not "safe" here,
+// and "read-only" was not low-stakes: these are request logs.
+//
+// Fix: elevated to the same standard as the mutating endpoints fixed
+// elsewhere in this pass -- a real X-Me-Proof (middleware/me_sig.lua) plus
+// the explicit gateway:control:logs-read capability
+// (lib/operator_access.lua's has_capability(), no owner/admin bypass).
+// Method narrowed to GET only (the handler never had any other code path).
+//
+// This file proves the full chain end to end, real signed proofs, entirely
+// on disposable infra: no proof is 401; a valid proof without the exact
+// capability is 403 CAPABILITY_DENIED (admin alone included); the exact
+// grant actually returns real log content; POST is rejected.
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync, spawn } from 'node:child_process';
+import ME from 'this.me';
+import cleaker from 'cleaker';
+
+const openrestyBin = ['/opt/homebrew/bin/openresty', '/usr/local/bin/openresty', '/usr/bin/openresty'].find((p) => fs.existsSync(p));
+if (!openrestyBin) { console.log('skipped: no openresty on this machine'); process.exit(0); }
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'netget-logs-jewel-'));
+const home = path.join(tmp, 'home'); const dataDir = path.join(tmp, 'data'); const prefix = path.join(tmp, 'or');
+fs.mkdirSync(home, { recursive: true });
+fs.mkdirSync(path.join(dataDir, 'runtime'), { recursive: true }); fs.mkdirSync(path.join(dataDir, 'html'), { recursive: true });
+fs.writeFileSync(path.join(dataDir, 'html', 'index.html'), '<!doctype html><title>panel</title>');
+for (const d of ['conf', 'conf.d', 'logs', 'lua']) fs.mkdirSync(path.join(prefix, d), { recursive: true });
+process.env.HOME = home; process.env.NETGET_DATA_DIR = dataDir; process.env.NETGET_MONAD_NAMESPACE = 'logs-jewel.me';
+process.env.NETGET_MAIN_SERVER_RECONCILE_MS = '0';
+delete process.env.NETGET_MONAD_ORIGIN; delete process.env.JWT_SECRET;
+
+const certDir = path.join(tmp, 'cert'); fs.mkdirSync(certDir);
+const keyFile = path.join(certDir, 'k.pem'); const crtFile = path.join(certDir, 'c.pem');
+execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', crtFile, '-days', '2', '-subj', '/CN=localhost',
+  '-addext', 'subjectAltName=DNS:localhost,DNS:local.netget,IP:127.0.0.1'], { stdio: 'ignore' });
+fs.mkdirSync(path.join(home, '.netget', 'certs'), { recursive: true });
+fs.copyFileSync(crtFile, path.join(home, '.netget', 'certs', 'local.netget.pem'));
+fs.copyFileSync(keyFile, path.join(home, '.netget', 'certs', 'local.netget-key.pem'));
+
+const freePort = () => new Promise<number>((resolve) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = (s.address() as any).port; s.close(() => resolve(p)); }); });
+const HTTP_PORT = await freePort(); const HTTPS_PORT = await freePort();
+
+const netgetTsRoot = '/Users/suign/Desktop/Neuroverse/all.this/modules/netget/Typescript';
+const modulePath = path.resolve(netgetTsRoot, 'src/gateway/monadModule.mjs');
+const { createMonadApp } = await import('monad.ai');
+const monadRoot = path.join(tmp, 'monad'); fs.mkdirSync(monadRoot, { recursive: true });
+const app: any = await createMonadApp({
+  cwd: monadRoot, seed: 'logs-jewel-seed', namespace: 'logs-jewel.me',
+  stateDir: path.join(monadRoot, 'me-state'), claimDir: path.join(monadRoot, 'claims'), selfConfigPath: path.join(monadRoot, 'self.json'),
+  selfIdentity: 'logs-jewel.me', selfHostname: 'logs-jewel.me', selfEndpoint: 'http://127.0.0.1:0', selfTags: ['local'], port: 0,
+  guiPkgDistDir: monadRoot, mePkgDistDir: monadRoot, cleakerPkgDistDir: monadRoot, reactUmdDir: monadRoot, reactDomUmdDir: monadRoot,
+  routesPath: path.join(monadRoot, 'routes.js'), modules: [modulePath], logger: false,
+});
+assert.deepEqual(app.monadModules.failed, [], JSON.stringify(app.monadModules.failed));
+const monad: http.Server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+const monadOrigin = `http://127.0.0.1:${(monad.address() as any).port}`;
+process.env.NETGET_MONAD_ORIGIN = monadOrigin;
+process.env.NETGET_GATEWAY_UPSTREAM = monadOrigin;
+
+const { buildNginxConfigContent } = await import(path.join(netgetTsRoot, 'src/modules/NetGetX/OpenResty/setNginxConfigFile.ts'));
+const { getNetgetAppConfContent } = await import(path.join(netgetTsRoot, 'src/modules/NetGetX/OpenResty/setNginxConfigRoutes.ts'));
+const layout: any = {
+  layoutKey: 'linux-source', configDir: path.join(prefix, 'conf'), confDDir: path.join(prefix, 'conf.d'), logDir: path.join(prefix, 'logs'),
+  configFilePath: path.join(prefix, 'conf', 'nginx.conf'), luaDir: path.join(prefix, 'lua'),
+  luaPackagePath: `${path.join(prefix, 'lua')}/?.lua;${path.join(prefix, 'lua')}/?/init.lua;/opt/homebrew/opt/openresty/site/lualib/?.lua;/opt/homebrew/opt/openresty/site/lualib/?/init.lua;;`, userDirective: '', isSupported: true,
+};
+const highPorts = (conf: string) => conf
+  .replace(/^\s*listen \[::\]:\d+.*;\n/gm, '')
+  .replace(/listen 80( default_server)?;/g, `listen ${HTTP_PORT}$1;`)
+  .replace(/listen 443 ssl( default_server)?;/g, `listen ${HTTPS_PORT} ssl$1;`);
+const appConf = getNetgetAppConfContent(layout);
+fs.writeFileSync(path.join(prefix, 'conf', 'nginx.conf'), highPorts(buildNginxConfigContent(layout)).replace(/^events \{/m, `pid ${path.join(prefix, 'logs', 'nginx.pid')};\nevents {`));
+fs.writeFileSync(path.join(prefix, 'conf.d', 'netget_app.conf'), highPorts(appConf));
+fs.copyFileSync('/opt/homebrew/etc/openresty/mime.types', path.join(prefix, 'conf', 'mime.types'));
+fs.cpSync(path.join(netgetTsRoot, 'src/modules/NetGetX/OpenResty/lua'), path.join(prefix, 'lua'), { recursive: true });
+// Something real for logs.lua to actually read back.
+fs.writeFileSync(path.join(prefix, 'logs', 'netget_access.log'), '127.0.0.1 - - [01/Jan/2026:00:00:00 +0000] "GET /sensitive-looking-path?token=abc123 HTTP/1.1" 200 12 "-" "curl"\n');
+
+let nginx: import('node:child_process').ChildProcess | null = null;
+const stopNginx = () => { try { execFileSync(openrestyBin, ['-p', prefix, '-c', path.join(prefix, 'conf', 'nginx.conf'), '-s', 'stop'], { stdio: 'ignore' }); } catch { } nginx?.kill(); nginx = null; };
+const startNginx = async () => {
+  const full = { ...process.env, NETGET_DATA_DIR: dataDir };
+  const t = spawn(openrestyBin, ['-t', '-p', prefix, '-c', path.join(prefix, 'conf', 'nginx.conf')], { env: full });
+  let out = ''; t.stderr.on('data', (d) => { out += d; }); t.stdout.on('data', (d) => { out += d; });
+  assert.equal(await new Promise((r) => t.on('close', r)), 0, `openresty -t failed:\n${out}`);
+  nginx = spawn(openrestyBin, ['-p', prefix, '-c', path.join(prefix, 'conf', 'nginx.conf')], { env: full, stdio: 'ignore' });
+  const listening = (port: number) => new Promise<boolean>((r) => { const c = net.connect(port, '127.0.0.1', () => { c.destroy(); r(true); }); c.on('error', () => r(false)); });
+  for (let i = 0; i < 50; i += 1) {
+    if (await listening(HTTP_PORT)) { await new Promise((r) => setTimeout(r, 200)); return; }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error('nginx did not start');
+};
+
+function canonicalJson(obj: Record<string, unknown>): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(obj).sort(([a], [b]) => a.localeCompare(b))));
+}
+function genNonce(): string { return crypto.randomBytes(16).toString('hex'); }
+function sha256Hex(data: string): string { return crypto.createHash('sha256').update(data, 'utf8').digest('hex'); }
+
+async function signedRequest(node: any, hostname: string, method: string, p: string, opts: { noProof?: boolean; origin?: string } = {}) {
+  // me_sig.lua's challenge binds to ngx.var.uri, which is path-only (no
+  // query string) -- sign that, even when the actual request (sent below)
+  // carries a query string too.
+  const pathOnly = p.split('?')[0];
+  const signed = { method, path: pathOnly, bodyHash: sha256Hex(''), nonce: genNonce(), timestamp: Date.now() };
+  const headers: Record<string, string> = { host: 'localhost', connection: 'close' };
+  if (opts.origin) headers['origin'] = opts.origin;
+  if (!opts.noProof) {
+    const challenge = canonicalJson(signed);
+    const proof = await node.prove({ rootNamespace: hostname, challenge });
+    headers['x-me-proof'] = Buffer.from(JSON.stringify(proof)).toString('base64url');
+  }
+  const res: { status: number; text: string; headers: http.IncomingHttpHeaders } = await new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: HTTP_PORT, method, path: p, timeout: 8000, headers }, (r) => {
+      let text = ''; r.setEncoding('utf8'); r.on('data', (c) => { text += c; });
+      r.on('end', () => resolve({ status: r.statusCode || 0, text, headers: r.headers }));
+    });
+    req.on('error', reject); req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+  let json: any = {}; try { json = JSON.parse(res.text); } catch { /* not json */ }
+  return { status: res.status, json, headers: res.headers };
+}
+
+const claimsPath = path.join(dataDir, 'runtime', 'gateway-claims.json');
+function readClaims(): any {
+  if (!fs.existsSync(claimsPath)) return { pubkeys: {}, grants: {}, admins: {}, usernames: {}, owner: null };
+  return JSON.parse(fs.readFileSync(claimsPath, 'utf8'));
+}
+function writeClaims(claims: any) { fs.writeFileSync(claimsPath, JSON.stringify(claims), 'utf8'); }
+
+let pass = 0; let fail = 0;
+const check = (label: string, cond: boolean, detail?: unknown) => {
+  if (cond) { pass += 1; console.log(`  ✓ ${label}`); }
+  else { fail += 1; console.log(`  ✗ ${label}`, detail ?? ''); }
+};
+
+try {
+  await startNginx();
+
+  const ME_RESEED = Symbol.for('me.internal.reseed');
+  const me = new (ME as any)();
+  (me as any)[ME_RESEED]('logs-jewel-identity', 'logs-jewel-secret-do-not-reuse');
+  const node = cleaker(me as any, 'localhost');
+  const idProof = await node.prove({ rootNamespace: 'localhost', challenge: null });
+  const identityHash = idProof.identityHash;
+  const publicKey = idProof.publicKey;
+
+  function anchor(opts: { admin?: boolean; scopes?: string[] } = {}) {
+    const claims = readClaims();
+    claims.pubkeys = claims.pubkeys || {};
+    claims.grants = claims.grants || {};
+    claims.admins = claims.admins || {};
+    claims.usernames = claims.usernames || {};
+    claims.pubkeys[identityHash] = publicKey;
+    claims.usernames[identityHash] = 'logs-jewel-identity';
+    if (opts.admin) claims.admins[identityHash] = true; else delete claims.admins[identityHash];
+    if (opts.scopes) claims.grants[identityHash] = opts.scopes; else delete claims.grants[identityHash];
+    writeClaims(claims);
+  }
+
+  console.log('\n[1] no proof, no capability -- including from a simulated cross-origin page');
+  {
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs?type=access', { noProof: true, origin: 'https://evil.example' });
+    check('no X-Me-Proof at all -> 401, even though CORS reflects the Origin', r.status === 401, JSON.stringify(r.json));
+    check('Access-Control-Allow-Origin IS reflected (confirms the cross-origin read path this closes is real)', r.headers['access-control-allow-origin'] === 'https://evil.example', r.headers);
+  }
+  {
+    anchor({});
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
+    check('valid proof, NO capability -> 403 CAPABILITY_DENIED', r.status === 403 && r.json.error === 'CAPABILITY_DENIED', JSON.stringify(r.json));
+  }
+  {
+    anchor({ admin: true });
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
+    check('admin alone -> still 403', r.status === 403 && r.json.error === 'CAPABILITY_DENIED', JSON.stringify(r.json));
+  }
+
+  console.log('\n[2] the exact grant returns real log content');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs?type=access');
+    check('valid proof + exact grant -> 200', r.status === 200, JSON.stringify(r.json));
+    check('real log content comes back', Array.isArray(r.json.logs) && r.json.logs.some((l: string) => l.includes('sensitive-looking-path')), JSON.stringify(r.json));
+  }
+
+  console.log('\n[3] POST is rejected');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const r = await signedRequest(node, 'localhost', 'POST', '/logs?type=access');
+    check('POST (even with the read grant) -> 405', r.status === 405, JSON.stringify(r.json));
+  }
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if (fail > 0) process.exitCode = 1;
+} finally {
+  stopNginx();
+  await new Promise((resolve) => monad.close(resolve));
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+console.log('logs capability probe complete');

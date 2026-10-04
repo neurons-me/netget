@@ -780,17 +780,36 @@ ${viteAssetLocation}
         add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
     }
 
-    # Logs
+    # Logs -- read access to real server/nginx logs (remote_addr, full
+    # request line INCLUDING query string, referer, user-agent). Found live
+    # 2026-10-03: this was gated only by operator_access.is_loopback()
+    # (logs.lua's own verify_cookie(), a stale name for the same check --
+    # see that file's own comment), and this location's own CORS headers
+    # reflect any Origin with credentials -- meaning a page on ANY origin
+    # could both trigger a read (the same browser-mediated loopback request
+    # everything else in this audit pass closes) AND actually read the
+    # response back, cross-origin. "Requires loopback" is not "safe" when
+    # loopback is exactly what a browser on this machine already satisfies,
+    # and read-only is not low-stakes when the content is request logs.
+    # $NETGET_LUA_DIR lets logs.lua loadfile() middleware/me_sig.lua itself.
     location /logs {
-        if ($request_method = OPTIONS) { return 204; }
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         # Same /domains-vs-page collision (see that location's comment) —
         # /logs is also both a React Router page and a real API route.
         if ($http_sec_fetch_mode = "navigate") { rewrite ^ /index.html last; }
+        set $NETGET_LUA_DIR "${layout.luaDir}";
         content_by_lua_file lua/handlers/logs.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 

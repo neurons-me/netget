@@ -10,6 +10,31 @@ local function verify_cookie()
   return operator.authorized_operator()
 end
 
+local LOGS_READ_CAPABILITY = "gateway:control:logs-read"
+
+-- Loopback alone used to be this handler's entire gate. Found live
+-- 2026-10-03: the response (remote_addr, full request lines including
+-- query strings, referer, user-agent) is readable cross-origin -- this
+-- location's own CORS headers reflect any Origin with credentials, and a
+-- page on any origin already satisfies "loopback" the same way every other
+-- fix in this audit pass closes (the browser making the request IS the
+-- loopback peer, regardless of which origin's script triggered it).
+-- Elevated to the same standard as the mutating endpoints elsewhere in this
+-- pass: a real X-Me-Proof (middleware/me_sig.lua, loaded fresh via
+-- loadfile()() -- never require(), which would cache the module and skip
+-- verification after the first call in a worker) plus an explicit
+-- capability grant, no owner/admin bypass.
+local function require_read_capability()
+  local me_sig_chunk = loadfile(ngx.var.NETGET_LUA_DIR .. "/middleware/me_sig.lua")
+  me_sig_chunk()
+  if not operator.has_capability(LOGS_READ_CAPABILITY) then
+    ngx.status = 403
+    ngx.say(cjson.encode({ error = "CAPABILITY_DENIED", required = LOGS_READ_CAPABILITY }))
+    return false
+  end
+  return true
+end
+
 local function read_file_tail(path)
   local fh, err = io.open(path, "r")
   if not fh then return nil end
@@ -45,6 +70,12 @@ local function handle_logs()
     ngx.say(cjson.encode({ error = "Unauthorized" }))
     return
   end
+  if ngx.req.get_method() ~= "GET" then
+    ngx.status = 405
+    ngx.say(cjson.encode({ error = "Use GET." }))
+    return
+  end
+  if not require_read_capability() then return end
   local args = parse_qs()
   local logType = args["type"] or "access"
   local limit = tonumber(args["limit"]) or 100

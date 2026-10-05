@@ -38,12 +38,35 @@
 --      encoding (already how the top-level challenge is canonicalized)
 --      instead of a hand-rolled delimiter-joined string, which would be
 --      ambiguous the moment a key or value itself contains "=" or "&".
+--   4. Invalid UTF-8: a percent-escape can be individually well-formed
+--      ("%FF", "%C3%28") while the BYTES it decodes to do not form valid
+--      UTF-8 -- a different failure mode than point 1's malformed escapes.
+--      URLSearchParams does NOT pass these bytes through: per the WHATWG
+--      URL spec it runs a stateful UTF-8 decode and substitutes each
+--      invalid sequence with U+FFFD (confirmed empirically: "%FF" and
+--      "%C3%28" both decode to U+FFFD-containing strings, not the raw
+--      bytes). cjson.encode does NOT replicate that -- it treats Lua
+--      strings as opaque bytes and passes them straight through, so
+--      without this check "%FF" would canonicalize to a raw 0xFF byte
+--      here but to "\xEF\xBF\xBD" (U+FFFD) on the real client, and the
+--      two could never match for ANY request whose query happens to
+--      contain invalid UTF-8 -- confirmed by direct byte comparison, not
+--      assumed. Replicating WHATWG's exact replacement algorithm in Lua
+--      was considered and rejected as out of scope for this pass (bigger
+--      surface, more ways to get subtly wrong); instead, canonicalize()
+--      detects invalid UTF-8 in any decoded key or value and returns
+--      (nil, "ME_PROOF_QUERY_INVALID_ENCODING") -- a request whose query
+--      doesn't decode to valid UTF-8 is rejected outright, consistently,
+--      by me_sig.lua, rather than risking an unreliable byte-level
+--      comparison for a case that cannot be proven to agree with the
+--      client. This never throws (no internal error) -- callers get a
+--      normal (nil, err) pair, same shape as cjson.safe's own functions.
 --
 -- See gateway-query-canonicalization.test.ts for the shared vectors this
 -- is checked against directly (repeated-key order, Unicode, "+", "%20",
--- empty values, malformed escapes) — run against the REAL compiled
--- signedRequest.ts canonicalizeQuery() on one side and this exact file,
--- loaded by a disposable OpenResty, on the other.
+-- empty values, malformed escapes, invalid UTF-8) — run against the REAL
+-- compiled signedRequest.ts canonicalizeQuery() on one side and this
+-- exact file, loaded by a disposable OpenResty, on the other.
 
 local cjson = require "cjson.safe"
 
@@ -54,8 +77,70 @@ local function decode_form_component(s)
   return (s:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end))
 end
 
+-- Strict UTF-8 validation (rejects overlong encodings, UTF-16 surrogate
+-- halves, and anything beyond U+10FFFF) — no bundled OpenResty/LuaJIT
+-- library does this (confirmed: neither a global `utf8` nor `require
+-- "utf8"`/"lua-utf8" is available in this runtime), so it is hand-rolled
+-- here, scoped to exactly what point 4 above needs: a yes/no validity
+-- check, not a decoder.
+local function is_valid_utf8(s)
+  local i, n = 1, #s
+  while i <= n do
+    local b1 = s:byte(i)
+    if b1 < 0x80 then
+      i = i + 1
+    elseif b1 >= 0xC2 and b1 <= 0xDF then
+      local b2 = s:byte(i + 1)
+      if not b2 or b2 < 0x80 or b2 > 0xBF then return false end
+      i = i + 2
+    elseif b1 == 0xE0 then
+      local b2, b3 = s:byte(i + 1), s:byte(i + 2)
+      if not b2 or b2 < 0xA0 or b2 > 0xBF then return false end
+      if not b3 or b3 < 0x80 or b3 > 0xBF then return false end
+      i = i + 3
+    elseif (b1 >= 0xE1 and b1 <= 0xEC) or b1 == 0xEE or b1 == 0xEF then
+      local b2, b3 = s:byte(i + 1), s:byte(i + 2)
+      if not b2 or b2 < 0x80 or b2 > 0xBF then return false end
+      if not b3 or b3 < 0x80 or b3 > 0xBF then return false end
+      i = i + 3
+    elseif b1 == 0xED then
+      -- excludes the UTF-16 surrogate range D800-DFFF
+      local b2, b3 = s:byte(i + 1), s:byte(i + 2)
+      if not b2 or b2 < 0x80 or b2 > 0x9F then return false end
+      if not b3 or b3 < 0x80 or b3 > 0xBF then return false end
+      i = i + 3
+    elseif b1 == 0xF0 then
+      local b2, b3, b4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
+      if not b2 or b2 < 0x90 or b2 > 0xBF then return false end
+      if not b3 or b3 < 0x80 or b3 > 0xBF then return false end
+      if not b4 or b4 < 0x80 or b4 > 0xBF then return false end
+      i = i + 4
+    elseif b1 >= 0xF1 and b1 <= 0xF3 then
+      local b2, b3, b4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
+      if not b2 or b2 < 0x80 or b2 > 0xBF then return false end
+      if not b3 or b3 < 0x80 or b3 > 0xBF then return false end
+      if not b4 or b4 < 0x80 or b4 > 0xBF then return false end
+      i = i + 4
+    elseif b1 == 0xF4 then
+      -- caps at U+10FFFF
+      local b2, b3, b4 = s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
+      if not b2 or b2 < 0x80 or b2 > 0x8F then return false end
+      if not b3 or b3 < 0x80 or b3 > 0xBF then return false end
+      if not b4 or b4 < 0x80 or b4 > 0xBF then return false end
+      i = i + 4
+    else
+      -- 0x80-0xC1: a bare continuation byte, or the overlong C0/C1 lead
+      -- bytes (always invalid). 0xF5-0xFF: beyond U+10FFFF or reserved.
+      return false
+    end
+  end
+  return true
+end
+
 -- qs: the raw query string, with NO leading "?" (ngx.var.args's own
 -- convention — pass that directly).
+-- Returns (canonical_string, nil) on success, or (nil, error_code) when
+-- the query decodes to invalid UTF-8 — see point 4 above. Never throws.
 function M.canonicalize(qs)
   qs = qs or ""
   local pairs_list = {}
@@ -70,6 +155,9 @@ function M.canonicalize(qs)
         else
           k = decode_form_component(piece)
           v = ""
+        end
+        if not is_valid_utf8(k) or not is_valid_utf8(v) then
+          return nil, "ME_PROOF_QUERY_INVALID_ENCODING"
         end
         pairs_list[#pairs_list + 1] = { k, v }
       end

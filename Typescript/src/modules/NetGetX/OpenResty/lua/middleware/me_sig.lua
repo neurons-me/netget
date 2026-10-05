@@ -29,6 +29,9 @@
 -- never sorted, since order itself can be operationally significant for a
 -- repeated query key — same JSON-array-of-pairs encoding) since the
 -- comparison here is byte-exact string equality, same as path/bodyHash.
+-- A query that decodes to invalid UTF-8 (ME_PROOF_QUERY_INVALID_ENCODING)
+-- is rejected outright rather than compared — see lib/query_canon.lua's
+-- own header, point 4, for why.
 --
 -- Verification steps:
 --   1. Decode proof from header
@@ -262,7 +265,18 @@ local function verify_request()
   -- request also carries no query parameters — never when it does, since
   -- that would let a bare-path proof silently cover any query on that path,
   -- the exact gap this check closes.
-  local actual_query = query_canon.canonicalize(ngx.var.args)
+  --
+  -- query_canon.canonicalize() can fail closed (nil, err) when the query
+  -- decodes to invalid UTF-8 — a deliberate, consistent rejection rather
+  -- than an unreliable byte-level comparison with the client's own
+  -- replacement-character handling of the same bytes (see
+  -- lib/query_canon.lua's header, point 4). Checked before the actual
+  -- comparison below, so this can never fall through into it.
+  local actual_query, query_err = query_canon.canonicalize(ngx.var.args)
+  if query_err then
+    deny(401, query_err, "Request query string does not decode to valid UTF-8; cannot be verified.")
+    return
+  end
   if req_query == nil then
     if actual_query ~= "[]" then
       deny(401, "ME_PROOF_QUERY_UNBOUND",

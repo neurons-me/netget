@@ -66,9 +66,17 @@ http {
     server_name localhost;
     location = /__test_query_canon {
       content_by_lua_block {
+        local cjson = require "cjson.safe"
         local query_canon = require "lib.query_canon"
+        local result, err = query_canon.canonicalize(ngx.var.args)
+        if err then
+          ngx.status = 422
+          ngx.header["Content-Type"] = "application/json; charset=utf-8"
+          ngx.print(cjson.encode({ error = err }))
+          return
+        end
         ngx.header["Content-Type"] = "application/json; charset=utf-8"
-        ngx.print(query_canon.canonicalize(ngx.var.args))
+        ngx.print(result)
       }
     }
   }
@@ -99,16 +107,24 @@ function canonicalizeQuery(qs: string): string {
   return JSON.stringify(Array.from(new URLSearchParams(qs).entries()));
 }
 
-async function luaCanonicalize(rawQuery: string): Promise<string> {
-  const res: string = await new Promise((resolve, reject) => {
+async function luaCanonicalizeFull(rawQuery: string): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: HTTP_PORT, method: 'GET', path: `/__test_query_canon?${rawQuery}`, timeout: 8000 }, (r) => {
       let text = ''; r.setEncoding('utf8'); r.on('data', (c) => { text += c; });
-      r.on('end', () => resolve(text));
+      r.on('end', () => resolve({ status: r.statusCode || 0, text }));
     });
     req.on('error', reject); req.on('timeout', () => req.destroy(new Error('timeout')));
     req.end();
   });
-  return res;
+}
+
+// Convenience wrapper for the (overwhelming majority of) vectors that are
+// expected to succeed -- asserts the 200/canonical-string shape and
+// returns just the body, same as before this function was split in two.
+async function luaCanonicalize(rawQuery: string): Promise<string> {
+  const { status, text } = await luaCanonicalizeFull(rawQuery);
+  assert.equal(status, 200, `expected 200 for raw=${JSON.stringify(rawQuery)}, got ${status}: ${text}`);
+  return text;
 }
 
 let pass = 0; let fail = 0;
@@ -166,6 +182,43 @@ try {
     check('TS: bare key == key= ', tsBare === tsEq, { tsBare, tsEq });
     check('Lua: bare key == key=', luaBare === luaEq, { luaBare, luaEq });
     check('TS and Lua agree on that shared value', tsBare === luaBare, { tsBare, luaBare });
+  }
+
+  // A percent-escape can be individually well-formed ("%FF" IS "%" + two
+  // hex digits) while the bytes it decodes to do not form valid UTF-8 --
+  // a different failure mode than [2]'s malformed-escape vectors.
+  // Confirmed empirically (real divergence, not assumed) before this check
+  // existed: URLSearchParams substitutes U+FFFD for each invalid sequence
+  // (node -e 'new URLSearchParams("bad=%FF")' -> {bad: "�"}), while
+  // cjson.encode passed the raw 0xFF byte straight through -- the two
+  // would never byte-match for any request whose query contains invalid
+  // UTF-8. Rather than replicate WHATWG's exact replacement algorithm in
+  // Lua, the real query_canon.lua now fails closed: both sides must
+  // "produce the same, or reject consistently" -- this is the "reject
+  // consistently" branch, verified to be an ordinary (422, error-code)
+  // response, never an uncaught Lua error / 500.
+  console.log('\n[4] invalid UTF-8 (valid escape syntax, invalid decoded bytes) is rejected consistently -- never a 500, never silently compared');
+  {
+    const invalidUtf8Vectors = [
+      { label: 'lone continuation-shaped byte 0xFF (never a valid UTF-8 lead or continuation byte)', raw: 'bad=%FF' },
+      { label: '0xC3 lead byte followed by a non-continuation byte', raw: 'bad=%C3%28' },
+      { label: 'overlong 2-byte encoding (0xC0 0x80 -- would encode U+0000, which fits in 1 byte)', raw: 'bad=%C0%80' },
+      { label: 'UTF-16 surrogate half encoded directly in UTF-8 (0xED 0xA0 0x80 -- disallowed)', raw: 'bad=%ED%A0%80' },
+    ];
+    for (const v of invalidUtf8Vectors) {
+      const { status, text } = await luaCanonicalizeFull(v.raw);
+      check(`${v.label} -- raw=${JSON.stringify(v.raw)} -> 422 ME_PROOF_QUERY_INVALID_ENCODING, not a 500`, status === 422 && text.includes('ME_PROOF_QUERY_INVALID_ENCODING'), { status, text });
+    }
+  }
+
+  console.log('\n[5] valid UTF-8 (including the multi-byte vectors from [2]) is NOT affected by the new check -- still 200, still matches TS');
+  {
+    const stillValidVectors = ['name=caf%C3%A9', 'emoji=%F0%9F%98%80', 'type=access'];
+    for (const raw of stillValidVectors) {
+      const ts = canonicalizeQuery(raw);
+      const { status, text } = await luaCanonicalizeFull(raw);
+      check(`raw=${JSON.stringify(raw)} -- still 200 and still matches TS`, status === 200 && text === ts, { status, text, ts });
+    }
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

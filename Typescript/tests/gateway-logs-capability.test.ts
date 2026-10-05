@@ -305,6 +305,22 @@ try {
     check('freshly, correctly signed ?type=error -> 200, real error log (a genuinely different, correctly-authorized resource)', rError.status === 200 && Array.isArray(rError.json.logs) && rError.json.logs.some((l: string) => l.includes('DISTINCT_ERROR_LOG_MARKER')), JSON.stringify(rError.json));
   }
 
+  // End-to-end confirmation of lib/query_canon.lua's invalid-UTF-8 path
+  // through the REAL me_sig.lua verify_request() chain (not just the
+  // isolated module -- see gateway-query-canonicalization.test.ts for
+  // that), with a genuinely valid admin+capability grant in place: proves
+  // the full request path fails closed with a clean, documented status,
+  // never an uncaught Lua error. signedRequest()'s own canonicalizeQuery()
+  // (mirroring the client) substitutes U+FFFD for the invalid bytes when
+  // building what it signs -- irrelevant here, since the server rejects
+  // based on the REAL wire query string before ever comparing it.
+  console.log('\n[2f] a query that decodes to invalid UTF-8 is rejected cleanly end-to-end, even with a fully valid proof + capability');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:logs-read'] });
+    const r = await signedRequest(node, 'localhost', 'GET', '/logs?bad=%FF');
+    check('invalid UTF-8 in the real query -> 401 ME_PROOF_QUERY_INVALID_ENCODING, not a 500, not silently compared', r.status === 401 && r.json.error === 'ME_PROOF_QUERY_INVALID_ENCODING', JSON.stringify(r.json));
+  }
+
   console.log('\n[3] POST is rejected');
   {
     anchor({ admin: true, scopes: ['gateway:control:logs-read'] });

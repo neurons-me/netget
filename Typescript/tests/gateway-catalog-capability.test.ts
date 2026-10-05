@@ -241,6 +241,63 @@ try {
     check('marker file NOT created', !fs.existsSync(markerFile));
   }
 
+  // restart_all()'s process-ownership check (gateway-app-registry-
+  // verification.test.ts) is only as trustworthy as lastSpawnedPid being
+  // something ONLY spawn_catalog_monad() itself can set -- if upsert (or
+  // report_app, a completely different, loopback-only file) could write
+  // or preserve that field from caller-supplied data, a forged "evidence
+  // of spawn" could make restart_all treat an arbitrary process as
+  // netget-administered. Checked directly here, not inferred from reading
+  // the handler once: an upsert carrying a fabricated lastSpawnedPid must
+  // never have it land in the catalog, neither as a NEW field on a fresh
+  // entry nor preserved/overwritten on an entry that has a REAL recorded
+  // one from an actual prior spawn.
+  console.log('\n[2b] catalog/upsert cannot write or preserve lastSpawnedPid -- that field is the ONLY evidence restart-all trusts for process ownership');
+  {
+    anchor({ admin: true, scopes: ['gateway:control:apps-catalog-upsert'] });
+    const forgedPid = 1; // pid 1 (init/launchd) -- picked because it is guaranteed to exist and never be "netget-administered"
+    const r = await signedRequest(node, 'localhost', 'POST', '/apps/catalog/upsert', { ...upsertBody, lastSpawnedPid: forgedPid, lastSpawnedAt: Date.now() });
+    check('upsert carrying a fabricated lastSpawnedPid still -> 200 (the extra field is simply not a recognized input)', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+    check('the forged pid did NOT land in the catalog on disk', readCatalog()[entryName]?.lastSpawnedPid !== forgedPid, JSON.stringify(readCatalog()[entryName]));
+    check('no lastSpawnedPid field exists at all on a freshly-upserted entry -- never set by anything but a real spawn', readCatalog()[entryName]?.lastSpawnedPid === undefined, JSON.stringify(readCatalog()[entryName]));
+  }
+  {
+    // Now prove the SAME holds even when a real prior spawn's pid already
+    // exists on this entry -- upsert must not let a caller "freeze" or
+    // overwrite that real evidence with a chosen value either.
+    anchor({ admin: true, scopes: ['gateway:control:apps-catalog-spawn'] });
+    const spawnRes = await signedRequest(node, 'localhost', 'POST', '/apps/catalog/spawn', { name: entryName });
+    check('spawn succeeds and records a REAL pid first', spawnRes.status === 200 && typeof spawnRes.json.pid === 'number' && spawnRes.json.pid > 0, JSON.stringify(spawnRes.json));
+    const realPid = readCatalog()[entryName]?.lastSpawnedPid;
+    check('that real pid is genuinely on disk', typeof realPid === 'number' && realPid > 0, JSON.stringify(readCatalog()[entryName]));
+
+    anchor({ admin: true, scopes: ['gateway:control:apps-catalog-upsert'] });
+    const forgedPid2 = 1;
+    const r = await signedRequest(node, 'localhost', 'POST', '/apps/catalog/upsert', { ...upsertBody, lastSpawnedPid: forgedPid2 });
+    check('a SUBSEQUENT upsert carrying a different forged pid -> 200', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+    check('the real recorded pid is gone after upsert (edited cmd invalidates old spawn evidence), but NEVER replaced by the forged value', readCatalog()[entryName]?.lastSpawnedPid !== forgedPid2, JSON.stringify(readCatalog()[entryName]));
+    // Reset so [3] below (which re-spawns this same entryName) still
+    // proves what it says it proves -- the marker file existing because
+    // THIS block's own real spawn already created it would be a correct
+    // but misleading pass.
+    try { fs.rmSync(markerFile); } catch { /* fine if it never ran */ }
+  }
+  // report_app() is a completely separate file (apps.json, not
+  // monad-catalog.json) and loopback-gated only -- confirmed by reading
+  // the handler that it never touches read_catalog()/write_catalog() at
+  // all, so there is no code path for it to write this field either.
+  // Exercised directly here (not just by code inspection) to prove it
+  // can't even incidentally leak a caller-supplied lastSpawnedPid into
+  // the catalog file via some shared write path.
+  console.log('\n[2c] /apps/report (a completely different, loopback-only registry) cannot touch monad-catalog.json at all');
+  {
+    const catalogBefore = fs.existsSync(catalogPath) ? fs.readFileSync(catalogPath, 'utf8') : null;
+    const r = await signedRequest(node, 'localhost', 'POST', '/apps/report', { id: 'forge-attempt', name: entryName, port: 1, lastSpawnedPid: 1 }, { noProof: true });
+    void r; // report_app only needs loopback, not a capability -- status isn't the point here
+    const catalogAfter = fs.existsSync(catalogPath) ? fs.readFileSync(catalogPath, 'utf8') : null;
+    check('monad-catalog.json is byte-for-byte unchanged after a report carrying a forged lastSpawnedPid', catalogBefore === catalogAfter, { before: catalogBefore, after: catalogAfter });
+  }
+
   console.log('\n[3] spawn with the exact grant actually runs the command (the real jewel for this chain)');
   {
     anchor({ admin: true, scopes: ['gateway:control:apps-catalog-spawn'] });

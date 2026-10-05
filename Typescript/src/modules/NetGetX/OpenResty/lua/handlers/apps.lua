@@ -291,6 +291,30 @@ end
 -- so there is no reason to also widen what io.popen can resolve generally.
 local LSOF_BIN = "/usr/sbin/lsof"
 
+-- Moved ahead of restart_all() (which needs it) from the catalog section
+-- below, where read_catalog()/write_catalog() are still defined alongside
+-- the rest of the catalog's own CRUD -- these two are the shared I/O
+-- primitives, not catalog-specific logic, so having restart_all() reach
+-- back for them here is the smaller diff than duplicating file I/O.
+local function read_catalog()
+  local f = io.open(catalogPath, "r")
+  if not f then return {} end
+  local raw = f:read("*a"); f:close()
+  if not raw or raw == "" then return {} end
+  local decoded = cjson.decode(raw)
+  return type(decoded) == "table" and decoded or {}
+end
+
+local function write_catalog(catalog)
+  os.execute("mkdir -p " .. runtimeDir)
+  local tmp = catalogPath .. ".tmp"
+  local f, err = io.open(tmp, "w")
+  if not f then return nil, err end
+  f:write(cjson.encode(catalog))
+  f:close()
+  return os.rename(tmp, catalogPath)
+end
+
 local RESTART_ALL_CAPABILITY = "gateway:control:apps-restart-all"
 
 local function restart_all()
@@ -319,12 +343,55 @@ local function restart_all()
   -- first call in this worker). Its own deny() sends 401 and ngx.exit()s
   -- outright if the proof is missing/invalid/expired/replayed, before
   -- has_capability() is ever reached.
+  --
+  -- A SEPARATE, previously open question from the same 2026-10-04 review,
+  -- closed here: authorizing the REQUESTER says nothing about which
+  -- PROCESSES this function may affect. Before this, any registry entry
+  -- that answered probe_monad_surface() fresh was killed -- but a self-
+  -- report to /apps/report (any local caller can send one, see that
+  -- function's own comment) only ever proved "something here speaks the
+  -- monad protocol," never "netget itself is the one running it." A
+  -- manually-started monad (operator ran it by hand in a terminal, never
+  -- went through spawn_catalog_monad() below) would answer the protocol
+  -- just as correctly as one netget actually spawned -- and would have
+  -- been killed just the same, despite netget having no real claim to
+  -- administer it.
+  --
+  -- The fix: spawn_catalog_monad() now captures the REAL pid of whatever
+  -- it launches (not io.popen's own wrapper shell, which exits immediately
+  -- once it backgrounds the job -- see that function's own comment) and
+  -- records it on the catalog entry. restart_all() builds the set of pids
+  -- netget has this direct spawn evidence for, and only kills a reported
+  -- app's process when the pid lsof finds listening on its port is ALSO
+  -- in that set -- i.e., only when netget itself has a record of having
+  -- launched the exact OS process about to be killed, not merely a report
+  -- that something is answering. A monad that was started any other way
+  -- is skipped, with an explicit reason, regardless of how correctly it
+  -- answers the protocol: that is the deliberate point.
+  --
+  -- What this does not close: a pid can be reused by the OS once the
+  -- original process exits, so a pid matching the recorded one is not on
+  -- its own an absolute guarantee -- narrowed by requiring the fresh
+  -- protocol probe below to ALSO succeed (an accidental pid-reuse
+  -- collision would additionally have to coincidentally answer the monad
+  -- surface protocol), not eliminated by a stronger primitive like a
+  -- process start-time/exe-path comparison, which isn't attempted here.
   local me_sig_chunk = loadfile(ngx.var.NETGET_LUA_DIR .. "/middleware/me_sig.lua")
   me_sig_chunk()
   if not operator.has_capability(RESTART_ALL_CAPABILITY) then
     return json(403, { success = false, error = "CAPABILITY_DENIED", required = RESTART_ALL_CAPABILITY })
   end
   local registry = scrub_dead_apps(read_registry())
+
+  -- The set of pids netget itself has direct spawn evidence for -- see
+  -- this function's own comment above for why self-reporting (what the
+  -- loop below otherwise iterates) can never substitute for this.
+  local administeredPids = {}
+  for name, entry in pairs(read_catalog()) do
+    local spawnedPid = tonumber(type(entry) == "table" and entry.lastSpawnedPid or nil)
+    if spawnedPid then administeredPids[spawnedPid] = name end
+  end
+
   local restarted, skipped = {}, {}
   for _, app in pairs(registry.apps or {}) do
     local port = tonumber(app.port)
@@ -345,15 +412,45 @@ local function restart_all()
       -- target identity) -- not attempted here.
       local surface = probe_monad_surface(port)
       if surface then
-        local handle = io.popen(string.format("%s -ti tcp:%d 2>/dev/null", LSOF_BIN, port))
-        local pid_str = handle and handle:read("*l")
+        -- -sTCP:LISTEN, not a bare port match: lsof -ti tcp:PORT with no
+        -- state filter matches ANY socket touching that port number on
+        -- EITHER end, including a CLIENT connection some unrelated process
+        -- happens to have open to it -- confirmed live while testing this
+        -- exact ownership check: the test harness's own long-lived HTTP
+        -- client process (polling the target port to confirm it was up)
+        -- showed up as a SECOND "pid on this port" purely as the calling
+        -- side of a connection, never as anything bound to it. Restricting
+        -- to LISTEN-state sockets is what actually answers "what process
+        -- is the SERVER here," which is the only question restart_all ever
+        -- meant to ask. Reads every matching line (not just the first,
+        -- the earlier bug here): a dual-stack bind can legitimately
+        -- produce more than one LISTEN line for the SAME real pid, and
+        -- only one of several needs to match administeredPids for this to
+        -- be a real spawn-recorded process.
+        local handle = io.popen(string.format("%s -ti tcp:%d -sTCP:LISTEN 2>/dev/null", LSOF_BIN, port))
+        local out = handle and handle:read("*a") or ""
         if handle then handle:close() end
-        local pid = tonumber(pid_str)
-        if pid then
-          os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
-          table.insert(restarted, { name = app.name, port = port, pid = pid, monadId = surface.monadId })
-        else
+        local pid = nil
+        for line in out:gmatch("[^\r\n]+") do
+          local candidate = tonumber(line)
+          if candidate and administeredPids[candidate] then
+            pid = candidate
+            break
+          elseif candidate and not pid then
+            pid = candidate -- keep the first real candidate even if it never matches, for a meaningful "pid not administered" report below
+          end
+        end
+        if not pid then
           table.insert(skipped, { name = app.name, port = port, reason = "pid not found" })
+        elseif not administeredPids[pid] then
+          -- Verified as a genuine monad surface, but netget has no spawn
+          -- record for THIS pid -- never killed, no matter how correctly
+          -- it answers the protocol. This is the ownership gap closing:
+          -- being a monad was never being netget's monad.
+          table.insert(skipped, { name = app.name, port = port, pid = pid, reason = "not administered by netget -- no recorded spawn for this pid" })
+        else
+          os.execute(string.format("kill -TERM %d 2>/dev/null", pid))
+          table.insert(restarted, { name = app.name, port = port, pid = pid, monadId = surface.monadId, spawnedAs = administeredPids[pid] })
         end
       else
         table.insert(skipped, { name = app.name, port = port, reason = "not verified as a monad surface" })
@@ -364,25 +461,9 @@ local function restart_all()
 end
 
 -- ── Catalog: name → start command registry ───────────────────────────────────
-
-local function read_catalog()
-  local f = io.open(catalogPath, "r")
-  if not f then return {} end
-  local raw = f:read("*a"); f:close()
-  if not raw or raw == "" then return {} end
-  local decoded = cjson.decode(raw)
-  return type(decoded) == "table" and decoded or {}
-end
-
-local function write_catalog(catalog)
-  os.execute("mkdir -p " .. runtimeDir)
-  local tmp = catalogPath .. ".tmp"
-  local f, err = io.open(tmp, "w")
-  if not f then return nil, err end
-  f:write(cjson.encode(catalog))
-  f:close()
-  return os.rename(tmp, catalogPath)
-end
+-- read_catalog()/write_catalog() now live above, ahead of restart_all()
+-- (which needs them to look up spawn-recorded pids) -- kept here only as
+-- this section divider, not a second definition.
 
 local function normalize_name(s)
   return tostring(s or ""):lower():match("^([a-z0-9][a-z0-9%-%_%.]*)")
@@ -524,15 +605,67 @@ local function spawn_catalog_monad()
   local home = os.getenv("HOME") or ""
   local cwd  = tostring(entry.cwd or home):gsub("^~", home)
   local log  = runtimeDir .. "/" .. name .. ".spawn.log"
+  local pidfile = runtimeDir .. "/" .. name .. ".spawn.pid"
   -- cmd is deliberately unquoted -- it is the one field a properly-
   -- authorized caller gets to have run as a real shell command, the
-  -- catalog's whole point. cwd and log are NOT supposed to be shell syntax,
-  -- just a path each -- shell_quote() keeps them that way regardless of
-  -- content (see its own comment for the concrete cwd-breakout this closes).
-  local full = string.format("cd %s && %s >> %s 2>&1 &", shell_quote(cwd), cmd, shell_quote(log))
+  -- catalog's whole point. cwd, log and pidfile are NOT supposed to be
+  -- shell syntax, just a path each -- shell_quote() keeps them that way
+  -- regardless of content (see its own comment for the concrete
+  -- cwd-breakout this closes).
+  --
+  -- Captures the REAL pid of cmd itself -- not io.popen's own /bin/sh
+  -- wrapper, which would exit immediately once it backgrounds the job and
+  -- is never the monad's own pid.
+  --
+  -- An earlier version of this tracked the backgrounded job's pid from
+  -- OUTSIDE it (`cmd & echo $! > pidfile`, in the parent shell) -- live-
+  -- tested in isolation (a standalone bash loop, 15/15 clean) but found to
+  -- intermittently record a DIFFERENT pid than the one lsof later found
+  -- actually bound to the port when driven through this exact io.popen()
+  -- call inside a real nginx worker (not reproduced outside that context,
+  -- root cause not pinned down -- some nginx/worker-specific interaction
+  -- with shell job control was suspected but not confirmed). Rather than
+  -- ship a capture mechanism with an unexplained, intermittent discrepancy
+  -- under its real caller, this was redesigned to remove the indirection
+  -- entirely: the pid is now self-reported from WITHIN the exact process
+  -- that goes on to become cmd, with no separate "track a child's pid from
+  -- its parent" step at all.
+  --
+  -- `sh -c 'echo $$ > "$1"; exec sh -c "$2"' _ pidfile cmd`: $$ is a
+  -- shell's own pid (never a tracked child's), and `exec` replaces that
+  -- shell's process image in place -- same pid before and after, by
+  -- definition, through as many exec steps as this chain has. pidfile and
+  -- cmd are passed as POSITIONAL PARAMETERS ($1/$2, after the conventional
+  -- placeholder "_" for $0), not textually embedded inside the quoted
+  -- script -- embedding shell_quote(cmd)'s own single-quoted text inside
+  -- this script's already-single-quoted body would nest single quotes,
+  -- which is a shell syntax error, not just a style choice. The inner
+  -- `sh -c "$2"` wrapping (rather than exec'ing directly into cmd's own
+  -- first word) is so a MULTI-step cmd ("setup && start-the-real-thing")
+  -- still runs as a normal shell script would; only its own last step is
+  -- expected to be what ends up listening on a port, same assumption any
+  -- process supervisor recording "the pid I started" makes for a
+  -- multi-step command.
+  --
+  -- The whole thing is wrapped in its own `( ... ) &` so this io.popen
+  -- call backgrounds it as ONE unit and returns immediately; a bounded
+  -- poll loop (sh's own, not Lua's -- avoids a second io.popen round
+  -- trip) waits up to ~1s for pidfile to actually appear before the outer
+  -- command exits, which is what io.popen's read below blocks on.
+  local full = string.format(
+    [[cd %s && ( sh -c 'echo $$ > "$1"; exec sh -c "$2"' _ %s %s >> %s 2>&1 & ) ; i=0; while [ ! -s %s ] && [ $i -lt 20 ]; do sleep 0.05; i=$((i+1)); done]],
+    shell_quote(cwd), shell_quote(pidfile), shell_quote(cmd), shell_quote(log), shell_quote(pidfile)
+  )
   local h = io.popen(full)
-  if h then h:close() end
-  return json(200, { success = true, name = name, message = "Spawn signal sent." })
+  if h then h:read("*a"); h:close() end
+  local spawnedPid = tonumber((read_file(pidfile) or ""):match("%d+"))
+
+  entry.lastSpawnedPid = spawnedPid
+  entry.lastSpawnedAt  = now_ms()
+  catalog[name] = entry
+  write_catalog(catalog)
+
+  return json(200, { success = true, name = name, message = "Spawn signal sent.", pid = spawnedPid })
 end
 
 -- ── Frontend mode: per-app dev ↔ dist toggle ──────────────────────────────────

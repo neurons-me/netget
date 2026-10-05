@@ -79,13 +79,24 @@ query string on a proof-gated route fail immediately (`401
 ME_PROOF_QUERY_UNBOUND`) the moment netget's verifier went live, until
 each client happened to reload a newer GUI bundle.
 
-Confirmed directly from the OLD verifier's own code (`ab1b2cb`'s version
-of `me_sig.lua`, read before writing this, not assumed): it extracts
-challenge fields **by name** (`req.method`, `req.path`, `req.bodyHash`,
-`req.nonce`, `req.timestamp`) and has no check anywhere that rejects an
-unrecognized extra field. A new-format proof carrying `query` is
-therefore accepted by the OLD verifier exactly as if `query` weren't
-there at all — it's decoded into the Lua table and simply never read.
+Confirmed **empirically**, not just by reading the old verifier's code:
+`scripts/verify-query-binding-backward-compat.ts` extracts the real
+`middleware/me_sig.lua` as of `ab1b2cb` (the commit immediately before
+the query-binding fix) via `git archive`, mounts it on disposable
+OpenResty + a disposable monad, builds a genuinely NEW-format signed
+proof (challenge includes `query`, signed the same way
+`signedRequest.ts`'s `canonicalizeQuery()` does post-`e97ab9fa`), and
+sends it to a capability-gated route. The script asserts the extracted
+file does NOT contain `ME_PROOF_QUERY_MISMATCH` before running the
+request, specifically so this can never silently pass against the wrong
+(already-fixed) verifier. Result: `200`, real content returned — the old
+verifier accepts the new-format proof exactly as if the extra `query`
+field weren't there, because it extracts challenge fields **by name**
+(`req.method`, `req.path`, `req.bodyHash`, `req.nonce`, `req.timestamp`)
+with no check anywhere that rejects an unrecognized extra one. Run this
+script again immediately before step 1 below, as the actual
+go/no-go check for GUI-first — not as a re-opening of the audit, a
+one-time compatibility confirmation this deployment step depends on.
 This is what makes GUI-first safe:
 
 1. **Deploy GUI (`e97ab9fa`) alone first.** Every client that loads the

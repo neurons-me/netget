@@ -49,10 +49,23 @@
 // no capability (admin alone included), kills nothing at all -- not even a
 // genuinely-verified, currently-live monad surface; restart-all leaves an
 // unrelated real process alone regardless (confirmed with an actual
-// separate OS process, a genuine PID, listening on a real port); only a
-// valid proof + the exact capability actually terminates a genuine,
-// currently-live monad surface (a separate real process, confirmed by its
-// actual exit).
+// separate OS process, a genuine PID, listening on a real port).
+//
+// UPDATE 2026-10-05 (process-ownership gap, kept explicitly open after the
+// above, now closed): verifying a port answers the monad protocol was never
+// the same as netget having administered the process answering it. A
+// monad started ANY other way -- including a real, correctly-answering one
+// -- used to be killed just the same once the requester was authorized.
+// spawn_catalog_monad() (apps.lua) now captures the real OS pid of
+// whatever it launches and records it on the catalog entry; restart_all()
+// only kills a reported app's process when the pid lsof finds on its port
+// is ALSO one netget has that direct spawn record for. Proven below in
+// [4]: a genuinely-verified, currently-live monad surface that netget did
+// NOT spawn survives a fully authorized restart-all (the regression this
+// closes); a monad spawned THROUGH netget's own catalog is actually
+// terminated by that same authorized call, with the catalog's own
+// recorded pid confirmed to match the real, live OS process before the
+// call, not inferred.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -180,6 +193,30 @@ async function signedCall(node: any, method: string, p: string, bodyObj?: Record
   });
 }
 
+// Polls a port until something answers an HTTP GET there, or times out --
+// used for the catalog-spawned process below, which is launched via
+// netget's own io.popen() (output redirected to a log file this test
+// doesn't have a pipe to), not via this test's own child_process.spawn()
+// with a readable stdout.
+async function waitForPort(port: number, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ok = await new Promise<boolean>((resolve) => {
+      const req = http.request({ host: '127.0.0.1', port, path: '/', timeout: 300 }, () => resolve(true));
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.end();
+    });
+    if (ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`port ${port} did not come up within ${timeoutMs}ms`);
+}
+
+function isPidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
 const claimsPath = path.join(dataDir, 'runtime', 'gateway-claims.json');
 function readClaims(): any {
   if (!fs.existsSync(claimsPath)) return { pubkeys: {}, grants: {}, admins: {}, usernames: {}, owner: null };
@@ -213,6 +250,16 @@ const check = (label: string, cond: boolean, detail?: unknown) => {
   if (cond) { pass += 1; console.log(`  ✓ ${label}`); }
   else { fail += 1; console.log(`  ✗ ${label}`, detail ?? ''); }
 };
+
+// Safety net for the catalog-spawned process below -- a REAL, backgrounded
+// OS process that survives this test script's own exit (that's the whole
+// point of a daemon-style spawn). A successful restart-all already kills
+// it; this is only for a thrown assertion or an unexpected early exit
+// between spawning it and that point, so a failed run doesn't leave an
+// orphaned node process running forever (found exactly that happening
+// while debugging this file -- several from earlier failed attempts were
+// still alive and had to be killed by hand).
+let catalogSpawnedPidForCleanup: number | null = null;
 
 try {
   await startNginx();
@@ -304,7 +351,7 @@ try {
     check('still not killed -- being a genuinely-verified monad surface never substituted for requester authorization', !fakeMonadExited);
   }
 
-  console.log('\n[4] restart-all only terminates what is CURRENTLY live and verified, from an authorized requester -- an unrelated real process survives even then');
+  console.log('\n[4] restart-all only terminates what netget ITSELF spawned -- verified-as-a-monad and fully authorized are each necessary, neither is sufficient alone');
   const unrelatedPort = await freePort();
   const unrelated = spawn('node', ['-e', `require('http').createServer((q,r)=>r.end('alive')).listen(${unrelatedPort},'127.0.0.1',()=>console.log('up'))`], { stdio: ['ignore', 'pipe', 'ignore'] });
   const unrelatedPid = unrelated.pid!;
@@ -314,7 +361,7 @@ try {
   });
   let unrelatedExited = false;
   unrelated.on('exit', () => { unrelatedExited = true; });
-  console.log(`  unrelated real process: pid=${unrelatedPid} port=${unrelatedPort} (genuinely not netget-managed)`);
+  console.log(`  unrelated real process: pid=${unrelatedPid} port=${unrelatedPort} (genuinely not netget-managed, and not a monad surface either)`);
 
   // Force it into the registry via a DIRECT file write (bypassing report_app's
   // own live check) -- this simulates a stale/historical registry entry (or
@@ -326,16 +373,84 @@ try {
   registry.apps['stale-unverified-entry'] = { id: 'stale-unverified-entry', name: 'stale', port: unrelatedPort, lastSeenMs: Date.now(), localOnly: true };
   fs.writeFileSync(appsPath, JSON.stringify(registry));
 
-  anchor({ admin: true, scopes: ['gateway:control:apps-restart-all'] }); // the exact grant, finally
-  const restartRes = await signedCall(node, 'POST', '/apps/restart-all', {});
-  console.log(`  /apps/restart-all (authorized) -> ${restartRes.status} ${JSON.stringify(restartRes.json)}`);
+  console.log('\n[4a] a genuinely-verified, currently-live monad surface that netget did NOT spawn survives a FULLY AUTHORIZED restart-all -- the process-ownership gap, now closed');
+  anchor({ admin: true, scopes: ['gateway:control:apps-restart-all'] }); // the exact grant for restart-all alone
+  const restartRes1 = await signedCall(node, 'POST', '/apps/restart-all', {});
+  console.log(`  /apps/restart-all (authorized, but fake-monad was never spawned via the catalog) -> ${restartRes1.status} ${JSON.stringify(restartRes1.json)}`);
   await new Promise((r) => setTimeout(r, 500));
   check('the unrelated real process was still NOT killed (not a monad surface)', !unrelatedExited);
-  check('restart-all reports the unrelated one as skipped, not restarted', (restartRes.json.skipped || []).some((s: any) => s.port === unrelatedPort));
-  check('the genuinely-verified fake-monad WAS killed, now that the requester is authorized', fakeMonadExited, JSON.stringify(restartRes.json));
-  check('restart-all reports it as restarted', (restartRes.json.restarted || []).some((x: any) => x.port === fakeMonadPort), JSON.stringify(restartRes.json));
-  try { unrelated.kill(); } catch { /* already gone if this assertion is wrong */ }
-  if (!fakeMonadExited) { try { fakeMonadProc.kill(); } catch { /* already gone */ } }
+  check('restart-all reports the unrelated one as skipped, not restarted', (restartRes1.json.skipped || []).some((s: any) => s.port === unrelatedPort));
+  check('the fake-monad (verified, live, but never spawned by netget) was ALSO NOT killed, despite full authorization -- this is the regression this fix closes', !fakeMonadExited, JSON.stringify(restartRes1.json));
+  check('restart-all reports it skipped, with the ownership reason, not restarted', (restartRes1.json.skipped || []).some((s: any) => s.port === fakeMonadPort && String(s.reason || '').includes('not administered by netget')), JSON.stringify(restartRes1.json));
+  try { unrelated.kill(); } catch { /* already gone */ }
+  try { fakeMonadProc.kill(); } catch { /* already gone */ }
+
+  console.log('\n[4b] a monad spawned THROUGH netget\'s own catalog IS terminated by that same authorized call -- the real positive case');
+  anchor({ admin: true, scopes: ['gateway:control:apps-restart-all', 'gateway:control:apps-catalog-upsert', 'gateway:control:apps-catalog-spawn'] });
+  const catalogMonadPort = await freePort();
+  const catalogMonadName = 'registry-verify-catalog-monad';
+  const catalogMonadScript = `require('http').createServer((req,res)=>{if(req.url==='/__surface'){res.setHeader('content-type','application/json');res.end(JSON.stringify({monadId:'monad:catalog-spawned'}));}else{res.end('ok');}}).listen(${catalogMonadPort},'127.0.0.1')`;
+  {
+    // catalogMonadScript has no double quotes of its own (plain JS, single
+    // quotes throughout) -- the outer "..." here are deliberate shell
+    // double-quoting around the whole -e argument, not escaping anything.
+    // process.execPath (an absolute path), not bare "node": io.popen()'s
+    // spawned /bin/sh has the same minimal PATH already documented for
+    // lsof/curl elsewhere in this codebase (/usr/gnu/bin:/usr/local/bin:
+    // /bin:/usr/bin:.) -- confirmed live here too (first attempt: "sh:
+    // node: command not found"), not assumed.
+    const r = await signedCall(node, 'POST', '/apps/catalog/upsert', { name: catalogMonadName, cmd: `${process.execPath} -e "${catalogMonadScript}"` });
+    check('catalog upsert for the real spawn target -> 200', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+  }
+  {
+    const r = await signedCall(node, 'POST', '/apps/catalog/spawn', { name: catalogMonadName });
+    check('catalog spawn -> 200, with a real recorded pid', r.status === 200 && r.json.success === true && typeof r.json.pid === 'number' && r.json.pid > 0, JSON.stringify(r.json));
+  }
+  try {
+    await waitForPort(catalogMonadPort);
+  } catch (e) {
+    const logPath = path.join(dataDir, 'runtime', `${catalogMonadName}.spawn.log`);
+    console.log('DEBUG spawn.log:', fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '(no log file)');
+    const pidFilePath = path.join(dataDir, 'runtime', `${catalogMonadName}.spawn.pid`);
+    console.log('DEBUG spawn.pid:', fs.existsSync(pidFilePath) ? fs.readFileSync(pidFilePath, 'utf8') : '(no pid file)');
+    throw e;
+  }
+
+  const catalogPath = path.join(dataDir, 'runtime', 'monad-catalog.json');
+  const catalogOnDisk = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+  const recordedPid = catalogOnDisk?.[catalogMonadName]?.lastSpawnedPid;
+  if (typeof recordedPid === 'number') catalogSpawnedPidForCleanup = recordedPid;
+  check('monad-catalog.json genuinely recorded a pid for this spawn, on disk, not just in the response', typeof recordedPid === 'number' && recordedPid > 0, JSON.stringify(catalogOnDisk));
+  check('that recorded pid is a REAL, currently-alive OS process, confirmed before restart-all runs', typeof recordedPid === 'number' && isPidAlive(recordedPid), `pid=${recordedPid}`);
+  {
+    // Cross-checked a second, independent way (lsof on the real port, not
+    // just process liveness) that the recorded pid is genuinely the one
+    // bound to the port it's about to be judged by -- this is exactly
+    // what restart_all() itself will check, so confirming it here isolates
+    // "did spawn capture the right pid" from "did restart-all's own lookup
+    // logic work", should this ever regress again.
+    // -sTCP:LISTEN, not a bare port match -- an unscoped lsof -ti tcp:PORT
+    // also matches a CLIENT connection to that port, and this test's own
+    // waitForPort() above just made one; confirmed live to otherwise list
+    // this very test script's pid alongside the real one, for no reason
+    // other than having briefly polled it. Same fix as restart_all()'s own
+    // lookup below -- see that function's comment for the full story.
+    const lsofOut = execFileSync('/usr/sbin/lsof', ['-ti', `tcp:${catalogMonadPort}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim();
+    check('the recorded pid matches what lsof finds genuinely LISTENING on the port', lsofOut.split('\n').map(Number).includes(recordedPid), `recordedPid=${recordedPid} lsof=${lsofOut}`);
+  }
+
+  {
+    const r = await call('POST', '/apps/report', { id: 'catalog-monad-1', name: catalogMonadName, port: catalogMonadPort });
+    check('the catalog-spawned monad reports in -> 200', r.status === 200 && r.json.success === true, JSON.stringify(r.json));
+  }
+
+  const restartRes2 = await signedCall(node, 'POST', '/apps/restart-all', {});
+  console.log(`  /apps/restart-all (authorized, catalog-spawned target) -> ${restartRes2.status} ${JSON.stringify(restartRes2.json)}`);
+  await new Promise((r) => setTimeout(r, 500));
+  check('restart-all reports the catalog-spawned monad as restarted, with the matching spawnedAs name', (restartRes2.json.restarted || []).some((x: any) => x.port === catalogMonadPort && x.pid === recordedPid && x.spawnedAs === catalogMonadName), JSON.stringify(restartRes2.json));
+  check('the real OS process netget itself spawned is now genuinely dead', typeof recordedPid === 'number' && !isPidAlive(recordedPid), `pid=${recordedPid}`);
+  // Defensive cleanup only -- a correct run already killed this above.
+  if (typeof recordedPid === 'number' && isPidAlive(recordedPid)) { try { process.kill(recordedPid, 'SIGKILL'); } catch { /* already gone */ } }
 
   console.log('\n[5] /apps/release requires POST');
   {
@@ -346,6 +461,9 @@ try {
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exitCode = 1;
 } finally {
+  if (catalogSpawnedPidForCleanup !== null && isPidAlive(catalogSpawnedPidForCleanup)) {
+    try { process.kill(catalogSpawnedPidForCleanup, 'SIGKILL'); } catch { /* already gone */ }
+  }
   stopNginx();
   await new Promise((resolve) => monad.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

@@ -25,30 +25,53 @@ partial cherry-pick.
 
 ### `modules/netget` — branch `fix/control-action-limit-except-bypass`
 
-Base (commit immediately before this audit's first commit): `6cfea1c`.
-19 commits, `6cfea1c..196d52c`:
+**Rebuilt 2026-10-06** to apply cleanly on current `main` (PR #17 was
+originally opened from a much older branch that also carried a large,
+unrelated, unmerged frontend migration — see "Scope correction" below).
+Base: `origin/main` at the time of rebuild (`9442d7a`). 15 commits,
+chronological order, no dependency on anything outside this list:
 
 | # | SHA | Protects against |
 |---|---|---|
-| 1 | `6cb841e` | GET/HEAD bypass on control-action routes (openresty-restart/stop, dev-server-start/stop) — a bare GET with zero credentials could execute the action |
-| 2 | `edd5c39` | (test wiring for #1) |
-| 3 | `5434f2f` | Unauthenticated loopback + unquoted `cwd` shell interpolation on catalog upsert/delete/spawn — full RCE chain |
-| 4 | `4544796` | (test wiring for #3) |
-| 5 | `df6a059` | Docs only: records that the catalog-upsert grant is effectively code execution |
-| 6 | `f0a5e1e` | `/apps/report` accepted any caller-claimed port with zero verification — confused-deputy: an attacker-chosen port belonging to an unrelated process could later be targeted by restart-all |
-| 7 | `26943ab` | (test wiring for #6) |
-| 8 | `4decb4c` | `/networks` had zero authorization baseline (loopback-only was never added) |
-| 9 | `33135a9` | (test wiring for #8) |
-| 10 | `e18b9c5` | `/logs` gated only by loopback while its own CORS headers reflected credentialed cross-origin reads |
-| 11 | `fd560ee` | (test wiring for #10) |
-| 12 | `ab1b2cb` | `restart-all` required no signed proof/capability at all — verifying the *target* was a real monad was never evidence the *requester* was authorized |
-| 13 | `e0a1b83` | (test wiring/documentation for #12's follow-on review) |
-| 14 | `e2b9694` | X-Me-Proof signature never bound the query string — a proof signed for a bare path (`/logs`) was valid for ANY query on that path (`?type=access` vs `?type=error`) |
-| 15 | `086d61b` | (shared-vector tests for #14) |
-| 16 | `72082f7` | (test wiring for #15) |
-| 17 | `84f07a4` | Query canonicalization diverged between client and server for queries that decode to invalid UTF-8 — now rejected consistently (422/401), never silently mismatched or a 500 |
-| 18 | `70bc6cb` | `restart-all` could kill ANY process that merely answered the monad protocol, including one netget never spawned — now requires netget's own spawn record (real pid, captured at spawn time) |
-| 19 | `196d52c` | (proof that #18's new pid-ownership field cannot be forged via `catalog/upsert` or `/apps/report`) |
+| 1 | `62a118b` | GET/HEAD bypass on control-action routes (openresty-restart/stop, dev-server-start/stop) — a bare GET with zero credentials could execute the action |
+| 2 | `b379d20` | Unauthenticated loopback + unquoted `cwd` shell interpolation on catalog upsert/delete/spawn — full RCE chain |
+| 3 | `deceb66` | Docs only: records that the catalog-upsert grant is effectively code execution |
+| 4 | `e21088c` | `/apps/report` accepted any caller-claimed port with zero verification — confused-deputy: an attacker-chosen port belonging to an unrelated process could later be targeted by restart-all |
+| 5 | `8e22813` | `/networks` had zero authorization baseline (loopback-only was never added) |
+| 6 | `de25c61` | `/logs` gated only by loopback while its own CORS headers reflected credentialed cross-origin reads |
+| 7 | `6cae470` | `restart-all` required no signed proof/capability at all — verifying the *target* was a real monad was never evidence the *requester* was authorized |
+| 8 | `6166fd2` | Test wiring/documentation for #7's follow-on review (`/networks` isolated-storage verification, `/logs` query-signature scope note) |
+| 9 | `6bef8d3` | X-Me-Proof signature never bound the query string — a proof signed for a bare path (`/logs`) was valid for ANY query on that path (`?type=access` vs `?type=error`) |
+| 10 | `3e14a1b` | Shared-vector tests for #9 |
+| 11 | `9541799` | Query canonicalization diverged between client and server for queries that decode to invalid UTF-8 — now rejected consistently (422/401), never silently mismatched or a 500 |
+| 12 | `eb4e3bd` | `restart-all` could kill ANY process that merely answered the monad protocol, including one netget never spawned — now requires netget's own spawn record (real pid, captured at spawn time) |
+| 13 | `7994978` | Proof that #12's new pid-ownership field cannot be forged via `catalog/upsert` or `/apps/report` |
+| 14 | `3a1d3af` | This manifest |
+| 15 | `ae1a641` | Empirical (not inspection-only) proof that a new-format signed proof is accepted by the OLD verifier |
+| 16 | `2a5fecf` | Consolidated test wiring for all 6 new test files, applied once against `main`'s own (independently-evolved) test list rather than six separate conflicting edits |
+
+**Scope correction (2026-10-06)**: PR #17 was originally built on
+`fix/control-action-limit-except-bypass` as it existed before this
+rebuild — a branch that also carried a large, separate, unmerged
+frontend-shell migration (App.jsx moving from a hand-assembled
+`SeedSessionProvider`+`Namespace`+`Router` shell to a unified `Cleaker`
+component), which had diverged from `main` by ~314 lines in that one
+file alone and was never merged. That work was NOT discarded — it's
+preserved at branch `frontend/cleaker-migration-wip` (same repo) for
+separate review on its own terms. This PR now carries only the security
+fixes, their tests, and this document — nothing from that migration.
+
+**Found during the rebuild, pre-existing in `main`, NOT fixed here**:
+`tests/gateway-revoke-admin.test.ts` fails on `main` as-is (confirmed
+standalone, independent of this PR: `NETGET_PATH_REQUIRES_CLAIM`,
+`GatewayClaimsManager.bootstrapOwner()`'s old unsigned write path
+rejected by the real namespace-derived claim model). This PR's own
+branch (before the rebuild) had already retired this exact test in favor
+of signed live-write coverage, for exactly this reason — but that fix
+never reached `main` either, and porting it is a separate claims/
+authority-model change, not a security-audit fix, so it's left alone
+here. The rest of the suite (every other pre-existing file, plus all 6
+new ones) passes clean on top of current `main`.
 
 ### `modules/monad` — branch `fix/monads-control-null-origin-bypass`
 
@@ -70,6 +93,8 @@ Base: `ab1925ba`. 1 commit, `ab1925ba..e97ab9fa`:
 `ab1925ba` itself (`fix(Cleaker): default transportOrigin to cleakerEndpoint...`) is **not** part of this audit — it's an earlier, unrelated fix (the login/Users/Blockchain 404 diagnosis) that happens to sit on the same branch, one commit below this audit's own work. Noted here only so deploying this branch's tip doesn't surprise anyone with an unlisted change riding along.
 
 ---
+
+**Merging each PR to `main` triggers that repo's `.github/workflows/docs.yml`** (path filter includes `Typescript/src/**`, which every one of these PRs touches) — confirmed by reading all three workflow files in full, not inferred: each one only installs VitePress, rebuilds the static typedoc site, and publishes it to the `gh-pages` branch via `peaceiris/actions-gh-pages`. **This is real, automatic publication on merge** — it is NOT nothing — but it is documentation publication, never a deploy, restart, or reconfiguration of the real gateway or any running monad instance. Keep this distinction explicit when approving a merge: "merging publishes docs" and "merging deploys the fix" are different claims, and only the first one is true of a bare merge to `main`.
 
 ## 2. Deployment order — corrected, with the interruption risk made explicit
 
@@ -105,7 +130,7 @@ This is what makes GUI-first safe:
    as they did before. Clients still on the OLD bundle (not yet reloaded)
    are completely unaffected either way, since they don't send `query`
    and the old verifier was never checking for it.
-2. **Deploy netget (`6cfea1c..196d52c`) once GUI has had time to actually
+2. **Deploy netget (`main..fix/control-action-limit-except-bypass`, PR #17) once GUI has had time to actually
    reach real clients.** "Time to reach real clients" is a judgment
    call, not a fixed number — enough that the overwhelming majority of
    active sessions have reloaded (new tab, natural navigation, or a
@@ -171,13 +196,14 @@ exactly the commit named above — if more work lands on any of these
 branches before deployment, re-derive the rollback point before relying
 on it rather than assuming these SHAs are still the tip.
 
-- **netget**: redeploy from `6cfea1c` (the commit immediately before this
-  audit's range) instead of `196d52c`. This reverts all 19 commits as a
-  unit. A PARTIAL rollback (e.g. keep the catalog/networks/logs fixes,
-  revert only the query-binding or restart-all pieces) is NOT
-  recommended without re-checking dependencies first — `84f07a4` depends
-  on `e2b9694`'s `lib/query_canon.lua`; `70bc6cb`/`196d52c` depend on each
-  other (the ownership check and its own non-forgeability proof).
+- **netget**: redeploy from `main` as it stood before merging PR #17
+  (i.e. revert the merge commit, or redeploy the pre-merge `main` SHA).
+  This reverts all 15 commits as a unit. A PARTIAL rollback (e.g. keep
+  the catalog/networks/logs fixes, revert only the query-binding or
+  restart-all pieces) is NOT recommended without re-checking dependencies
+  first — `9541799` depends on `6bef8d3`'s `lib/query_canon.lua`;
+  `eb4e3bd`/`7994978` depend on each other (the ownership check and its
+  own non-forgeability proof).
 - **monad**: redeploy from `da1be95f` instead of `1d174752`. Reverts both
   commits as a unit; they're independent of each other but there's no
   reason to keep one without the other.
@@ -186,14 +212,19 @@ on it rather than assuming these SHAs are still the tip.
   interruption risk described in §2 — clients would stop signing
   `query`, and netget's verifier would then reject every query-bearing
   proof-gated request from them (`ME_PROOF_QUERY_UNBOUND`). If only one
-  of the two needs to roll back, prefer rolling back netget to
-  `6cfea1c` (or at least to before `e2b9694`) rather than rolling back
+  of the two needs to roll back, prefer rolling back netget's merge
+  entirely (or at least to before `6bef8d3`) rather than rolling back
   GUI alone.
 
 ---
 
 ## 5. Known residual risk — ships WITH the release notice, not separately
 
+- **netget's own `tests/gateway-revoke-admin.test.ts` fails on `main` as
+  of this rebuild, independent of this PR** (`NETGET_PATH_REQUIRES_CLAIM`
+  — the old unsigned `bootstrapOwner()` write path rejected by the real
+  namespace-derived claim model). See "Scope correction" under §1 above
+  for the full context; not fixed here, not newly introduced here.
 - **monad's test suite is not fully green.** 5 test files fail
   reproducibly, confirmed identical with and without this audit's
   `session.ts` change (checked against the stashed prior version, not

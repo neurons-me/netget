@@ -182,26 +182,18 @@ export function getNetgetAppConfContent(layout: OpenRestyLayout = detectOpenRest
     ? '\n    if ($scheme = http) { return 301 https://$host$request_uri; }\n'
     : '';
 
-  // The admin block (below) answers for BOTH real identity-facing hostnames
-  // (local.cleaker, local.host) and loopback-only admin/API aliases
-  // (local.netget, localhost, 127.0.0.1, the LAN .netget alias) that must
-  // keep answering plain http — see forceHttpsRedirect's own comment for
-  // why. A single `if ($scheme = http)` can't tell those apart by itself,
-  // so this map combines scheme+host into one flag `if` can branch on
-  // (nginx does not allow nested `if` blocks) — selective instead of
-  // blanket, on purpose.
-  const adminHttpsRedirectMap = certsPresent
-    ? `
-map $scheme:$host $netget_force_https {
-    default 0;
-    "http:local.cleaker" 1;
-    "http:local.host" 1;
-}
-`
-    : '';
-  const adminForceHttpsRedirect = certsPresent
-    ? '\n    if ($netget_force_https) { return 301 https://$host$request_uri; }\n'
-    : '';
+  // The admin block (below) used to also answer for two real identity-facing
+  // hostnames (local.cleaker, local.host) that needed https forced even over
+  // plain http — see forceHttpsRedirect's own comment. Retired (2026-10-06):
+  // local.netget/local.host/local.cleaker are no longer in this block's
+  // server_name at all (the recurring door-decides-content confusion this
+  // session's own incident surfaced — two aliases of one static bundle
+  // silently diverging in theme/role/session state, each hostname its own
+  // browser origin with its own isolated localStorage). Everything left in
+  // this block (the LAN .netget alias, localhost, 127.0.0.1) is loopback-only
+  // admin/API surface that deliberately still answers plain http, so the
+  // selective https-forcing map this comment used to describe has nothing
+  // left to select for and was removed rather than kept as dead code.
 
   const proxyHeaders = `
         proxy_http_version 1.1;
@@ -400,7 +392,7 @@ ${proxyHeaders}
   // surface_proxy.lua with the WS upgrade headers already in ${proxyHeaders}
   // (confirmed: surface_proxy.lua never calls ngx.req.set_uri(), so nginx's
   // own path-preserving proxy_pass behavior already forwards /nrp verbatim
-  // there). The admin block (local.netget/local.host/local.cleaker) is
+  // there). The admin block (localhost/127.0.0.1/the LAN .netget alias) is
   // different — its own "location /" serves the static SPA, not a monad
   // proxy — so /nrp there previously had nowhere to go but a 404/index.html
   // fallback, silently failing every WebSocket upgrade attempt. This routes
@@ -1614,12 +1606,13 @@ ${meshGatewayErrorLocation}
 # NRP namespace tree:
 #   ${machineHostnameLower}              → monad root (surface_proxy.lua → registered monad)
 #   {handle}.${machineHostnameLower}     → handle namespace surface (surface_proxy.lua → registered monad)
-#   ${machineHostnameLower.replace(/\.local$/, '')}.netget  → admin/control plane (LAN access)
-#   local.netget / localhost / 127.0.0.1 → admin/control plane (loopback alias)
-#   local.host                           → canonical local .me kernel surface, same admin block
-#   local.cleaker                        → legacy alias for local.host (kept for compatibility)
-#   local.host/@{handle}                 → identity-handle resolution — see localNetget.js's handle middleware
-#   local.cleaker/@{handle}              → same, via the legacy alias
+#   localhost / 127.0.0.1                → admin/control plane (loopback alias)
+#   (local.netget/local.host/local.cleaker/${machineHostnameLower.replace(/\.local$/, '')}.netget
+#    retired 2026-10-06 — the three local.* names were each their own browser
+#    origin serving the identical static bundle, silently diverging in
+#    theme/role/session state door to door; the LAN .netget alias never
+#    actually resolved on this machine, confirmed live, dead in practice.
+#    localhost/127.0.0.1 are the only loopback admin entries left.)
 
 lua_shared_dict gateway_nonces  1m;
 
@@ -1634,16 +1627,21 @@ log_format netget_access '$remote_addr - - [$time_local] "$request" $status $bod
         ""      "no-store";
     }
 
-${adminHttpsRedirectMap}
 ${namespaceSurfaceBlock}
 ${nrpHandleBlock}
 ${publicDomainBlocks}
 
 server {
 ${listenLines}
-    server_name local.netget local.host local.cleaker ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
+    # The LAN ${machineHostnameLower.replace(/\.local$/, '')}.netget alias retired alongside
+    # local.netget/local.host/local.cleaker (2026-10-06): confirmed live it
+    # never actually resolved on this machine (no /etc/hosts entry, not an
+    # mDNS .local name, .netget is not a real TLD) -- dead in practice, not
+    # just redundant. localhost/127.0.0.1 are the only loopback admin
+    # entries left; neither needs any resolution mechanism to work.
+    server_name localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
     client_max_body_size 500M;
-${sslDirectives}${adminForceHttpsRedirect}
+${sslDirectives}
     set $NETGET_DATA_DIR ${xConfig};
     set $NETGET_CLI_BIN "${netgetCliBin}";
     set $netget_logs_path ${layout.logDir};

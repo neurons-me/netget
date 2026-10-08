@@ -5,7 +5,9 @@
  * back to os.hostname() silently derives a "namespace" from wherever this
  * process happens to be running, exactly the category error that doc rules
  * out. The correct unconfigured default is the literal designated local
- * namespace "local.cleaker", which stays in place until an operator
+ * namespace "localhost" (it was "local.cleaker" until the local.* names were
+ * retired and the entry became `localhost`; a handle under it is
+ * `<handle>.localhost`), which stays in place until an operator
  * explicitly picks something else via NETGET_MONAD_NAMESPACE or
  * mainServer.cli.ts's mainServerName (xConfig).
  */
@@ -28,8 +30,8 @@ try {
     const unconfigured = getGatewayRootNamespace();
     assert.equal(
         unconfigured,
-        'local.cleaker',
-        'unconfigured getGatewayRootNamespace() must default to the designated local namespace "local.cleaker"',
+        'localhost',
+        'unconfigured getGatewayRootNamespace() must default to the designated local namespace "localhost"',
     );
     assert.notEqual(
         unconfigured,

@@ -11,6 +11,7 @@ import setupSessionRoutes from './routes/setupSession.js';
 import openRestyInstallRoutes from './routes/openRestyInstall.js';
 import adminSessionRoutes from './routes/adminSession.js';
 import gatewayAdminRoutes from './routes/gatewayAdmin.js';
+import { guardAsync, jsonErrorHandler } from './guardAsync.js';
 import { startNetgetMonad, stopNetgetMonad, loadGatewayRootNamespaceCache, getGatewayRootNamespace } from '../../../kernel/netgetMonadProcess.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,11 +54,12 @@ app.use(cors({
     methods: ['GET', 'POST'],
 }));
 
-app.use('/', setupSessionRoutes);
-app.use('/', localNetgetRoutes);
-app.use('/', openRestyInstallRoutes);
-app.use('/', adminSessionRoutes);
-app.use('/', gatewayAdminRoutes);
+// A route that rejects must answer 500, not end this process (see guardAsync.js).
+app.use('/', guardAsync(setupSessionRoutes));
+app.use('/', guardAsync(localNetgetRoutes));
+app.use('/', guardAsync(openRestyInstallRoutes));
+app.use('/', guardAsync(adminSessionRoutes));
+app.use('/', guardAsync(gatewayAdminRoutes));
 
 // Serves the setup SPA directly from this bootstrap port — deliberately
 // NOT dependent on OpenResty being installed or running at all. Before
@@ -86,6 +88,8 @@ if (fs.existsSync(spaDistDir)) {
 } else {
     console.warn(chalk.yellow(`Bootstrap SPA not found at ${spaDistDir} — run the frontend_local build first.`));
 }
+
+app.use(jsonErrorHandler);
 
 app.listen(PORT, '127.0.0.1', () => {
     console.log(chalk.green(`NetGet local GUI backend on port ${PORT} (${NODE_ENV})`));

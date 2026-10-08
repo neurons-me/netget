@@ -304,6 +304,48 @@ export function getNetgetAppConfContent(layout: OpenRestyLayout = detectOpenRest
             end
         }
     }`;
+  // Entry point for the failures nginx itself produces. A location that proxies to the gateway API (/gateway-identity,
+  // /setup/*, /admin-session/*, /domains, ...) answers 502/503/504 with nginx's bare page (it names "openresty" and
+  // nothing else) when nothing is behind it. For a BROWSER NAVIGATION (Accept: text/html) the page that says what is
+  // missing already exists: the front end, whose first screen reads the layers behind this door and says which one is
+  // off. So that is what a navigation gets, with the status it had (502 stays 502: monitors and curl still see the
+  // failure). Anything that is not a navigation (the front end's own fetches, curl, health checks) keeps the plain
+  // error it always had, which is also what the front end reads to tell "off" from "answered with an error".
+  //
+  // Only where this server serves the front end itself (so its assets come from disk, not through the proxy that is
+  // down), and never in dev-frontend mode (there the front end is behind a proxy too). A location with its own
+  // error_page (the mesh paths: @mesh_gateway_error) keeps it: a location's error_page replaces the inherited one.
+  // $door_entry marks "this server has @door_entry" for Lua (monad_proxy.lua); $door_status carries the status of a
+  // response Lua answers itself into @door_entry (an internal redirect forgets ngx.status).
+  const doorEntryLocation = isDevFrontend ? '' : `
+    location @door_entry {
+        internal;
+        default_type 'text/html; charset=utf-8';
+        content_by_lua_block {
+            local status = tonumber(ngx.var.door_status)
+            if not status or status < 400 then status = ngx.status end
+            if status < 400 then status = 502 end
+            local accept = ngx.var.http_accept or ""
+            if not accept:find("text/html", 1, true) then
+                return ngx.exit(status)
+            end
+            local file = io.open("${distRoot}/index.html", "rb")
+            if not file then return ngx.exit(status) end
+            local body = file:read("*a")
+            file:close()
+            ngx.status = status
+            ngx.header["Content-Type"] = "text/html; charset=utf-8"
+            ngx.header["Cache-Control"] = "no-store"
+            ngx.print(body)
+            return ngx.exit(ngx.OK)
+        }
+    }`;
+  const doorEntryServerDirectives = isDevFrontend ? '' : `
+    set $door_entry "1";
+    set $door_status "";
+    error_page 502 503 504 @door_entry;
+`;
+
   const meshProxyErrorHandling = `
         proxy_intercept_errors on;
         error_page 502 503 504 = @mesh_gateway_error;`;
@@ -620,7 +662,7 @@ ${proxyHeaders}
 ` : '';
 
   const mainServerLocations = `
-${rootLocation}
+${doorEntryServerDirectives}${rootLocation}
 ${isDevFrontend ? netgetPanelErrorLocation : ''}
 
     # Networks API -- networks.lua itself owns authorization (is_local_request()
@@ -1019,6 +1061,7 @@ ${appMeshLocations}
 ${nrpLocation}
 ${appFrontendDistLocations}
 ${meshGatewayErrorLocation}
+${doorEntryLocation}
 
     # Which namespace this netget's own monad is designated as -- proxied to
     # Express (getGatewayRootNamespace() is a plain TS function, not Lua-

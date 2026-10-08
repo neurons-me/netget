@@ -193,7 +193,16 @@ if not app then
   end
 
   if not app then
-    ngx.status = entry and ngx.HTTP_SERVICE_UNAVAILABLE or ngx.HTTP_NOT_FOUND
+    local not_there = entry and ngx.HTTP_SERVICE_UNAVAILABLE or ngx.HTTP_NOT_FOUND
+    -- A browser navigation to a monad that is not there lands on the entry point (the front end, which says which
+    -- layer is missing) instead of raw JSON, when this server has one ($door_entry, see setNginxConfigRoutes.ts).
+    -- Everything else (the front end's own fetches, curl) keeps the JSON it always got.
+    local accept = ngx.var.http_accept or ""
+    if ngx.var.door_entry == "1" and accept:find("text/html", 1, true) then
+      ngx.var.door_status = tostring(not_there)
+      return ngx.exec("@door_entry")
+    end
+    ngx.status = not_there
     ngx.header["Content-Type"] = "application/json; charset=utf-8"
     ngx.say(cjson.encode({
       error   = entry and "monad_starting" or "monad_not_found",

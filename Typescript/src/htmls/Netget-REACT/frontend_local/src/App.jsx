@@ -7,7 +7,6 @@ import Domains from './pages/Domains.jsx';
 import MediaPage from './pages/Media/MediaPage.jsx';
 import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
-import FrontendModeLauncher from './components/FrontendModeLauncher/FrontendModeLauncher.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
 import { readProviderBoot, frontendRole, namespaceEndpoint } from './session/providerBoot.js';
 
@@ -116,13 +115,6 @@ const NETGET_DOCUMENT = {
   },
 };
 
-const NETGET_FOOTER = [
-  {
-    type: 'action',
-    props: { label: 'Frontend Mode', element: <FrontendModeLauncher />, tooltip: false },
-  },
-];
-
 // The gateway's front end IS the Cleaker shell: one Layout, one session (Cleaker mounts the
 // SeedSessionProvider -- nothing above it may), netget's views declared into its document.
 // The namespace is named as MeLauncher used to name it; the monad is reached through netget's
@@ -139,7 +131,6 @@ function GatewayApp() {
         resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
         document={NETGET_DOCUMENT}
         pages={NETGET_PAGES}
-        footerExtras={NETGET_FOOTER}
       />
     </LauncherPopoverProvider>
   );

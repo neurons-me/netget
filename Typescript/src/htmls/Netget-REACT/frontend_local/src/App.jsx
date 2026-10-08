@@ -102,10 +102,12 @@ const NETGET_DOCUMENT = {
       },
       content: {
         children: {
-          dashboard: { label: 'Dashboard', component: 'NetgetDashboard', route: '/home', note: 'Gateway status (REST: /gateway-identity, /apps).' },
-          domains: { label: 'Domains', component: 'NetgetDomains', route: '/domains', note: 'Domain routing CRUD (REST).' },
-          logs: { label: 'Logs', component: 'NetgetLogs', route: '/logs', note: 'Nginx log viewer (REST).' },
-          monad: { label: 'Monad', component: 'NetgetMonad', route: '/monad', note: "This netget's own monad: the surface it reports." },
+          // `needs`: the layer behind this door the page cannot work without. When it is off the shell shows the
+          // layers panel in its place and dims the sidebar link.
+          dashboard: { label: 'Dashboard', component: 'NetgetDashboard', route: '/home', needs: 'backend', note: 'Gateway status (REST: /gateway-identity, /apps).' },
+          domains: { label: 'Domains', component: 'NetgetDomains', route: '/domains', needs: 'both', note: 'Domain routing CRUD (REST, stored through the monad).' },
+          logs: { label: 'Logs', component: 'NetgetLogs', route: '/logs', needs: 'backend', note: 'Nginx log viewer (REST).' },
+          monad: { label: 'Monad', component: 'NetgetMonad', route: '/monad', needs: 'monad', note: "This netget's own monad: the surface it reports." },
           terms: { label: 'Terms', component: 'NetgetTerms', route: '/terms-and-conditions' },
           privacy: { label: 'Privacy', component: 'NetgetPrivacy', route: '/privacy-policy' },
         },

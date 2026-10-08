@@ -47,8 +47,8 @@ function extractServerBlocks(source: string): string[] {
 }
 
 function localDashboardBlockFor(conf: string): string {
-    const block = extractServerBlocks(conf).find((candidate) => candidate.includes('server_name local.netget'));
-    assert.ok(block, 'expected a local.netget control-plane server block');
+    const block = extractServerBlocks(conf).find((candidate) => candidate.includes('server_name localhost'));
+    assert.ok(block, 'expected the localhost control-plane server block');
     return block!;
 }
 

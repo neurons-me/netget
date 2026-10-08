@@ -183,7 +183,8 @@ const call = (peer: string, scheme: 'http' | 'https', host: string, method: stri
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url');
 const forgeJwt = (secret: string) => { const h = b64({ alg: 'HS256', typ: 'JWT' }); const p = b64({ sub: 'attacker', exp: Math.floor(Date.now() / 1000) + 3600 }); return `${h}.${p}.${crypto.createHmac('sha256', secret).update(`${h}.${p}`).digest('base64url')}`; };
 const cookie = (token: string) => ({ cookie: `token=${token}` });
-const HOSTS = ['localhost', 'local.netget', '127.0.0.1'];
+// local.netget is no longer a name of the admin block (retired); a request that names it falls to the static panel, not to a control action.
+const HOSTS = ['localhost', '127.0.0.1'];
 
 try {
   // ═══ 1. the gateway as it is ═════════════════════════════════════════════════════

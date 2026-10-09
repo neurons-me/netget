@@ -1,5 +1,5 @@
 import { LauncherPopoverProvider } from 'this.gui';
-import { SeedSessionProvider, Namespace, HostSurface, Cleaker } from 'this.gui/react';
+import { SeedSessionProvider, Namespace, HostSurface, Cleaker, Me } from 'this.gui/react';
 import { SpecBoundary } from 'this.gui/devtools';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
@@ -117,21 +117,20 @@ const NETGET_DOCUMENT = {
 
 // The gateway's front end IS the Cleaker shell: one Layout, one session (Cleaker mounts the
 // SeedSessionProvider -- nothing above it may), netget's views declared into its document.
-// The namespace is named as MeLauncher used to name it; the monad is reached through netget's
-// /apps/<name> transport.
-const GATEWAY_NAMESPACE_ENDPOINT = typeof window !== 'undefined' ? window.location.origin : '';
+// The `.me` above it says which namespace this is (the host the page was served from) and where
+// it is reached (the monad, through netget's /apps/<name> transport); Cleaker takes both from it.
+const GATEWAY_NAMESPACE = typeof window !== 'undefined' ? window.location.host : '';
 
 function GatewayApp() {
   return (
     <LauncherPopoverProvider>
-      <Cleaker
-        cleakerEndpoint={GATEWAY_NAMESPACE_ENDPOINT}
-        transportOrigin={netgetMonadTransportOrigin()}
-        netgetMonadOrigin={netgetMonadTransportOrigin()}
-        resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-        document={NETGET_DOCUMENT}
-        pages={NETGET_PAGES}
-      />
+      <Me namespace={GATEWAY_NAMESPACE} transport={netgetMonadTransportOrigin()}>
+        <Cleaker
+          resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
+          document={NETGET_DOCUMENT}
+          pages={NETGET_PAGES}
+        />
+      </Me>
     </LauncherPopoverProvider>
   );
 }

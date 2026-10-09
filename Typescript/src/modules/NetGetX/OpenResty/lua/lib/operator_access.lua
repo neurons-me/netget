@@ -26,4 +26,43 @@ function M.authorized_operator()
   return M.is_loopback()
 end
 
+--- True when the request's verified .me identity (set by middleware/me_sig.lua,
+--- which must already have run in the SAME location's access phase -- this
+--- function never verifies a proof itself, it only reads what me_sig.lua
+--- already put on ngx.ctx) may perform `cap`, a specific gateway control
+--- capability string (e.g. "gateway:control:openresty-restart").
+---
+--- Deliberately NOT owner-bypassed. An earlier version of this function gave
+--- the gateway owner a free pass ("ownership is the root of authority"), on
+--- the assumption that mirrored the daemon's own capability model -- it did
+--- not. The daemon's REAL check, localNetget.js's /domains/metadata handler
+--- (`if (!scopes.includes('gateway:write:domain-metadata')) return 403`),
+--- has no owner exception at all: scopes come only from the identity's own
+--- claims.grants entry (what me_sig.lua forwards as X-Netget-Scopes), and
+--- that is the ENTIRE check -- not even the owner is exempt there. This
+--- function now matches that exactly: a capability is always an explicit
+--- grant, regardless of claims.owner/claims.admins. Loopback
+--- (operator_access.is_loopback/authorized_operator) is a SEPARATE,
+--- additional check this function does not replace -- a request still needs
+--- to be from this machine AND carry this exact capability.
+---
+--- This reads ngx.ctx.me_scopes, not a second, independently-loaded copy of
+--- gateway-claims.json -- it is the exact same value me_sig.lua's
+--- verify_request() already computed for THIS request (its own
+--- version-gated claims cache, keyed off gateway-claims.json +
+--- gateway-claims.version under NETGET_DATA_DIR/runtime -- see that file's
+--- "Claims loader" section), the same cache /domains/metadata's
+--- X-Netget-Scopes header is built from. No separate authority source, no
+--- separate freshness/revocation story: a grant revoked there is just as
+--- immediately absent here, because both read the one cache through the one
+--- loader.
+function M.has_capability(cap)
+  local scopes = ngx.ctx.me_scopes
+  if type(scopes) ~= "table" then return false end
+  for _, scope in ipairs(scopes) do
+    if scope == cap then return true end
+  end
+  return false
+end
+
 return M

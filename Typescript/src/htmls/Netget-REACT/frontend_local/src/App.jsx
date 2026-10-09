@@ -117,15 +117,17 @@ const NETGET_DOCUMENT = {
 
 // The gateway's front end IS the Cleaker shell: one Layout, one session (Cleaker mounts the
 // SeedSessionProvider -- nothing above it may), netget's views declared into its document.
-// The `.me` above it says which namespace this is (the host the page was served from) and where
-// it is reached (the monad, through netget's /apps/<name> transport); Cleaker takes both from it.
+// The `.me` above it is this page's local runtime; Cleaker is its link to ONE namespace: the host
+// the page was served from, whose monad answers through netget's /apps/<name> transport.
 const GATEWAY_NAMESPACE = typeof window !== 'undefined' ? window.location.hostname : '';
 
 function GatewayApp() {
   return (
     <LauncherPopoverProvider>
-      <Me namespace={GATEWAY_NAMESPACE} transport={netgetMonadTransportOrigin()}>
+      <Me>
         <Cleaker
+          namespace={GATEWAY_NAMESPACE}
+          transport={netgetMonadTransportOrigin()}
           resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
           document={NETGET_DOCUMENT}
           pages={NETGET_PAGES}

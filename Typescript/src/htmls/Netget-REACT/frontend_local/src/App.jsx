@@ -119,7 +119,7 @@ const NETGET_DOCUMENT = {
 // SeedSessionProvider -- nothing above it may), netget's views declared into its document.
 // The `.me` above it says which namespace this is (the host the page was served from) and where
 // it is reached (the monad, through netget's /apps/<name> transport); Cleaker takes both from it.
-const GATEWAY_NAMESPACE = typeof window !== 'undefined' ? window.location.host : '';
+const GATEWAY_NAMESPACE = typeof window !== 'undefined' ? window.location.hostname : '';
 
 function GatewayApp() {
   return (

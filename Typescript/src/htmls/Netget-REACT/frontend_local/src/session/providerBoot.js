@@ -96,7 +96,7 @@ export function bootNamespaceRoot(boot, host) {
 // the declaration. If this host IS the declared main server name, then
 //   * the namespace this page links to is the declared one (cleaker.me), never the address bar's, and
 //   * the door IS the main-server app: its address is "/", not "/netget" (see session/doorRoutes.js for the
-//     two-path mapping that makes the screen the root GUI declares at /netget answer at "/").
+//     mapping that makes the screen the root GUI declares at /netget answer at "/").
 // "/netget" on that door would be the namespace's netget node's own "netget" child (cleaker.me/netget/netget):
 // not a page. A person who arrives there (an old link) is moved to "/".
 // Anything else (a localhost dev server, a request that failed/timed out, a host that is not the declared name)

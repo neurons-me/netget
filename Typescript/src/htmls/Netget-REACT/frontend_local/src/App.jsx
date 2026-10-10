@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { LauncherPopoverProvider } from 'this.gui';
 import { SeedSessionProvider, Namespace, HostSurface, Cleaker, Me } from 'this.gui/react';
 import { SpecBoundary } from 'this.gui/devtools';
@@ -8,7 +9,7 @@ import MediaPage from './pages/Media/MediaPage.jsx';
 import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
-import { readProviderBoot, frontendRole, namespaceEndpoint } from './session/providerBoot.js';
+import { readProviderBoot, frontendRole, namespaceEndpoint, mainServerDoor } from './session/providerBoot.js';
 
 // Home/Domains/Logs are plain components that take no props, so they never
 // forward data-gui-node-id to any DOM element — a SpecBoundary spec'd
@@ -121,12 +122,39 @@ const NETGET_DOCUMENT = {
 // the page was served from, whose monad answers through netget's /apps/<name> transport.
 const GATEWAY_NAMESPACE = typeof window !== 'undefined' ? window.location.hostname : '';
 
+// What the gateway says about itself. null when it did not answer (then the address bar's host is the namespace, as
+// before). A bounded wait: the page must not hang on a refused or slow route.
+function readDeclaredMainServer(signal) {
+  return fetch('/main-server-namespace', { cache: 'no-store', credentials: 'same-origin', signal })
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null);
+}
+
 function GatewayApp() {
+  // undefined = still asking, null = nothing declared, object = the door the page is on
+  const [door, setDoor] = useState(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    let cancelled = false;
+    readDeclaredMainServer(controller.signal).then((declared) => {
+      clearTimeout(timer);
+      if (cancelled) return;
+      const resolved = mainServerDoor({ host: GATEWAY_NAMESPACE, declared, pathname: window.location.pathname });
+      // Before Cleaker mounts, so its router opens on the main-server screen rather than redirecting after the landing.
+      if (resolved.redirectTo) {
+        window.history.replaceState(window.history.state, '', `${resolved.redirectTo}${window.location.search}${window.location.hash}`);
+      }
+      setDoor(resolved);
+    });
+    return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
+  }, []);
+  if (door === undefined) return null;
   return (
     <LauncherPopoverProvider>
       <Me>
         <Cleaker
-          namespace={GATEWAY_NAMESPACE}
+          namespace={door.namespace || GATEWAY_NAMESPACE}
           transport={netgetMonadTransportOrigin()}
           resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
           document={NETGET_DOCUMENT}

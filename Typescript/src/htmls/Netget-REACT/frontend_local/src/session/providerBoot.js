@@ -89,3 +89,24 @@ export function bootNamespaceRoot(boot, host) {
   if (isGatewayMonad(boot) && !hostIsNamespace(host, boot)) return '';
   return rootNamespaceOf(boot);
 }
+
+// The gateway's own door (netget.site) is a static file served by nginx: no monad hands it a boot, so the
+// page used to take the address bar as its namespace (the QR said "netget.site") and open on the namespace
+// landing. What the gateway says about itself -- /main-server-namespace: { namespace, mainServerName } -- is
+// the declaration. If this host IS the declared main server name, then
+//   * the namespace this page links to is the declared one (cleaker.me), never the address bar's, and
+//   * its front page is the main-server screen, not the landing.
+// Anything else (a localhost dev server, a request that failed, a host that is not the declared name) keeps
+// the old behavior: the host is the namespace and "/" is left alone.
+// MAIN_SERVER_ENTRY is the screen the root GUI already declares at that route; making the door's default entry
+// a property of the door record (rather than this constant) is an open item of the door contract.
+export const MAIN_SERVER_ENTRY = '/netget';
+
+export function mainServerDoor({ host, declared, pathname }) {
+  const h = String(host || '').trim().toLowerCase();
+  const namespace = String((declared && declared.namespace) || '').trim().toLowerCase();
+  const name = String((declared && declared.mainServerName) || '').trim().toLowerCase();
+  if (!h || !namespace || !name || name !== h) return { namespace: h, redirectTo: null, isMainServerDoor: false };
+  const atRoot = pathname === '/' || pathname === '' || pathname == null;
+  return { namespace, redirectTo: atRoot ? MAIN_SERVER_ENTRY : null, isMainServerDoor: true };
+}

@@ -95,18 +95,17 @@ export function bootNamespaceRoot(boot, host) {
 // landing. What the gateway says about itself -- /main-server-namespace: { namespace, mainServerName } -- is
 // the declaration. If this host IS the declared main server name, then
 //   * the namespace this page links to is the declared one (cleaker.me), never the address bar's, and
-//   * its front page is the main-server screen, not the landing.
-// Anything else (a localhost dev server, a request that failed, a host that is not the declared name) keeps
-// the old behavior: the host is the namespace and "/" is left alone.
-// MAIN_SERVER_ENTRY is the screen the root GUI already declares at that route; making the door's default entry
-// a property of the door record (rather than this constant) is an open item of the door contract.
-export const MAIN_SERVER_ENTRY = '/netget';
-
+//   * the door IS the main-server app: its address is "/", not "/netget" (see session/doorRoutes.js for the
+//     two-path mapping that makes the screen the root GUI declares at /netget answer at "/").
+// "/netget" on that door would be the namespace's netget node's own "netget" child (cleaker.me/netget/netget):
+// not a page. A person who arrives there (an old link) is moved to "/".
+// Anything else (a localhost dev server, a request that failed/timed out, a host that is not the declared name)
+// keeps the old behavior: the host is the namespace and the path is left alone.
 export function mainServerDoor({ host, declared, pathname }) {
   const h = String(host || '').trim().toLowerCase();
   const namespace = String((declared && declared.namespace) || '').trim().toLowerCase();
   const name = String((declared && declared.mainServerName) || '').trim().toLowerCase();
-  if (!h || !namespace || !name || name !== h) return { namespace: h, redirectTo: null, isMainServerDoor: false };
-  const atRoot = pathname === '/' || pathname === '' || pathname == null;
-  return { namespace, redirectTo: atRoot ? MAIN_SERVER_ENTRY : null, isMainServerDoor: true };
+  if (!h || !namespace || !name || name !== h) return { namespace: h, canonicalPath: null, isMainServerDoor: false };
+  const p = String(pathname || '').replace(/\/+$/, '');
+  return { namespace, canonicalPath: p === '/netget' ? '/' : null, isMainServerDoor: true };
 }

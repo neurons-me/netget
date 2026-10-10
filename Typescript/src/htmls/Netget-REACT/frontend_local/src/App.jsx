@@ -10,6 +10,7 @@ import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
 import { readProviderBoot, frontendRole, namespaceEndpoint, mainServerDoor } from './session/providerBoot.js';
+import DoorRouter from './session/DoorRouter.jsx';
 
 // Home/Domains/Logs are plain components that take no props, so they never
 // forward data-gui-node-id to any DOM element — a SpecBoundary spec'd
@@ -141,25 +142,28 @@ function GatewayApp() {
       clearTimeout(timer);
       if (cancelled) return;
       const resolved = mainServerDoor({ host: GATEWAY_NAMESPACE, declared, pathname: window.location.pathname });
-      // Before Cleaker mounts, so its router opens on the main-server screen rather than redirecting after the landing.
-      if (resolved.redirectTo) {
-        window.history.replaceState(window.history.state, '', `${resolved.redirectTo}${window.location.search}${window.location.hash}`);
+      // Before Cleaker mounts: an old link to "/netget" on this door is "/" (cleaker.me/netget/netget is not a page).
+      if (resolved.canonicalPath) {
+        window.history.replaceState(window.history.state, '', `${resolved.canonicalPath}${window.location.search}${window.location.hash}`);
       }
       setDoor(resolved);
     });
     return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
   }, []);
   if (door === undefined) return null;
+  const shell = (
+    <Cleaker
+      namespace={door.namespace || GATEWAY_NAMESPACE}
+      transport={netgetMonadTransportOrigin()}
+      resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
+      document={NETGET_DOCUMENT}
+      pages={NETGET_PAGES}
+    />
+  );
   return (
     <LauncherPopoverProvider>
       <Me>
-        <Cleaker
-          namespace={door.namespace || GATEWAY_NAMESPACE}
-          transport={netgetMonadTransportOrigin()}
-          resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-          document={NETGET_DOCUMENT}
-          pages={NETGET_PAGES}
-        />
+        {door.isMainServerDoor ? <DoorRouter>{shell}</DoorRouter> : shell}
       </Me>
     </LauncherPopoverProvider>
   );

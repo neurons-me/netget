@@ -65,8 +65,20 @@ async function parseJsonResponse(res) {
     return res.json();
 }
 
+// The full record (target, TLS files) is only for an admin session; without one /domains answers with the public
+// projection (domain, type, subdomain, tls). The session is the one LogsView keeps in this key after signing.
+const ADMIN_SESSION_STORAGE_KEY = 'netget:admin-session-token';
+function adminAuthHeaders() {
+    try {
+        const token = window.localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    } catch {
+        return {};
+    }
+}
+
 async function fetchDomains() {
-    const res = await fetch('/domains');
+    const res = await fetch('/domains', { headers: adminAuthHeaders() });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const data = await parseJsonResponse(res);
     return Array.isArray(data.domains) ? data.domains : [];

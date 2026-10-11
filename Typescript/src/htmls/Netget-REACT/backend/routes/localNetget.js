@@ -30,6 +30,7 @@ import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSessi
 import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
 import { buildGatewayIdentityResponse, arrivalOf, localIPv4 } from "../../../../modules/NetGetX/Auth/gatewayIdentityResponse.ts";
+import { publicDomainView } from "../../../../gateway/domainsProjection.mjs";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -688,8 +689,25 @@ router.post('/domains/metadata', (req, res) => {
 // docs/DomainStoreSplitBrain.md. Response shapes here are copied verbatim
 // from domains.lua's, so Domains.jsx needed zero changes for this migration.
 
+// Who may read a domain's full configuration (target, certificate and key paths, contact, graph path): an admin
+// session with a verified bearer (the same credential /logs asks for), never a header a caller could set. Anyone
+// else gets the allow-listed projection (gateway/domainsProjection.mjs). The router is not affected: it reads
+// domain-map.json, which the store regenerates from the full records.
+async function mayReadDomainConfig(req) {
+    const authHeader = String(req.header('Authorization') || '');
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
+    if (!token) return false;
+    try {
+        const session = await resolveAdminSession(token);
+        return !!session && Array.isArray(session.scopes) && session.scopes.includes('gateway:read');
+    } catch {
+        return false;
+    }
+}
+
 router.get('/domains', async (req, res) => {
-    const domains = await getDomains();
+    const rows = await getDomains();
+    const domains = (await mayReadDomainConfig(req)) ? rows : rows.map(publicDomainView);
     res.json({ success: true, domains, count: domains.length });
 });
 
@@ -716,7 +734,10 @@ router.get('/main-server-namespace', async (req, res) => {
 router.get('/domains/:parent/subdomains', async (req, res) => {
     const parent = req.params.parent;
     const domains = await getDomains();
-    const subdomains = domains.filter((d) => d.subdomain === parent && d.domain !== parent);
+    const full = await mayReadDomainConfig(req);
+    const subdomains = domains
+        .filter((d) => d.subdomain === parent && d.domain !== parent)
+        .map((d) => (full ? d : publicDomainView(d)));
     res.json({ subdomains });
 });
 

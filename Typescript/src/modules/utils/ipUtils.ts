@@ -9,9 +9,10 @@ interface IPifyResponse {
  * Gets the public IP address of the machine using an external API.
  * @returns The public IP address or null if not found.
 */
-async function getPublicIP(): Promise<string | null> {
+async function getPublicIP(timeoutMs = 3000): Promise<string | null> {
     try {
-        const response = await fetch('https://api.ipify.org?format=json');
+        // Bounded: a third party that does not answer must never hold up whoever asked.
+        const response = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(timeoutMs) });
         if (response.ok) {
             const data = await response.json() as IPifyResponse;
             return data.ip; // Return the public IP address

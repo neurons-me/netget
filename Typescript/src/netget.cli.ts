@@ -683,6 +683,25 @@ program
   });
 
 
+// Detects and stores this host's public/local addresses (modules/utils/networkIdentity.ts). xConfig.json only.
+program
+  .command('network-refresh')
+  .description("Detect this host's public and local addresses and store them in xConfig.json (bounded; keeps the last known public address if the check fails; does not touch nginx).")
+  .option('--json', 'Print a single JSON line')
+  .action(async (opts: { json?: boolean }) => {
+    const { ensureNetworkIdentity, describePublicAddress } = await import('./modules/utils/networkIdentity.ts');
+    const net = await ensureNetworkIdentity();
+    const said = describePublicAddress({ publicIP: net.publicIP, publicIPDetection: net.publicIPDetection });
+    if (opts.json) {
+      console.log(JSON.stringify({ ok: net.publicIPDetection.state !== 'failed', changed: net.changed, publicIP: net.publicIP, localIP: net.localIP, publicIPDetection: net.publicIPDetection }));
+      return;
+    }
+    console.log(`public address: ${said.text}`);
+    console.log(`local address:  ${net.localIP || chalk.gray('not found')}`);
+    console.log(chalk.gray('Stored in xConfig.json. Nothing else was changed (nginx is regenerated only by gateway-adopt --apply-nginx).'));
+    if (net.publicIPDetection.state === 'failed') process.exitCode = 1;
+  });
+
 // Runs the gateway inside an existing monad instead of as a separate backend:
 // records the monad's module/env and where nginx sends the gateway's API. It
 // never restarts the monad and never touches nginx unless --apply-nginx is given.
@@ -706,6 +725,13 @@ program
       } else if (typeof opts.frontend === 'string') {
         frontendDir = opts.frontend;
       }
+      // Record the host's addresses before anything is rendered from xConfig. Bounded and non-fatal: a third party that
+      // does not answer is a note here, never a reason for the adoption to fail or wait.
+      try {
+        const { ensureNetworkIdentity, describePublicAddress } = await import('./modules/utils/networkIdentity.ts');
+        const net = await ensureNetworkIdentity();
+        if (!opts.json) console.log(chalk.gray(`  public address: ${describePublicAddress({ publicIP: net.publicIP, publicIPDetection: net.publicIPDetection }).text}`));
+      } catch { /* recorded nothing; carry on */ }
       const result = await adoptMonadAsGateway({
         monad,
         frontendDir,

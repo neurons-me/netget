@@ -581,7 +581,11 @@ router.get('/ip-info', async (req, res) => {
         // forward one of those as if it were a real address.
         const storedPublicIP = String(xConfig.publicIP || '');
         const publicIP = IPV4_PATTERN.test(storedPublicIP) ? storedPublicIP : '';
-        res.json({ success: true, localIP, publicIP });
+        const d = xConfig.publicIPDetection;
+        const publicIPDetection = d && ['detected', 'pending', 'failed'].includes(d.state)
+            ? { state: d.state, observedAt: d.observedAt ?? null, checkedAt: d.checkedAt ?? null, source: d.source }
+            : undefined;
+        res.json({ success: true, localIP, publicIP, ...(publicIPDetection ? { publicIPDetection } : {}) });
     } catch {
         res.status(500).json({ success: false, error: 'Failed to retrieve IP information' });
     }

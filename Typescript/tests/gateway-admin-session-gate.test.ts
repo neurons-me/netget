@@ -239,13 +239,13 @@ try {
   // ── GET /domains is public for the NAMES, not for the machine's wiring ──
   // give one domain a target and certificate paths (the owner's write, as a real admin does), then read it three ways
   assert.equal((await send('POST', '/update-domain', { domain: 'bob-new-key.test', updatedFields: { target: 'http://127.0.0.1:9100', sslMode: 'manual', sslCertificate: '/etc/letsencrypt/live/bob-new-key.test/fullchain.pem', sslCertificateKey: '/etc/letsencrypt/live/bob-new-key.test/privkey.pem' } }, bearer(aliceToken))).status, 200);
-  const ALLOWED = ['domain', 'subdomain', 'tls', 'type'];
+  const ALLOWED = ['domain', 'subdomain', 'tlsConfigured', 'type'];
   const rowsOf = async (headers: Record<string, string> = {}) => ((await (await send('GET', '/domains', undefined, headers)).json()) as any).domains as any[];
   const anonymous = await rowsOf();
   assert.ok(anonymous.length >= 1);
   for (const row of anonymous) assert.deepEqual(Object.keys(row).filter((k) => !ALLOWED.includes(k)), [], `an anonymous row carries only allow-listed fields: ${JSON.stringify(row)}`);
   const anonRow = anonymous.find((r) => r.domain === 'bob-new-key.test');
-  assert.equal(anonRow.tls, true, 'the yes/no survives');
+  assert.equal(anonRow.tlsConfigured, true, 'the yes/no survives');
   assert.ok(!JSON.stringify(anonymous).match(/letsencrypt|privkey|fullchain|127\.0\.0\.1|semanticPath|users\.netget/), 'no paths, no targets, no graph paths on an anonymous answer');
   // a forged identity or a bearer that is not a session changes nothing
   for (const headers of [forged, { authorization: 'Bearer nobody' }, { ...forged, authorization: 'Bearer nobody' }]) {

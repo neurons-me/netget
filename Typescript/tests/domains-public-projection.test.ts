@@ -16,18 +16,18 @@ const record = {
   someFutureField: 'internal',
 };
 const view = publicDomainView(record);
-assert.deepEqual(view, { domain: 'neurons.me', type: 'static', tls: true });
+assert.deepEqual(view, { domain: 'neurons.me', type: 'static', tlsConfigured: true });
 for (const leaked of ['target', 'sslCertificate', 'sslCertificateKey', 'sslMode', 'email', 'projectPath', 'owner', 'semanticPath', 'someFutureField']) {
   assert.equal(leaked in view, false, `${leaked} does not leave`);
 }
 // a subdomain relationship is a name, so it stays; empty values are not invented
-assert.deepEqual(publicDomainView({ domain: 'a.example.com', type: 'proxy', subdomain: 'example.com', sslMode: 'letsencrypt' }), { domain: 'a.example.com', type: 'proxy', subdomain: 'example.com', tls: true });
-// tls is a plain yes/no from the mode, never the mode or a path
-assert.equal(publicDomainView({ domain: 'x', sslMode: 'none' }).tls, false);
-assert.equal(publicDomainView({ domain: 'x', sslMode: 'off' }).tls, false);
-assert.equal(publicDomainView({ domain: 'x' }).tls, false);
-assert.equal(publicDomainView({ domain: 'x', sslMode: 'LetsEncrypt' }).tls, true);
+assert.deepEqual(publicDomainView({ domain: 'a.example.com', type: 'proxy', subdomain: 'example.com', sslMode: 'letsencrypt' }), { domain: 'a.example.com', type: 'proxy', subdomain: 'example.com', tlsConfigured: true });
+// tlsConfigured is a plain yes/no from the mode (configuration, not a verified certificate or HTTPS check), never the mode or a path
+assert.equal(publicDomainView({ domain: 'x', sslMode: 'none' }).tlsConfigured, false);
+assert.equal(publicDomainView({ domain: 'x', sslMode: 'off' }).tlsConfigured, false);
+assert.equal(publicDomainView({ domain: 'x' }).tlsConfigured, false);
+assert.equal(publicDomainView({ domain: 'x', sslMode: 'LetsEncrypt' }).tlsConfigured, true);
 // garbage in, nothing out
-assert.deepEqual(publicDomainView(null as any), { tls: false });
-assert.deepEqual(publicDomainView('x' as any), { tls: false });
+assert.deepEqual(publicDomainView(null as any), { tlsConfigured: false });
+assert.deepEqual(publicDomainView('x' as any), { tlsConfigured: false });
 console.log('domains-public-projection: ok');

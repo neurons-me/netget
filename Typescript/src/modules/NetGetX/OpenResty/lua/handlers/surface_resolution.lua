@@ -4,8 +4,11 @@
 -- WelcomeNetget.jsx fix for why conflating them was actively misleading):
 --
 --   entrypoints — doors into THIS netget's own resolver. Never monad-
---   resolved; localhost/127.0.0.1/local.netget always exist, the public
---   main server only if one is configured.
+--   resolved. localhost and 127.0.0.1 are listed only to a peer that is on
+--   this machine or its LAN (they mean nothing to anyone else); the public
+--   main server only if one is configured. local.netget is NOT listed: that
+--   alias was retired from the admin block (only localhost/127.0.0.1 answer
+--   there), so listing it advertised a name that does not resolve.
 --
 --   surfaces — real registered domains, each one a monad-resolved app.
 --
@@ -50,13 +53,27 @@ local function is_control_entrypoint(host)
   return false
 end
 
+-- RFC1918 / loopback / link-local: who is on this machine or its own LAN.
+local function is_private_ipv4(ip)
+  if type(ip) ~= "string" then return false end
+  local a, b = ip:match("^(%d+)%.(%d+)%.%d+%.%d+$")
+  a, b = tonumber(a), tonumber(b)
+  if not a then return false end
+  return a == 10 or a == 127 or (a == 192 and b == 168) or (a == 172 and b >= 16 and b <= 31) or (a == 169 and b == 254)
+end
+
+local function is_local_peer()
+  local ip = ngx.var.remote_addr or ""
+  return ip == "::1" or ip == "unix:" or is_private_ipv4(ip)
+end
+
 local function list_entrypoints()
   set_json()
-  local entrypoints = {
-    { id = "localhost", host = "localhost", kind = "loopback", status = "local_only" },
-    { id = "127.0.0.1", host = "127.0.0.1", kind = "loopback", status = "local_only" },
-    { id = "local.netget", host = "local.netget", kind = "lan", status = "local_only" },
-  }
+  local entrypoints = {}
+  if is_local_peer() then
+    table.insert(entrypoints, { id = "localhost", host = "localhost", kind = "loopback", status = "local_only" })
+    table.insert(entrypoints, { id = "127.0.0.1", host = "127.0.0.1", kind = "loopback", status = "local_only" })
+  end
 
   -- _G.MAIN_SERVER_NAME is set once per worker in the main nginx.conf's
   -- init_worker_by_lua_block (see setNginxConfigFile.ts) and shared across
@@ -72,6 +89,9 @@ local function list_entrypoints()
     })
   end
 
+  -- An empty Lua table encodes as {} (an object); the answer's contract is a list, and a client that reads a non-list
+  -- as "did not answer" would call a legitimately empty list unavailable.
+  if #entrypoints == 0 then entrypoints = cjson.empty_array end
   ngx.say(cjson.encode({ success = true, entrypoints = entrypoints }))
 end
 

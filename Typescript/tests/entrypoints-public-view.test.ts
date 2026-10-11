@@ -3,8 +3,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// /entrypoints: the doors into this netget. Names that only mean something on this machine are listed to a peer that
-// is on it, never to the internet; the retired local.netget alias is not listed at all; the public main server is.
+// /entrypoints: the doors into this netget. `localhost`/`127.0.0.1` name the CALLER's own machine, so they are listed
+// only to a peer that is on this machine -- not to the internet, and not to a visitor on the LAN either; the retired
+// local.netget alias is not listed at all; the public main server is.
 const resty = ['/usr/local/openresty/bin/resty', '/opt/homebrew/bin/resty', '/usr/local/bin/resty'].find((p) => fs.existsSync(p));
 if (!resty) {
   console.log('entrypoints-public-view: skipped (no resty on this machine; run on the gateway host)');
@@ -19,7 +20,9 @@ if (!resty) {
   assert.deepEqual(run('203.0.113.7', 'netget.site'), ['netget.site'], 'a peer from the internet sees the public door only');
   assert.deepEqual(run('203.0.113.7'), [], 'and nothing when no main server is configured');
   assert.deepEqual(run('127.0.0.1', 'netget.site'), ['localhost', '127.0.0.1', 'netget.site'], 'a process on the machine also sees the local names');
-  assert.deepEqual(run('10.128.0.99', 'netget.site'), ['localhost', '127.0.0.1', 'netget.site'], 'and so does a peer on its LAN');
+  assert.deepEqual(run('::1', 'netget.site'), ['localhost', '127.0.0.1', 'netget.site'], 'an IPv6 loopback peer too');
+  assert.deepEqual(run('10.128.0.99', 'netget.site'), ['netget.site'], 'a peer on the LAN does not: localhost is its own machine');
+  assert.deepEqual(run('192.168.1.20', 'netget.site'), ['netget.site'], 'nor any other private-range peer');
   for (const remote of ['203.0.113.7', '127.0.0.1', '10.0.0.4']) assert.ok(!run(remote, 'netget.site').includes('local.netget'), `local.netget is retired (${remote})`);
   console.log('entrypoints-public-view: ok');
 }

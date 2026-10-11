@@ -4,9 +4,11 @@
 -- WelcomeNetget.jsx fix for why conflating them was actively misleading):
 --
 --   entrypoints — doors into THIS netget's own resolver. Never monad-
---   resolved. localhost and 127.0.0.1 are listed only to a peer that is on
---   this machine or its LAN (they mean nothing to anyone else); the public
---   main server only if one is configured. local.netget is NOT listed: that
+--   resolved. localhost and 127.0.0.1 are listed only to a peer that is ON
+--   this machine: for anyone else they name THEIR OWN machine, not this
+--   server (a visitor on the LAN included), so presenting them as a way into
+--   this netget would send them to the wrong place. The public main server
+--   is listed only if one is configured. local.netget is NOT listed: that
 --   alias was retired from the admin block (only localhost/127.0.0.1 answer
 --   there), so listing it advertised a name that does not resolve.
 --
@@ -53,24 +55,18 @@ local function is_control_entrypoint(host)
   return false
 end
 
--- RFC1918 / loopback / link-local: who is on this machine or its own LAN.
-local function is_private_ipv4(ip)
-  if type(ip) ~= "string" then return false end
-  local a, b = ip:match("^(%d+)%.(%d+)%.%d+%.%d+$")
-  a, b = tonumber(a), tonumber(b)
-  if not a then return false end
-  return a == 10 or a == 127 or (a == 192 and b == 168) or (a == 172 and b >= 16 and b <= 31) or (a == 169 and b == 254)
-end
-
-local function is_local_peer()
+-- Is the peer a process on THIS machine? Loopback only: a peer on the LAN reaches this server by an address of its
+-- own, and `localhost` on its side is its own machine.
+local function is_loopback_peer()
   local ip = ngx.var.remote_addr or ""
-  return ip == "::1" or ip == "unix:" or is_private_ipv4(ip)
+  if ip == "::1" or ip == "unix:" then return true end
+  return ip:match("^127%.%d+%.%d+%.%d+$") ~= nil
 end
 
 local function list_entrypoints()
   set_json()
   local entrypoints = {}
-  if is_local_peer() then
+  if is_loopback_peer() then
     table.insert(entrypoints, { id = "localhost", host = "localhost", kind = "loopback", status = "local_only" })
     table.insert(entrypoints, { id = "127.0.0.1", host = "127.0.0.1", kind = "loopback", status = "local_only" })
   end

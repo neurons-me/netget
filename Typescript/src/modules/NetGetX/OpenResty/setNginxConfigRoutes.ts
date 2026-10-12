@@ -584,8 +584,11 @@ ${proxyHeaders}
         expires 365d;
     }
 
-    # Serve static assets (CSS, JS, images)
-    location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    # Serve static assets (CSS, JS, images).
+    # NOT under /apps/: a regex location wins over a later regex location by file order, so without the lookahead
+    # /apps/<name>/assets/app.js was answered from this root (404) and never reached the app's monad. An app served
+    # by its monad under /apps/<name>/ keeps its own files.
+    location ~* ^(?!/apps/).+\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         root ${distRoot};
         expires 1h;
         add_header Cache-Control "public, max-age=3600";

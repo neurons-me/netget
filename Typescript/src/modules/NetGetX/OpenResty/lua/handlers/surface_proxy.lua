@@ -1,19 +1,18 @@
 -- surface_proxy.lua
 -- Mesh-aware reverse proxy: routes hostname → best available monad.
 --
--- Algorithm (synthesis by reduction):
---   1. Read apps.json (live monad mesh registry)
---   2. Extract rootspace from request host
---      jabellae.suis-macbook-air.local → rootspace = suis-macbook-air.local
---      suis-macbook-air.local          → rootspace = suis-macbook-air.local
---      34.28.109.244 (IP)              → fallback: any live monad on this machine
---   3. Collect ALL live monads that claim that rootspace
---   4. Reduce to the single best candidate by recency (most recently seen wins)
---   5. Route to its endpoint — the monad handles semantic resolution internally
+-- Selection, strongest first (the registry says WHERE a monad is and whether it is alive; it does not decide which
+-- host it serves unless nothing else does):
+--   1. A DECLARED route for this exact host in runtime/domain-map.json (the domain store: panel / `netget routing`).
+--      `app:<name>` is resolved by app name against the registry, live by TTL, exactly as the main routing table does.
+--      A declared target that is not available is "not available": it never falls back to another monad.
+--   2. Monads that DECLARE the host as their own (canonical namespace/identity, publicHost, domain, aliases, hosts,
+--      domains, claimed_namespaces). One identity: it serves (most recent registration of that identity). More than
+--      one distinct identity and no declared route: a CONFLICT is answered, not resolved by recency or trust.
+--   3. Nobody declares the host (a handle under a root): only a monad that IS the root may answer for it.
+--   Tags and the machine's name are advertisements, never selectors: sharing a root tag does not let one app serve
+--   another app's host. An IP request still goes to any live monad (the address is transport only).
 --
--- This implements the NRP "Total monad" synthesis: the caller never needs to
--- know which monad instance answers. The mesh picks the best one available now.
-
 local cjson = require "cjson.safe"
 
 local function getNetgetDataDir()
@@ -80,12 +79,18 @@ local function table_has_host(values, target)
   return false
 end
 
-local function app_claims_host(app, meta, target)
-  if not target or target == "" then return false end
+-- What a monad SAYS about the names it serves, in two strengths. Both are self-reported (registration is loopback-only,
+-- but nothing cryptographically binds a monad to a host: see CLAUDE.md, gaps #1/#2), so neither is an authority:
+--
+--   declared claim  its own canonical identity/namespace, or the names it lists as its own (publicHost, domain,
+--                   aliases, hosts, domains, claimed_namespaces). This is what can select a monad for a host.
+--   advertisement   the machine's name (host/hostname) and `tags`. Tags are labels (`local`, `monad`, the root name…),
+--                   shared by every monad on the machine. They NEVER select a monad: sharing a root tag does not let one
+--                   app serve another app's host.
+local function declares_host(meta, target)
+  if not target or target == "" or type(meta) ~= "table" then return false end
   if normalize_host(meta.namespace) == target then return true end
   if normalize_host(meta.identity) == target then return true end
-  if normalize_host(meta.host) == target then return true end
-  if normalize_host(meta.hostname) == target then return true end
   if normalize_host(meta.publicHost) == target then return true end
   if normalize_host(meta.public_host) == target then return true end
   if normalize_host(meta.domain) == target then return true end
@@ -94,8 +99,20 @@ local function app_claims_host(app, meta, target)
   if table_has_host(meta.domains, target) then return true end
   if table_has_host(meta.claimedNamespaces, target) then return true end
   if table_has_host(meta.claimed_namespaces, target) then return true end
-  if table_has_host(app.tags, target) then return true end
   return false
+end
+
+-- The monad IS the root (its canonical identity/namespace is the root name): the one that answers for the handles
+-- under it. Not a monad that merely lists the root among its tags.
+local function is_root_monad(meta, rootspace)
+  if type(meta) ~= "table" or not rootspace or rootspace == "" then return false end
+  return normalize_host(meta.namespace) == rootspace or normalize_host(meta.identity) == rootspace
+end
+
+-- The monad registers a loopback address; `localhost` as a name would be looked up by nginx's (public) resolver and
+-- not found. The registration is loopback-only, so the name and the literal mean the same machine.
+local function loopback_literal(endpoint)
+  return (tostring(endpoint or ""):gsub("^(https?://)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]([:/]?)", "%1127.0.0.1%2"))
 end
 
 local host = (ngx.var.host or ""):lower()
@@ -216,88 +233,139 @@ local nowMs     = ngx.now() * 1000
 local rootspace = rootspace_of(host)
 local host_is_ip = is_ip(host)
 
--- Trust tiers, materialized once per app at ingest time by apps.lua's
--- report_app()/derive_trust() (checked against gateway-claims.json's
--- owner/admins) and stored as app.trust. Unranked/missing trust (older
--- entries, or apps that predate this field) is treated as guest-level so
--- reduction stays backward compatible.
-local TRUST_RANK = { owner = 4, admin = 3, peer = 2, guest = 1 }
-
--- Collect all live candidates.
--- Matching rules:
---   hostname request → match by namespace == rootspace or namespace == host
---   IP request       → match any live monad (IP is routing only, not identity)
-local candidates = {}
-
-for _, app in pairs(registry.apps) do
+local function is_live(app)
   local ttl      = tonumber(app.ttlMs)     or 45000
   local lastSeen = tonumber(app.lastSeenMs) or 0
+  return lastSeen == 0 or (nowMs - lastSeen) <= ttl
+end
 
-  -- Skip stale entries
-  if lastSeen == 0 or (nowMs - lastSeen) <= ttl then
-    local meta = app.metadata
-    if meta then
-      local ns = (meta.namespace or ""):lower()
-      local ep = meta.directEndpoint or meta.endpoint or meta.controlEndpoint
+local function endpoint_of(meta)
+  local ep = meta and (meta.directEndpoint or meta.endpoint or meta.controlEndpoint)
+  if ep and ep ~= "" then return loopback_literal(ep) end
+  return nil
+end
 
-      if ep and ep ~= "" then
-        local matches
-        if host_is_ip then
-          -- IP-based request: any live monad can answer.
-          -- Hostname is transport only — namespace is resolved by the monad.
-          matches = true
-        else
-          -- Hostname-based request: match by canonical namespace or declared aliases.
-          matches = app_claims_host(app, meta, rootspace) or app_claims_host(app, meta, host)
-        end
+local function identity_of(meta)
+  return meta and (meta.identity_hash or meta.identityHash) or nil
+end
 
-        if matches then
-          table.insert(candidates, {
-            ep = ep,
-            lastSeen = lastSeen,
-            ns = ns,
-            trust = app.trust,
-            identity = meta.identity_hash or meta.identityHash,
-          })
+local function send_conflict_page(identities)
+  ngx.log(ngx.WARN, "surface_proxy: conflict for host '", host, "' — identities ", table.concat(identities, ", "),
+    " all declare it and no declared route (domain-map.json) says which one serves it")
+  return send_no_monad_page("conflict: more than one monad declares " .. host .. " and no route chooses between them", true)
+end
+
+local function route_to(endpoint, identity)
+  ngx.var.surface_proxy_target = (endpoint:match("^(.-)/*$") or endpoint)
+  ngx.var.surface_proxy_identity = identity or ""
+end
+
+-- ── 1. A DECLARED route for this exact host (the patch bay: domain-map.json, projected from the domain store the
+--       panel and `netget routing` write). It is the authority: the monad registry supplies where the target is and
+--       whether it is alive, never which host it serves. A declared target that is not available is "not available",
+--       not a reason to fall back to some other monad.
+local function declared_target(for_host)
+  local rawMap = read_file(getNetgetDataDir() .. "/runtime/domain-map.json")
+  if not rawMap or rawMap == "" then return nil end
+  local okm, map = pcall(cjson.decode, rawMap)
+  if not okm or type(map) ~= "table" or type(map.domains) ~= "table" then return nil end
+  local route = map.domains[for_host]
+  if type(route) ~= "table" then return nil end
+  if route.type ~= "proxy" and route.type ~= "server" then return nil end
+  if type(route.target) ~= "string" or route.target == "" then return nil end
+  return route.target
+end
+
+if not host_is_ip then
+  local declared = declared_target(host)
+  if declared then
+    if declared:sub(1, 4) == "app:" then
+      local want = declared:sub(5):lower()
+      local best
+      for _, app in pairs(registry.apps) do
+        local meta = app.metadata or {}
+        local name = tostring(app.name or ""):lower()
+        local short = name:gsub("^monad:", "")
+        local named = (name == want) or (short == want) or (tostring(meta.monadName or ""):lower() == want)
+        if named and is_live(app) then
+          local ep = endpoint_of(meta)
+          if not ep and app.port then ep = "http://" .. (app.host or "127.0.0.1") .. ":" .. tostring(app.port) end
+          if ep and (not best or (tonumber(app.lastSeenMs) or 0) > best.lastSeen) then
+            best = { ep = ep, lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta) }
+          end
         end
       end
+      if not best then
+        return send_no_monad_page("declared target " .. declared .. " for " .. host .. " is not available", true)
+      end
+      route_to(best.ep, best.identity)
+      return
+    end
+    -- host:port or http(s)://host:port, used as written (same as the main routing table)
+    local direct = declared:match("^https?://") and declared or ("http://" .. declared)
+    route_to(loopback_literal(direct), "")
+    return
+  end
+end
+
+-- ── 2. No declared route. Select by what monads DECLARE as their own (never by tags).
+local exact, root_candidates = {}, {}
+for _, app in pairs(registry.apps) do
+  local meta = app.metadata
+  if type(meta) == "table" and endpoint_of(meta) then
+    local entry = { ep = endpoint_of(meta), lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta), live = is_live(app), trust = app.trust }
+    if host_is_ip then
+      -- IP request: the address is transport only; any live monad answers and resolves the namespace itself.
+      if entry.live then table.insert(exact, entry) end
+    elseif declares_host(meta, host) then
+      table.insert(exact, entry)
+    elseif is_root_monad(meta, rootspace) then
+      table.insert(root_candidates, entry)
     end
   end
 end
 
-if #candidates == 0 then
+local function most_recent(list)
+  local best
+  for _, c in ipairs(list) do
+    if not best or c.lastSeen > best.lastSeen then best = c end
+  end
+  return best
+end
+
+if host_is_ip then
+  local best = most_recent(exact)
+  if not best then return send_no_monad_page("no live monad for: " .. host, true) end
+  route_to(best.ep, best.identity)
+  return
+end
+
+if #exact > 0 then
+  -- Someone declares this exact host. Only monads that declare it can serve it.
+  local live, identities, seen = {}, {}, {}
+  for _, c in ipairs(exact) do
+    if c.live then
+      table.insert(live, c)
+      local id = c.identity or "(no identity)"
+      if not seen[id] then seen[id] = true; table.insert(identities, id) end
+    end
+  end
+  if #live == 0 then
+    return send_no_monad_page("the monad that declares " .. host .. " is not live", true)
+  end
+  if #identities > 1 then
+    return send_conflict_page(identities)
+  end
+  local best = most_recent(live)
+  route_to(best.ep, best.identity)
+  return
+end
+
+-- ── 3. Nobody declares this host: it is a handle under a root. Only a monad that IS the root may answer for it.
+local live_roots = {}
+for _, c in ipairs(root_candidates) do if c.live then table.insert(live_roots, c) end end
+local best = most_recent(live_roots)
+if not best then
   return send_no_monad_page("no live monad for: " .. host, true)
 end
-
--- Reduce: pick the highest-trust candidate first (owner > admin > peer >
--- guest), most-recently-seen as a tiebreaker only within the same trust
--- tier. This replaces pure-recency reduction, which could not distinguish
--- two different monad identities claiming the same hostname string.
-local best = candidates[1]
-local bestRank = TRUST_RANK[best.trust] or TRUST_RANK.guest
-for i = 2, #candidates do
-  local c = candidates[i]
-  local cRank = TRUST_RANK[c.trust] or TRUST_RANK.guest
-  if cRank > bestRank or (cRank == bestRank and c.lastSeen > best.lastSeen) then
-    best = c
-    bestRank = cRank
-  end
-end
-
--- Ambiguous claim: another live candidate at the same top trust tier
--- claims this host under a different identity. Previously silent —
--- surfacing it here doesn't change routing, just makes it observable.
-for i = 1, #candidates do
-  local c = candidates[i]
-  if c ~= best and (TRUST_RANK[c.trust] or TRUST_RANK.guest) == bestRank
-     and c.identity ~= best.identity then
-    ngx.log(ngx.WARN, "surface_proxy: ambiguous claim for host '", host,
-      "' — identities '", tostring(best.identity), "' and '", tostring(c.identity),
-      "' both claim it at trust tier '", best.trust or "guest", "'")
-    break
-  end
-end
-
-local target = best.ep:match("^(.-)/*$") or best.ep
-ngx.var.surface_proxy_target = target
-ngx.var.surface_proxy_identity = best.identity or ""
+route_to(best.ep, best.identity)

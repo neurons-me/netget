@@ -944,9 +944,11 @@ ${controlActionGate}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # Local app registry
+    # Local app registry. A program (fetch, curl: no text/html in Accept) gets the registry as JSON, as before. A
+    # browser navigating here gets the panel (the SPA answers /apps with the apps registered on this host).
     location = /apps {
         if ($request_method = OPTIONS) { return 204; }
+        if ($http_accept ~* "text/html") { rewrite ^ /index.html last; }
         set $apps_action list;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;

@@ -109,6 +109,8 @@ const NETGET_DOCUMENT = {
           domains: { label: 'Domains', component: 'NetgetDomains', route: '/domains', needs: 'both', note: 'Domain routing CRUD (REST, stored through the monad).' },
           logs: { label: 'Logs', component: 'NetgetLogs', route: '/logs', needs: 'backend', note: 'Nginx log viewer (REST).' },
           monad: { label: 'Monad', component: 'NetgetMonad', route: '/monad', needs: 'monad', note: "This netget's own monad: the surface it reports." },
+          // The server answers /apps with this page to a browser and with the registry (JSON) to a program.
+          apps: { label: 'Apps', component: 'NetgetDashboard', route: '/apps', needs: 'backend', note: 'The apps registered on this host (same view as the dashboard).' },
           terms: { label: 'Terms', component: 'NetgetTerms', route: '/terms-and-conditions' },
           privacy: { label: 'Privacy', component: 'NetgetPrivacy', route: '/privacy-policy' },
         },

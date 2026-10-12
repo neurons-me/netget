@@ -23,7 +23,9 @@ const Home = () => {
         appsEndpoint="/apps"
         pollMs={5000}
         onMonadClick={(monad) => {
-          window.location.href = `/monads/${monad.name}`;
+          // The registry names a monad `monad:<name>`; the door is /apps/<name>/ (the prefixed form is a 404).
+          const name = String(monad.name || '').replace(/^monad:/, '');
+          if (name) window.location.href = `/apps/${encodeURIComponent(name)}/`;
         }}
       />
     </Box>

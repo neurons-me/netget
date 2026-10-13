@@ -12,7 +12,7 @@ if (!resty) {
   console.log('door-connections-lua: skipped (no resty on this machine)');
   process.exit(0);
 }
-const luaRoot = path.resolve('src/modules/NetGetX/OpenResty/lua');
+const luaRoot = process.env.DOOR_LUA_ROOT ? path.resolve(process.env.DOOR_LUA_ROOT) : path.resolve('src/modules/NetGetX/OpenResty/lua');
 const handler = path.join(luaRoot, 'handlers/surface_proxy.lua');
 const harness = path.resolve('tests/lua/surface_proxy_harness.lua');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dc-test-'));

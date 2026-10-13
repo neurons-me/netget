@@ -123,7 +123,8 @@ const GOOD = [
 writeMap(GOOD);
 
 // ── a real OpenResty with those blocks ──────────────────────────────────────
-const luaRoot = path.resolve('src/modules/NetGetX/OpenResty/lua');
+// DOOR_LUA_ROOT: run the same walk against another `lua/` tree (the files an installation would put in place)
+const luaRoot = process.env.DOOR_LUA_ROOT ? path.resolve(process.env.DOOR_LUA_ROOT) : path.resolve('src/modules/NetGetX/OpenResty/lua');
 // a peer that is NOT loopback: connect to this machine's own LAN address, so nginx sees that address as the client
 const lanIp = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
 const prefix = path.join(tmp, 'or');

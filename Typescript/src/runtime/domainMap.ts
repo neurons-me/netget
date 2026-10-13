@@ -4,12 +4,16 @@ import os from 'os';
 import { spawnSync } from 'child_process';
 import { getNetgetDataDir } from '../utils/netgetPaths.js';
 import { isReservedLocalDomain } from '../modules/NetGetX/Domains/reservedDomains.ts';
+import { checkDoorConnections, type DoorConnection } from './doorConnections.js';
+import { registeredMonadPorts } from './doorConnectionPorts.js';
 
 export interface DomainRoute {
     type: 'proxy' | 'server' | 'static';
     target?: string;
     protocol?: 'http' | 'https';
     root?: string;
+    /** Door connections (runtime/doorConnections.ts), re-checked here; surface_proxy.lua checks them again. */
+    connections?: DoorConnection[];
     ssl: {
         enabled: boolean;
         cert?: string;
@@ -75,6 +79,13 @@ export async function generateDomainMap(): Promise<string> {
         } else {
             if (row.target) route.target = row.target;
             route.protocol = 'http';
+        }
+
+        // A static folder has nothing to carve out of; a dynamic route may carry connections. A list that fails any
+        // rule is not projected at all (a partial list would silently change which path goes where).
+        if (type !== 'static' && Array.isArray(row.connections) && row.connections.length > 0) {
+            const checked = checkDoorConnections(row.connections, registeredMonadPorts());
+            if (checked.ok) route.connections = checked.connections;
         }
 
         domains[key] = route;

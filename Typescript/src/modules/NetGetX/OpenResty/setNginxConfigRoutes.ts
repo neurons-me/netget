@@ -287,7 +287,71 @@ export function getNetgetAppConfContent(layout: OpenRestyLayout = detectOpenRest
   // _G.render_gateway_status is set once per worker in nginx.conf's
   // init_worker_by_lua_block and is available here because OpenResty shares one Lua VM
   // per worker across every included server block.
-  const meshGatewayErrorLocation = `
+  // Door connections (src/runtime/doorConnections.ts, lua/lib/door_connections.lua): the operator declared that a path
+  // prefix of a door belongs to a service of the app that is not a monad (FullTrailer's own server at /api/fuel).
+  // surface_proxy.lua (the host door) and monad_proxy.lua (/apps/<name>/) decide, then ngx.exec to this location with
+  // the upstream in $door_connection_target. It is a location of its own, not the monad's, for four reasons:
+  //   * a failure (the service is off) is JSON, never the gateway's HTML status page and never the app's index.html:
+  //     an API call must not receive a page;
+  //   * the request goes out with what a public client may send to an app's own server and NOTHING of the gateway's:
+  //     the monad's internal token, the identity/scopes headers that the gateway trusts from itself, the signing
+  //     proof for the gateway, the gateway's cookies and bearer. The service sees the real client address as
+  //     X-Forwarded-For (replaced, not appended: a forged one is not passed on), so it can tell a public request
+  //     from a local one even though nginx reaches it over loopback;
+  //   * the path is the one the client used (minus the /apps/<name> mount, which monad_proxy.lua strips);
+  //   * no WebSocket upgrade is offered.
+  // The two variables are declared at server level (a snippet appended wherever @mesh_gateway_error exists, so every
+  // server block that can exec here has them).
+  const doorConnectionLocations = `
+    set $door_connection_target "";
+    set $door_connection_prefix "";
+
+    location @door_connection {
+        internal;
+        proxy_pass $door_connection_target;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Monad-Internal-Token "";
+        proxy_set_header X-NetGet-Internal "";
+        proxy_set_header X-NetGet-Identity "";
+        proxy_set_header X-NetGet-Scopes "";
+        proxy_set_header X-NetGet-Surface "";
+        proxy_set_header X-NetGet-Monad "";
+        proxy_set_header X-NetGet-App-Kind "";
+        proxy_set_header X-Me-Proof "";
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_connect_timeout 3s;
+        proxy_next_upstream off;
+        proxy_intercept_errors off;
+        error_page 502 503 504 = @door_connection_error;
+        add_header X-NetGet-Connection $door_connection_prefix always;
+    }
+
+    location @door_connection_error {
+        internal;
+        default_type 'application/json; charset=utf-8';
+        content_by_lua_block {
+            local cjson = require "cjson.safe"
+            ngx.status = 502
+            ngx.header["Content-Type"] = "application/json; charset=utf-8"
+            ngx.header["Cache-Control"] = "no-store"
+            ngx.say(cjson.encode({
+                ok = false,
+                error = "connection_unavailable",
+                prefix = ngx.var.door_connection_prefix,
+                message = "The service behind this path is not answering.",
+            }))
+            return ngx.exit(ngx.OK)
+        }
+    }`;
+
+  const meshGatewayErrorLocation = `${doorConnectionLocations}
     location @mesh_gateway_error {
         internal;
         default_type 'text/html; charset=utf-8';

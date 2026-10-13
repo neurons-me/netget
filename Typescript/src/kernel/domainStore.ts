@@ -33,6 +33,8 @@
  * commandHandler.ts) — this module never needs to explicitly persist.
  */
 
+import { parseStoredDoorConnections, checkDoorConnections, serializeDoorConnections, type DoorConnection } from '../runtime/doorConnections.js';
+import { registeredMonadPorts } from '../runtime/doorConnectionPorts.js';
 import { getNetgetMonadOrigin, getGatewayRootNamespace } from './netgetMonadProcess.js';
 import { writeToMonad, readFromMonad } from './monadHttpClient.js';
 
@@ -52,6 +54,12 @@ export interface DomainRecord {
   owner?: string;
   nginxConfig?: string;
   dnsProvider?: string;
+  /**
+   * Connections the operator declared on this door: a path prefix that belongs to a service of the app which is not
+   * its monad (FullTrailer's own server at `/api/fuel`). Stored as a JSON string (the store writes scalars) and
+   * returned here already parsed and checked; an invalid stored value reads as none. See runtime/doorConnections.ts.
+   */
+  connections?: DoorConnection[];
   /** Absolute kernel path for this record (`users.<owner>.domains.<key>`,
    * dots in the domain name escaped) — lets a GUI node's `provenance` point
    * Explain/Inspect straight at the real value, computed once here so
@@ -75,7 +83,7 @@ const NETGET_OWNER_FALLBACK = 'netget';
 const DOMAIN_FIELDS = [
   'target', 'type', 'subdomain', 'email', 'sslMode', 'sslCertificate',
   'sslCertificateKey', 'projectPath', 'rootDomain', 'owner', 'nginxConfig',
-  'dnsProvider', 'registered',
+  'dnsProvider', 'registered', 'connections',
 ] as const;
 type DomainField = typeof DOMAIN_FIELDS[number];
 
@@ -178,6 +186,7 @@ function toDomainRecord(key: string, owner: string, branch: Partial<Record<Domai
     owner: branch.owner as string | undefined,
     nginxConfig: branch.nginxConfig as string | undefined,
     dnsProvider: branch.dnsProvider as string | undefined,
+    connections: parseStoredDoorConnections(branch.connections, registeredMonadPorts()),
     semanticPath: `users.${sanitizeOwnerLabel(owner)}.domains.${escapeDomainKey(key)}`,
   };
 }
@@ -292,6 +301,23 @@ export async function updateDomainRoute(
   if (type !== null) await writeField(owner, key, 'type', type);
   if (target !== null) await writeField(owner, key, 'target', target);
   await regenerateMap();
+}
+
+/**
+ * Declares the connections of a door (replaces the list). The operator's act: callers are the CLI and the gateway's
+ * authorized admin routes, never an app's own registration. Throws, and writes nothing, when any entry is refused.
+ */
+export async function updateDomainConnections(domain: string, connections: unknown): Promise<DoorConnection[]> {
+  const checked = checkDoorConnections(connections, registeredMonadPorts());
+  if (checked.ok === false) {
+    throw new Error(`connection${checked.index !== undefined ? ` #${checked.index + 1}` : 's'} refused: ${checked.reason}`);
+  }
+  const key = domainKey(domain);
+  const owner = await resolveOwnerForKey(key);
+  if (!owner) throw new Error(`The domain ${domain} is not registered.`);
+  await writeField(owner, key, 'connections', serializeDoorConnections(checked.connections));
+  await regenerateMap();
+  return checked.connections;
 }
 
 export async function getDomainTarget(domain: string): Promise<string | undefined> {

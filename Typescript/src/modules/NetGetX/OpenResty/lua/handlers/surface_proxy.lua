@@ -10,6 +10,9 @@
 --      domains, claimed_namespaces). One identity: it serves (most recent registration of that identity). More than
 --      one distinct identity and no declared route: a CONFLICT is answered, not resolved by recency or trust.
 --   3. Nobody declares the host (a handle under a root): only a monad that IS the root may answer for it.
+--   A declared route may carry CONNECTIONS (lib/door_connections.lua): path prefixes the operator sent to a service of the
+--   app that is not its monad (FullTrailer's own server at /api/fuel). They are checked before the destination answers;
+--   a matching one is answered by that service or by a JSON error, never by the monad or the app's HTML.
 --   Tags and the machine's name are advertisements, never selectors: sharing a root tag does not let one app serve
 --   another app's host. An IP request still goes to any live monad (the address is transport only).
 --
@@ -264,7 +267,7 @@ end
 --       panel and `netget routing` write). It is the authority: the monad registry supplies where the target is and
 --       whether it is alive, never which host it serves. A declared target that is not available is "not available",
 --       not a reason to fall back to some other monad.
-local function declared_target(for_host)
+local function declared_route(for_host)
   local rawMap = read_file(getNetgetDataDir() .. "/runtime/domain-map.json")
   if not rawMap or rawMap == "" then return nil end
   local okm, map = pcall(cjson.decode, rawMap)
@@ -273,12 +276,43 @@ local function declared_target(for_host)
   if type(route) ~= "table" then return nil end
   if route.type ~= "proxy" and route.type ~= "server" then return nil end
   if type(route.target) ~= "string" or route.target == "" then return nil end
-  return route.target
+  return route
+end
+
+-- A connection of the door answers a request before the door's main destination does (see lib/door_connections.lua).
+-- It is answered by the connection's service, or by an error: never by the monad and never by the app's HTML, which
+-- would answer an API call with a page. The error is JSON whatever the client accepts.
+local function answer_connection(route)
+  local ok, dc = pcall(require, "lib.door_connections")
+  if not ok then
+    ngx.log(ngx.ERR, "surface_proxy: lib.door_connections is not installed; connections of ", host, " are not applied")
+    if type(route.connections) == "table" and #route.connections > 0 then
+      ngx.status = 502
+      ngx.header["Content-Type"] = "application/json; charset=utf-8"
+      ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", message = "door connections are not available on this gateway" }))
+      return ngx.exit(502)
+    end
+    return
+  end
+  local decision = dc.decide(route.connections, ngx.var.uri, registry)
+  if not decision then return end
+  if decision.error then
+    ngx.log(ngx.WARN, "surface_proxy: connection ", decision.prefix, " of ", host, " not applied: ", decision.error)
+    ngx.status = 502
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", prefix = decision.prefix, message = decision.error }))
+    return ngx.exit(502)
+  end
+  ngx.var.door_connection_target = decision.upstream
+  ngx.var.door_connection_prefix = decision.prefix
+  return ngx.exec("@door_connection")
 end
 
 if not host_is_ip then
-  local declared = declared_target(host)
+  local route = declared_route(host)
+  local declared = route and route.target
   if declared then
+    answer_connection(route)
     if declared:sub(1, 4) == "app:" then
       local want = declared:sub(5):lower()
       local best

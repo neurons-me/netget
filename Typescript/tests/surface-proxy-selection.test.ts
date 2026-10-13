@@ -20,7 +20,7 @@ const handler = path.resolve(handlerPath);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-test-'));
 const oldHandler = path.join(tmp, 'surface_proxy.old.lua');
 let haveOld = false;
-try { fs.writeFileSync(oldHandler, execFileSync('git', ['show', `HEAD:Typescript/${handlerPath}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); haveOld = true; } catch { /* not in a git checkout */ }
+try { fs.writeFileSync(oldHandler, execFileSync('git', ['show', `89c5d9f^:Typescript/${handlerPath}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })); haveOld = true; } catch { /* not in a git checkout */ }
 
 const ROOT = 'suis-macbook-air.local';
 const FRESH = 1_999_000, STALE = 1_000_000; // now = 2000 s -> 2_000_000 ms; ttl 12 s
@@ -63,8 +63,11 @@ for (const apps of [both, bothReversed]) {
 const polls_newer = [app({ ...FT, seen: FRESH - 5000 }), app({ ...PS, seen: FRESH })];
 assert.equal(run(polls_newer, `fulltrailer.${ROOT}`).identity, 'ft-identity', 'a more recent registration of another app does not take the host');
 if (haveOld) {
-  const before = run(both, `fulltrailer.${ROOT}`, { old: true });
+  // Polls is the most recent registration (a tie would be decided by table iteration order, i.e. at random)
+  const pollsNewest = [app(FT), app({ ...PS, seen: FRESH + 500 })];
+  const before = run(pollsNewest, `fulltrailer.${ROOT}`, { old: true });
   assert.equal(before.identity, 'polls-identity', 'the previous selector sent the FullTrailer host to Polls (the bug)');
+  assert.equal(run(pollsNewest, `fulltrailer.${ROOT}`).identity, 'ft-identity', 'the current one does not');
 }
 
 // 2. an app that is down is "not live", never another app

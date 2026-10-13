@@ -1,6 +1,6 @@
 # Door connections
 
-**Status: built and tested on a disposable OpenResty (2026-10-12). Not activated on the real local nginx, not on the VM.**
+**Status: built and tested (2026-10-12): the generator's blocks in a disposable OpenResty, and the real FullTrailer app + real server + a real monad in a browser, through both doors. Not activated on the real local nginx, not on the VM.**
 
 A *door* is a domain record: a host (`fulltrailer.suis-macbook-air.local`) or the `/apps/<name>/` mount of an app. Its
 main destination (`type`/`target`: `app:fulltrailer`, `127.0.0.1:5173`, a folder) answers everything the record does not
@@ -53,6 +53,31 @@ Checked when it is declared (`src/runtime/doorConnections.ts`) **and again when 
 A connection that matches but is not allowed when the request arrives is answered `502 {"error":"connection_not_applied"}`.
 It never falls through to the monad (which would answer an API call with a page).
 
+## Who may use a connection
+
+The service behind a connection is the app's own server, and FullTrailer's has **no authentication of its own**:
+`/api/fuel` (the fleet's fuel data), `/api/upload` (writes a file to disk) and `/uploads/*` answer anyone who reaches them
+(`cors()` open, no header read). What stops a stranger is the gateway. A connection is therefore served only to the peers
+the **app's exposure policy** admits (the same one `/apps/<name>/` applies to the monad: `enabled`, `visibility`
+loopback|lan|wan, `network.allowLoopback|allowLan|allowWan`), judged on the address that connected to nginx, never on a
+forwarded header. An app with no policy is judged as loopback-only; a `guest`-trust app has no connections; a door that
+points at a bare `host:port` (no app) is loopback-only. Refusals are JSON: 403 `connection_forbidden`, 404 (app disabled),
+503 `app_not_available` (the app behind the door is not live).
+
+Two consequences to keep in view:
+
+* The local FullTrailer policy today is `visibility: loopback`. A browser on the same Mac that uses
+  `https://fulltrailer.<machine>.local` connects from the machine's LAN address, not 127.0.0.1: it is a LAN peer, and its
+  connection requests are refused (the front end still loads: that is the monad's). `http://localhost/apps/fulltrailer/`
+  and `fulltrailer.localhost` are loopback. Admitting the LAN is the operator's change of the app's policy, not a flag here.
+* The policy's `auth` block (`requiredForDestructive: true`, `mode: session`, `rolesAllowed: [admin]`) is **not enforced by
+  the gateway** for connections. While visibility is loopback that is bounded; **before widening visibility the server must
+  authenticate or the gateway must** (a signed-proof check per connection, not built).
+
+Credentials: the gateway's own (`Authorization`, `Cookie`, `X-Me-Proof`, internal token, identity/scope headers) are not
+forwarded. FullTrailer's server reads none of them, so nothing it needs is lost. An app whose server wants its own
+credentials would need an explicit, per-connection decision about which headers pass; none is built.
+
 ## What the app's server receives
 
 A request leaves through its own named location (`@door_connection`), not the monad's:
@@ -79,23 +104,54 @@ blocks yet. FullTrailer is not in that mode.
 ## Tested
 
 * `tests/door-connections.test.ts` — the declaration rules.
-* `tests/door-connections-lua.test.ts` — the library and the host door's decision (Lua harness).
-* `tests/door-connections-openresty.test.ts` — the generator's own blocks in a real OpenResty, both doors, with two
-  upstreams that can be switched off: prefix boundaries, query and path preserved, a 3 MB upload, JSON for an API nobody
-  serves (never the app's HTML), the server off, refused targets (gateway, nginx, registered monads, non-loopback,
-  hostnames, path in target, prefixes over the monad's paths), credentials not forwarded, forged `X-Forwarded-For`.
+* `tests/door-connections-lua.test.ts` — the library, the exposure gate and the host door's decision (Lua harness).
+* `tests/door-connections-openresty.test.ts` — the generator's blocks (or an installed-style conf: `DOOR_CONF_FILE`, and any
+  `lua/` tree: `DOOR_LUA_ROOT`) in a real OpenResty, both doors, two upstreams that can be switched off, a real
+  non-loopback peer: prefix boundaries, query and path preserved, a 3 MB upload, JSON for an API nobody serves (never the
+  app's HTML), the server off, refused targets, credentials not forwarded, forged `X-Forwarded-For`, the exposure policy.
 * `tests/domain-connections-store.test.ts` — the store and the projection, on a disposable monad.
+* **The real app, 2026-10-12**: FullTrailer's built front end, FullTrailer's real `server/index.js` (dependencies from its
+  lockfile, `npm ci --ignore-scripts`), a real monad of the release, a disposable OpenResty with the generator's blocks, a
+  browser. Through `http://fulltrailer.localhost:<p>/` and `http://localhost:<p>/apps/fulltrailer/`: the app signs in with
+  a test identity and registers it; Tractos asks `/api/fuel` of the door it was loaded from (the real server answers 500
+  JSON "SAMSARA_API_TOKEN no configurado": no token was configured, nothing was invented); an operator photo is uploaded by
+  the app's own code to `/api/upload` and served back from `/uploads/<file>` (the avatar loads); with the server killed,
+  `/api/fuel` and `/api/upload` are 502 JSON and the front end keeps answering. **Not proven: the integration with Samsara.**
 
 ## To activate (nothing of this was done)
 
-1. Back up `netget_app.conf` and the installed `lua/handlers/{surface_proxy,monad_proxy}.lua`.
-2. Install `lua/lib/door_connections.lua` and the two handlers; regenerate `netget_app.conf` from this branch (it adds
-   `@door_connection` / `@door_connection_error` and two `set` lines to each server block that has
-   `@mesh_gateway_error`); `openresty -t`; reload.
-3. Register the door if it is not in the store (`fulltrailer.suis-macbook-air.local`, type `server`, target
-   `app:fulltrailer`) and declare its connections.
-4. Install the dependencies of `apps/FullTrailer/server` and start it (`PORT=4000`, `SAMSARA_API_TOKEN` in its environment;
-   it is not running today and its `node_modules` is absent).
-5. Serve a FullTrailer build whose `/api/*` calls go through `serviceUrl()` (branch `feat/access-existing-identity`).
+`~/.get/local/door-connections/` holds three scripts. They install what **this** machine has plus this work, not the
+branch's other files: the installed `monad_proxy.lua` is older than the branch's (no `door_entry` block), so it is
+installed + the connection hook only (`patch`), and the conf is installed + the connection block before each
+`@mesh_gateway_error`. Preconditions are hashes: if anything installed changed since `prepare.sh`, `activate.sh` refuses.
 
-Rollback: `door-connections <domain> --clear` (immediate, no reload), then the saved conf and handlers.
+```
+bash prepare.sh     # reads the live tree, writes staging/ and a manifest; checks Lua syntax and nginx -t on a sandbox copy
+bash activate.sh    # backup (conf, 2 handlers, lib listing) -> install -> nginx -t on the installed tree; restores by itself if it fails
+sudo openresty -t && sudo openresty -s reload            # yours: the master is root's
+bash rollback.sh [backup-dir]   # conf + Lua restored byte for byte, lib file removed, verified; then reload again
+```
+
+Rehearsed on a copy of the real tree: activate then rollback is byte-identical (`diff -r` empty); drift after `prepare.sh` is
+refused; an invalid staged conf is installed, fails `nginx -t` and is restored without help. The staged files pass the
+OpenResty walk (`DOOR_LUA_ROOT`, `DOOR_CONF_FILE`).
+
+Then, with the netget of this branch (a global `netget` from an older checkout lacks the command):
+
+1. register the door if it is not in the store (`fulltrailer.suis-macbook-air.local`, type `server`, target `app:fulltrailer`);
+2. `door-connections <domain> --add /api/fuel=127.0.0.1:4000 --add /api/upload=127.0.0.1:4000 --add /uploads=127.0.0.1:4000`;
+3. start FullTrailer's server: `npm ci` in `apps/FullTrailer/server` (lockfile exists), `PORT=4000`, and the Samsara token in
+   `apps/FullTrailer/server/.env` (`SAMSARA_API_TOKEN=...`, gitignored; `.env.example` names it). The token is never read by
+   anything here;
+4. serve a FullTrailer build whose calls go through `serviceUrl()` (branch `feat/access-existing-identity`).
+
+Rollback of step 2 alone (inert if the old Lua is back, because the old handlers ignore the field):
+`door-connections <domain> --clear`.
+
+## Known limits
+
+* An app in `dist` frontend mode is not carved (see above).
+* A **new** identity registering on a monad of this release fails with 413: the seed catalog is a signed write bigger than
+  `express.json()`'s 100 KB default (found again in this walk; lifted for the disposable monad only, with a preload). It is
+  the monad's, not the door's, and it will hit the real FullTrailer when a new identity enters.
+* The app's server is not started or supervised by anything; netget routes to the address that was declared.

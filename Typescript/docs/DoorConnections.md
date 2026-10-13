@@ -70,9 +70,16 @@ Two consequences to keep in view:
   `https://fulltrailer.<machine>.local` connects from the machine's LAN address, not 127.0.0.1: it is a LAN peer, and its
   connection requests are refused (the front end still loads: that is the monad's). `http://localhost/apps/fulltrailer/`
   and `fulltrailer.localhost` are loopback. Admitting the LAN is the operator's change of the app's policy, not a flag here.
-* The policy's `auth` block (`requiredForDestructive: true`, `mode: session`, `rolesAllowed: [admin]`) is **not enforced by
-  the gateway** for connections. While visibility is loopback that is bounded; **before widening visibility the server must
-  authenticate or the gateway must** (a signed-proof check per connection, not built).
+* **What the app declared about authorization is a requirement, not a hint** (the policy's `auth` block). The gateway
+  cannot verify a session or a role on a connection yet (a proof for a multipart upload is not built), so it does not
+  pretend to: an operation whose declared requirement it cannot check is **refused** (403 `authorization_required`),
+  whatever the peer's address is. Loopback is where a request comes from, not who it is.
+  * a read (GET/HEAD/OPTIONS) is refused when `requiredForRead` is true;
+  * anything else (POST/PUT/PATCH/DELETE) is refused unless the app explicitly declared `requiredForDestructive: false`.
+    No declaration = required (fail closed).
+  So with FullTrailer's real policy (`requiredForDestructive: true`) reads (`/api/fuel`, `/uploads/*`) are served and
+  **`/api/upload` is refused on both doors until sessions can be verified**. The photo upload does not work through a door
+  for now; the app says why. Enforcing it (a signed proof per operation, scoped to the app) is the follow-up.
 
 Credentials: the gateway's own (`Authorization`, `Cookie`, `X-Me-Proof`, internal token, identity/scope headers) are not
 forwarded. FullTrailer's server reads none of them, so nothing it needs is lost. An app whose server wants its own
@@ -110,13 +117,17 @@ blocks yet. FullTrailer is not in that mode.
   non-loopback peer: prefix boundaries, query and path preserved, a 3 MB upload, JSON for an API nobody serves (never the
   app's HTML), the server off, refused targets, credentials not forwarded, forged `X-Forwarded-For`, the exposure policy.
 * `tests/domain-connections-store.test.ts` — the store and the projection, on a disposable monad.
-* **The real app, 2026-10-12**: FullTrailer's built front end, FullTrailer's real `server/index.js` (dependencies from its
-  lockfile, `npm ci --ignore-scripts`), a real monad of the release, a disposable OpenResty with the generator's blocks, a
-  browser. Through `http://fulltrailer.localhost:<p>/` and `http://localhost:<p>/apps/fulltrailer/`: the app signs in with
-  a test identity and registers it; Tractos asks `/api/fuel` of the door it was loaded from (the real server answers 500
-  JSON "SAMSARA_API_TOKEN no configurado": no token was configured, nothing was invented); an operator photo is uploaded by
-  the app's own code to `/api/upload` and served back from `/uploads/<file>` (the avatar loads); with the server killed,
-  `/api/fuel` and `/api/upload` are 502 JSON and the front end keeps answering. **Not proven: the integration with Samsara.**
+* **The real app, 2026-10-12, with the configuration it would run with** (monad with its default 100 KB limit; FullTrailer's
+  real exposure policy; the new gateway files): FullTrailer's built front end, its real `server/index.js` (lockfile
+  dependencies), a real monad of the release, a disposable OpenResty with the generator's blocks, a browser, through
+  `http://fulltrailer.localhost:<p>/` and `http://localhost:<p>/apps/fulltrailer/`. A new test identity registers and its
+  catalog is seeded in parts with no 413 (zero 413 in the gateway's log); a refused part (injected) shows "tu identidad ya
+  está registrada, no se pudo inicializar remolques (parte 2 de 3)" and **Reintentar inicialización** writes only what was
+  missing (part 1, 2, the marker, dollies, operadores; nothing twice); after re-entering, Remolques shows 350 of 350 on both
+  doors. Tractos asks `/api/fuel` of its own door (the real server answers 500 JSON, no Samsara token configured: nothing
+  was invented). `POST /api/upload` and `DELETE /uploads/*` are 403 `authorization_required` on both doors and never reach
+  the service; the app shows the gateway's message. Server killed: 502 JSON, the front end keeps answering.
+  **Not proven: the integration with Samsara.**
 
 ## To activate (nothing of this was done)
 
@@ -151,7 +162,13 @@ Rollback of step 2 alone (inert if the old Lua is back, because the old handlers
 ## Known limits
 
 * An app in `dist` frontend mode is not carved (see above).
-* A **new** identity registering on a monad of this release fails with 413: the seed catalog is a signed write bigger than
-  `express.json()`'s 100 KB default (found again in this walk; lifted for the disposable monad only, with a preload). It is
-  the monad's, not the door's, and it will hit the real FullTrailer when a new identity enters.
+* **Operations that require a session are blocked, not enforced** (above). Uploading a photo through a door is one of them.
+* The monad's request limit (100 KB, `express.json()` default) is the monad's and is **not** raised by anything here. FullTrailer's
+  catalog seed was changed to fit it (parts, resumable; see the app's `seedCatalog.ts`). Editing a large list as one signed
+  write (remolques, ~68 KB value, ~136 KB signed) still exceeds it: the same limit, on the edit path. Separate decision
+  (per-record writes, or the limit).
 * The app's server is not started or supervised by anything; netget routes to the address that was declared.
+* **A door needs a name nginx answers.** `http://fulltrailer.localhost/` (port 80 of the real gateway) matches no
+  `server_name` of the installed conf (`suis-macbook-air.local`, `<handle>.suis-macbook-air.local`, `localhost 127.0.0.1`),
+  so it falls to the default block and shows the gateway's welcome page. A `.localhost` door needs its own `server_name`, and
+  the monad needs to accept that Host (`MONAD_SELF_TAGS`) or the door to name the namespace it serves. Not built.

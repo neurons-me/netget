@@ -699,8 +699,7 @@ export const setNginxConfigFile = async (): Promise<void> => {
  * had to be hand-patched onto a live server because nothing regenerated it.
  * Returns true if the file was written (created or updated).
  */
-export const syncNginxConfigFile = async (): Promise<boolean> => {
-    const layout = detectOpenRestyLayout();
+export const syncNginxConfigFile = async (layout: OpenRestyLayout = detectOpenRestyLayout()): Promise<boolean> => {
     if (!layout.isSupported) return false;
 
     const expectedContent = buildNginxConfigContent(layout);

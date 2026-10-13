@@ -29,7 +29,8 @@ fs.mkdirSync(path.join(dataDir, 'runtime'), { recursive: true });
 delete process.env.NETGET_GATEWAY_UPSTREAM;
 
 const { getNetgetAppConfContent } = await import('../src/modules/NetGetX/OpenResty/setNginxConfigRoutes.ts');
-const conf = getNetgetAppConfContent();
+// DOOR_CONF_FILE: take the blocks from an installed-style netget_app.conf instead of the generator's output
+const conf = process.env.DOOR_CONF_FILE ? fs.readFileSync(process.env.DOOR_CONF_FILE, 'utf8') : getNetgetAppConfContent();
 
 // ── pieces of the generated conf ────────────────────────────────────────────
 function block(from: number): string {

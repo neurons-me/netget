@@ -129,8 +129,8 @@ const conf = getNetgetAppConfContent();
 const varCount = (conf.match(/set \$surface_proxy_identity "";/g) || []).length;
 const headerCount = (conf.match(/add_header X-NetGet-Identity \$surface_proxy_identity always;/g) || []).length;
 
-// Bare hostname block + NRP handle block + this one public (non-main) domain block = 3.
-assert.equal(varCount, 3, `expected 3 mesh blocks to declare surface_proxy_identity, found ${varCount}`);
-assert.equal(headerCount, 3, `expected 3 mesh blocks to forward X-NetGet-Identity, found ${headerCount}`);
+// Bare hostname block + NRP handle block + <name>.localhost (named spaces) + this one public (non-main) domain block = 4.
+assert.equal(varCount, 4, `expected 4 mesh blocks to declare surface_proxy_identity, found ${varCount}`);
+assert.equal(headerCount, 4, `expected 4 mesh blocks to forward X-NetGet-Identity, found ${headerCount}`);
 
 console.log('trust-aware-mesh-routing.test.ts passed');

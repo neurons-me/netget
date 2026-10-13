@@ -126,5 +126,53 @@ assert.equal(localhostEp.target, 'http://127.0.0.1:4100', 'localhost -> 127.0.0.
 const ip = run([app({ ...FT, seen: STALE }), app(PS)], '127.0.0.1');
 assert.ok(served(ip) && ip.identity === 'polls-identity', 'IP request: any LIVE monad');
 
+// 9. NAMED SPACES under a one-label root (docs/NamedSpaces.md). An address is not an existence, and not a claim:
+//    1) a route the operator DECLARED decides;  2) otherwise the monad that IS the nearest enclosing root attends the
+//    address with its full context (the Host is passed on unchanged: the request is never rewritten to the root's own
+//    host);  3) with no root registered, a neutral "no content available" -- it asserts nothing about claims, creates
+//    nothing. The root's own surface (the admin panel is a different server block, by exact name) is never the answer.
+const LOCALROOT = app({ name: 'netget', id: 'root-identity', port: 8161, namespace: 'localhost', claims: ['localhost'] });
+const rootLive = [LOCALROOT, app(FT), app(PS)];
+for (const h of ['whatever.localhost', 'a.b.localhost', 'jabellae.localhost']) {
+  const r = run(rootLive, h);
+  assert.ok(served(r) && r.identity === 'root-identity' && r.target === 'http://127.0.0.1:8161', `${h} -> the root monad, got ${JSON.stringify(r)}`);
+}
+// the apps that share the machine do not take an undeclared name, whatever they advertise
+assert.notEqual(run([app(FT), app(PS), LOCALROOT], 'camiones.localhost').identity, 'ft-identity');
+// a declared route is the authority, even though the root is live
+const declaredLocalhost = { 'camiones.localhost': { type: 'proxy', target: 'app:fulltrailer', protocol: 'http', ssl: { enabled: false } } };
+const camiones = run(rootLive, 'camiones.localhost', { map: declaredLocalhost });
+assert.ok(served(camiones) && camiones.identity === 'ft-identity' && camiones.target === 'http://127.0.0.1:4100', `declared name -> its app: ${JSON.stringify(camiones)}`);
+// ...and a declared target that is down is "not available", never the root's surface
+const camionesDown = run([LOCALROOT, app({ ...FT, seen: STALE })], 'camiones.localhost', { map: declaredLocalhost });
+assert.ok(!served(camionesDown) && camionesDown.exit === 503 && /not available/.test(camionesDown.reason ?? ''), `declared + down: ${JSON.stringify(camionesDown)}`);
+// the root itself, and an app that declares its own name under it, are unchanged
+assert.equal(run(rootLive, 'localhost').identity, 'root-identity');
+assert.equal(run([LOCALROOT, app({ ...FT, claims: ['fulltrailer.localhost'] })], 'fulltrailer.localhost').identity, 'ft-identity', 'a name an app declares is that app');
+// the nearest enclosing root: names under an app's own namespace go to that app (as before), not to `localhost`
+assert.equal(run(rootLive, `x.fulltrailer.${ROOT}`).identity, 'ft-identity', 'nested under an app namespace -> that app');
+// a suffix is a label boundary, not a substring
+for (const h of ['evillocalhost', 'x.notlocalhost', 'localhost.evil.test']) {
+  const r = run(rootLive, h);
+  assert.ok(!served(r), `${h} must not be handed to the localhost root: ${JSON.stringify(r)}`);
+}
+// the root is registered but not live: unavailable (a state of the machine), not "no content"
+const rootStale = run([app({ ...LOCALROOT_ARGS(), seen: STALE }), app(FT)], 'whatever.localhost');
+assert.ok(!served(rootStale) && rootStale.exit === 503, `root not live -> 503: ${JSON.stringify(rootStale)}`);
+// nobody is root for the address: the neutral shell. 404, no claim about what exists, JSON for programs
+const none = run([app(FT), app(PS)], 'whatever.localhost', { accept: 'text/html' });
+assert.ok(!served(none) && none.exit === 404, `no root -> 404: ${JSON.stringify(none)}`);
+assert.ok(/Sin contenido disponible para esta dirección/.test((none as any).text ?? ''), `neutral wording: ${(none as any).text}`);
+assert.ok(!/reclam|claim|no existe|not exist/i.test((none as any).text ?? ''), 'it does not say anything about claims or existence');
+const noneJson = run([app(FT), app(PS)], 'whatever.localhost', { accept: 'application/json' });
+assert.ok(noneJson.exit === 404 && noneJson.reason === 'no_content_available', `json: ${JSON.stringify(noneJson)}`);
+// two identities that are both the root: a conflict, not resolved by recency
+const rivalRoot = app({ name: 'rival', id: 'rival-identity', port: 8999, namespace: 'localhost', claims: ['localhost'], seen: FRESH + 800 });
+for (const apps of [[LOCALROOT, rivalRoot], [rivalRoot, LOCALROOT]]) {
+  const r = run(apps, 'whatever.localhost');
+  assert.ok(!served(r) && r.exit === 503 && /conflict/.test(r.reason ?? ''), `two roots -> conflict: ${JSON.stringify(r)}`);
+}
+function LOCALROOT_ARGS() { return { name: 'netget', id: 'root-identity', port: 8161, namespace: 'localhost', claims: ['localhost'] }; }
+
 console.log('surface-proxy-selection: ok');
 fs.rmSync(tmp, { recursive: true, force: true });

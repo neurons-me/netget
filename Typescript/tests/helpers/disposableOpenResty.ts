@@ -48,6 +48,8 @@ export async function startDisposableOpenResty(options: {
   uiRoot?: string;
   /** A Lua tree to search first (the release's); without it the installed tree is used, as on the machine. */
   luaRoot?: string;
+  /** This machine's own LAN address: every server block also listens there, to test what a non-loopback peer gets. */
+  lanIp?: string;
 }): Promise<DisposableOpenResty> {
   const openresty = findOpenResty();
   if (!openresty) throw new Error('no openresty on this machine');
@@ -82,6 +84,11 @@ export async function startDisposableOpenResty(options: {
     .replace(/^(\s*)listen 80;\s*$/gm, `$1listen 127.0.0.1:${httpPort};`).replace(/^\s*listen \[::\]:80;\s*\n/gm, '')
     .replace(/^(\s*)listen 443 ssl;\s*$/gm, `$1listen 127.0.0.1:${httpsPort} ssl;`).replace(/^\s*listen \[::\]:443 ssl;\s*\n/gm, '')
     .replace(/ssl_certificate\s+[^;]+;/g, `ssl_certificate ${cert};`).replace(/ssl_certificate_key\s+[^;]+;/g, `ssl_certificate_key ${key};`);
+  if (options.lanIp) {
+    const mine = Object.values(os.networkInterfaces()).flat().some((i) => i && i.address === options.lanIp);
+    if (!mine) throw new Error(`REFUSING TO START: ${options.lanIp} is not an address of this machine`);
+    appConf = appConf.replace(new RegExp(`^(\\s*)listen 127\\.0\\.0\\.1:${httpPort};\\s*$`, 'gm'), `$1listen 127.0.0.1:${httpPort};\n$1listen ${options.lanIp}:${httpPort};`);
+  }
   if (options.uiRoot) appConf = appConf.replace(/^(\s*)root [^;\n]*main-server-ui\/dist;/gm, `$1root ${options.uiRoot};`);
 
   for (const [name, text] of [['main', mainConf], ['app', appConf]] as const) {
@@ -90,7 +97,7 @@ export async function startDisposableOpenResty(options: {
     }
     const listens = [...text.matchAll(/^\s*listen\s+([^;]+);/gm)].map((m) => m[1]);
     for (const l of listens) {
-      if (!l.startsWith('127.0.0.1:')) throw new Error(`REFUSING TO START: ${name} configuration listens on ${JSON.stringify(l)}, not a disposable loopback port`);
+      if (!l.startsWith('127.0.0.1:') && !(options.lanIp && l.startsWith(`${options.lanIp}:`))) throw new Error(`REFUSING TO START: ${name} configuration listens on ${JSON.stringify(l)}, not a disposable loopback port`);
     }
   }
   // `content_by_lua_file lua/handlers/x.lua` is relative to nginx's prefix: on the machine, the install's nginx dir. Here the

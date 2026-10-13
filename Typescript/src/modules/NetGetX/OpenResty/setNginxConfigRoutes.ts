@@ -1711,6 +1711,48 @@ ${meshGatewayErrorLocation}
 }
 `;
 
+  // Block 3: named spaces under localhost -- <name>.localhost (docs/NamedSpaces.md).
+  // An address is not an existence and not a claim. surface_proxy.lua decides: (1) a route the operator DECLARED, else
+  // (2) the monad that IS the nearest enclosing root attends the address with its full context (the Host is passed on
+  // unchanged), else (3) a neutral "no content available". Never the admin block (an exact name, below), never the root's
+  // own surface in place of the address. Loopback peers only: a name under .localhost means "on this machine". Port 80
+  // only and no https redirect: the machine's certificate does not carry *.localhost, so a redirect would end in a name
+  // mismatch; issuing one that does is a separate, explicit step.
+  const localhostNamedSpaceBlock = `
+# ─── Named spaces under localhost ──────────────────────────────────────────
+# <name>.localhost → a declared route, else the monad that IS the root of the address, else "no content available".
+# Loopback peers only. Visiting creates nothing.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name *.localhost;
+    client_max_body_size 500M;
+    allow 127.0.0.1;
+    allow ::1;
+    deny all;
+
+    set $NETGET_DATA_DIR ${xConfig};
+    set $NETGET_CLI_BIN "${netgetCliBin}";
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+${vendorLocations}
+${namespaceAssetLocations}
+
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_proxy_target "";
+        ${meshIdentityVar}
+        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+        proxy_pass $surface_proxy_target;
+${proxyHeaders}
+        add_header Vary "Accept" always;
+        add_header Cache-Control $netget_default_cache_control always;
+        ${meshIdentityHeader}${meshProxyErrorHandling}
+    }
+${meshGatewayErrorLocation}
+}
+`;
+
   return `
 # netget_app.conf (generated)
 # -----------------------------------------------------------
@@ -1718,6 +1760,7 @@ ${meshGatewayErrorLocation}
 # NRP namespace tree:
 #   ${machineHostnameLower}              → monad root (surface_proxy.lua → registered monad)
 #   {handle}.${machineHostnameLower}     → handle namespace surface (surface_proxy.lua → registered monad)
+#   <name>.localhost                     → named space: declared route, else the root's monad, else no content (loopback only)
 #   localhost / 127.0.0.1                → admin/control plane (loopback alias)
 #   (local.netget/local.host/local.cleaker/${machineHostnameLower.replace(/\.local$/, '')}.netget
 #    retired 2026-10-06 — the three local.* names were each their own browser
@@ -1741,6 +1784,7 @@ log_format netget_access '$remote_addr - - [$time_local] "$request" $status $bod
 
 ${namespaceSurfaceBlock}
 ${nrpHandleBlock}
+${localhostNamedSpaceBlock}
 ${publicDomainBlocks}
 
 server {

@@ -9,7 +9,13 @@
 --   2. Monads that DECLARE the host as their own (canonical namespace/identity, publicHost, domain, aliases, hosts,
 --      domains, claimed_namespaces). One identity: it serves (most recent registration of that identity). More than
 --      one distinct identity and no declared route: a CONFLICT is answered, not resolved by recency or trust.
---   3. Nobody declares the host (a handle under a root): only a monad that IS the root may answer for it.
+--   3. Nobody declares the host (a handle under a root): only a monad that IS the nearest enclosing root may answer
+--      for it, and it receives the request as it came (the Host is not rewritten to the root's own): it resolves the
+--      address with its full context. This is how `<name>.localhost` is attended; a one-label root is a root like any
+--      other. Never the root's own surface in place of the address, and never the admin block (that is an exact name).
+--      Several identities that are all the nearest root: a conflict, as in 2.
+--   4. No monad is root for the address at all: a neutral "no content available" (404). It says nothing about whether
+--      the name is claimed or exists, and visiting creates nothing.
 --   A declared route may carry CONNECTIONS (lib/door_connections.lua): path prefixes the operator sent to a service of the
 --   app that is not its monad (FullTrailer's own server at /api/fuel). They are checked before the destination answers;
 --   a matching one is answered by that service or by a JSON error, never by the monad or the app's HTML.
@@ -105,11 +111,20 @@ local function declares_host(meta, target)
   return false
 end
 
--- The monad IS the root (its canonical identity/namespace is the root name): the one that answers for the handles
--- under it. Not a monad that merely lists the root among its tags.
-local function is_root_monad(meta, rootspace)
-  if type(meta) ~= "table" or not rootspace or rootspace == "" then return false end
-  return normalize_host(meta.namespace) == rootspace or normalize_host(meta.identity) == rootspace
+-- The monad IS a root of the host (its canonical identity/namespace is a proper suffix of the host, on a label
+-- boundary): `localhost` is the root of `whatever.localhost` and of `a.b.localhost`; `fulltrailer.<machine>.local` is the
+-- root of `x.fulltrailer.<machine>.local`. Returns the length of that name (the longest is the nearest root), or nil.
+-- Not a monad that merely lists the root among its tags, and not a substring: `evillocalhost` is not under `localhost`.
+local function root_depth(meta, host)
+  if type(meta) ~= "table" or not host or host == "" then return nil end
+  local best
+  for _, key in ipairs({ meta.namespace, meta.identity }) do
+    local n = normalize_host(key)
+    if n ~= "" and #host > #n + 1 and host:sub(-(#n + 1)) == "." .. n then
+      if not best or #n > best then best = #n end
+    end
+  end
+  return best
 end
 
 -- The monad registers a loopback address; `localhost` as a name would be looked up by nginx's (public) resolver and
@@ -217,6 +232,26 @@ local function send_no_monad_page(reason, is_registered)
     ngx.say(cjson.encode({ error = reason, hint = "Run: netget" }))
   end
   return ngx.exit(503)
+end
+
+-- Nobody is root for this address. A neutral shell, not the page of a failure: nothing is wrong with the gateway, and
+-- nothing is asserted about the name (not "unclaimed", not "does not exist"). Visiting it writes nothing anywhere.
+local function send_no_content()
+  ngx.status = 404
+  if wants_html() then
+    ngx.header["Content-Type"] = "text/html; charset=utf-8"
+    local shown = host:gsub("[^%w%.%-]", "")
+    ngx.say("<!DOCTYPE html>\n<html lang=\"es\"><head><meta charset=\"UTF-8\"/>"
+      .. "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>"
+      .. "<title>" .. shown .. "</title></head>"
+      .. "<body style=\"font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#121416;color:#cfe3e1\">"
+      .. "<main style=\"text-align:center;padding:2rem\"><p style=\"font-size:.85rem;opacity:.7;margin:0 0 .5rem\">" .. shown .. "</p>"
+      .. "<h1 style=\"font-size:1.25rem;font-weight:500;margin:0\">Sin contenido disponible para esta dirección.</h1></main></body></html>")
+  else
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = "no_content_available", address = host }))
+  end
+  return ngx.exit(404)
 end
 
 local raw = read_file(appsPath)
@@ -399,8 +434,12 @@ for _, app in pairs(registry.apps) do
       if entry.live then table.insert(exact, entry) end
     elseif declares_host(meta, host) then
       table.insert(exact, entry)
-    elseif is_root_monad(meta, rootspace) then
-      table.insert(root_candidates, entry)
+    else
+      local depth = root_depth(meta, host)
+      if depth then
+        entry.depth = depth
+        table.insert(root_candidates, entry)
+      end
     end
   end
 end
@@ -441,11 +480,30 @@ if #exact > 0 then
   return
 end
 
--- ── 3. Nobody declares this host: it is a handle under a root. Only a monad that IS the root may answer for it.
-local live_roots = {}
-for _, c in ipairs(root_candidates) do if c.live then table.insert(live_roots, c) end end
-local best = most_recent(live_roots)
-if not best then
-  return send_no_monad_page("no live monad for: " .. host, true)
+-- ── 3. Nobody declares this host: it is a name under a root. Only the monad that IS the nearest enclosing root may attend
+--      it, with the request as it came (full context). Never the root's own surface in its place.
+local deepest = 0
+for _, c in ipairs(root_candidates) do if c.depth > deepest then deepest = c.depth end end
+local nearest, live_roots, root_identities, seen_root = {}, {}, {}, {}
+for _, c in ipairs(root_candidates) do
+  if c.depth == deepest then
+    table.insert(nearest, c)
+    if c.live then
+      table.insert(live_roots, c)
+      local id = c.identity or "(no identity)"
+      if not seen_root[id] then seen_root[id] = true; table.insert(root_identities, id) end
+    end
+  end
 end
+-- ── 4. Nobody is root for this address: the neutral shell (not a claim about the name).
+if #nearest == 0 then
+  return send_no_content()
+end
+if #live_roots == 0 then
+  return send_no_monad_page("the monad that serves " .. host .. " is not live", true)
+end
+if #root_identities > 1 then
+  return send_conflict_page(root_identities)
+end
+local best = most_recent(live_roots)
 route_to(best.ep, best.identity)

@@ -13,7 +13,7 @@ import { execFileSync, spawn } from 'node:child_process';
 // browsers obey no-store, so the 2.4 MB script and the 5 MB icon font were downloaded again on every load -- on a slow
 // connection, with `font-display: block`, the sidebar's icons simply did not appear.
 //
-// (1) the generated conf uses the conditional header in all three blocks and no unconditional no-store is left; (2) the
+// (1) the generated conf uses the conditional header in all four blocks and no unconditional no-store is left; (2) the
 // very text the generator emits, run in a real OpenResty in front of a tiny upstream, does what it says.
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'netget-cache-control-'));
@@ -33,7 +33,8 @@ const conf = getNetgetAppConfContent();
 // ── 1. the generated conf ────────────────────────────────────────────────────
 const maps = conf.match(/map \$upstream_http_cache_control \$netget_default_cache_control \{[\s\S]*?\n    \}/g) ?? [];
 assert.equal(maps.length, 1, 'the map is defined once');
-assert.equal((conf.match(/add_header Cache-Control \$netget_default_cache_control always;/g) ?? []).length, 3, 'the three surface-proxy blocks use it');
+// bare hostname, NRP handle, <name>.localhost (named spaces), and the public domain block
+assert.equal((conf.match(/add_header Cache-Control \$netget_default_cache_control always;/g) ?? []).length, 4, 'the four surface-proxy blocks use it');
 assert.doesNotMatch(conf, /add_header Cache-Control "no-store" always;/, 'no unconditional no-store on a proxied response');
 
 // ── 2. what that text does, in a real OpenResty ─────────────────────────────

@@ -31,5 +31,6 @@ out.connection_target = ngx.var.door_connection_target
 out.connection_prefix = ngx.var.door_connection_prefix
 out.status = ngx.status or out.status
 out.reason = table.concat(out.body):match('"error"%s*:%s*"([^"]*)"') or table.concat(out.body):match("conflict[^<]*") or nil
+out.text = table.concat(out.body)
 out.body = nil
 print(cjson.encode(out))

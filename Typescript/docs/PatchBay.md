@@ -173,6 +173,21 @@ The panel was walked against that entry (disposable data, a marker proven throug
 no session (summary "No", button disabled), a read-only session (reads the configuration, 403 on a hand-sent delete, the
 route survived), the owner (connect -> change destination -> disconnect from the panel, states and notices as shown).
 
+### With nginx in front, and what the tests leave behind (2026-10-13)
+
+`tests/nginx-fronted-gate.test.ts` puts a disposable OpenResty (generated main and app conf, or with
+`NGINX_TEST_INSTALLED=1` the machine's INSTALLED `conf.d/netget_app.conf` and Lua tree, read only) in front of the real
+`proxy.js` and walks the operator's path through it: anonymous and forged-header refusals (`X-NetGet-Identity`,
+`X-NetGet-Scopes`, `X-Monad-Internal-Token`, peer-address headers; loopback is not trust), sessions obtained by the existing
+challenge/verify flow through nginx, an administrator let in and a read-only one refused naming the capability,
+connect -> change -> disconnect, the front end served, the loaded configuration naming no missing directory and its error
+log holding only lua-resty-http missing (a one-off public-IP timer, the same on the machine's own log). Red against the
+previous `proxy.js`. The panel was also walked in a browser through that nginx (owner, read-only, forged headers).
+
+`monad-statedir-lock.test.ts` left a monad per run (two were started under one name; the record names one pid). It now finds
+what it started by its environment and stops it, and `monad-statedir-lock-hygiene.test.ts` runs it passing and with a
+failure injected and requires no process and no new listener afterwards.
+
 ## What each piece changes when it is activated on this machine
 
 Four things were being treated as one package; they are not, and none of them is activated yet:

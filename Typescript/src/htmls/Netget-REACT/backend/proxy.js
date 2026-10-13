@@ -13,6 +13,9 @@ import adminSessionRoutes from './routes/adminSession.js';
 import gatewayAdminRoutes from './routes/gatewayAdmin.js';
 import { guardAsync, jsonErrorHandler } from './guardAsync.js';
 import { startNetgetMonad, stopNetgetMonad, loadGatewayRootNamespaceCache, getGatewayRootNamespace } from '../../../kernel/netgetMonadProcess.ts';
+import { mountGatewayRouters } from '../../../gateway/monadModule.mjs';
+import { resolveAdminSession } from '../../../modules/NetGetX/Auth/adminSession.ts';
+import { GatewayClaimsManager } from '../../../modules/NetGetX/Auth/GatewayClaimsManager.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,8 +31,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// local.netget is loopback-only — nginx enforces this at the network level.
-// No auth layer needed in the GUI backend itself.
+// This process answers on 127.0.0.1, but "loopback" is not "the operator": nginx forwards the whole machine's browsers
+// here and any local process can connect. So the gateway's routes decide for themselves who may use them, with the same
+// gate the monad-mounted gateway applies (gateway/adminGate.mjs, mounted by gateway/monadModule.mjs): public reads,
+// routes that authenticate their own request, and everything else only for the machine's internal caller or a verified
+// admin session with gateway:write. The panel's permission summary is the answer to this gate, not a second opinion.
 //
 // local.cleaker is allowed here specifically for /admin-session/challenge
 // and /admin-session/verify (adminSession.ts / routes/adminSession.js) —
@@ -55,11 +61,16 @@ app.use(cors({
 }));
 
 // A route that rejects must answer 500, not end this process (see guardAsync.js).
-app.use('/', guardAsync(setupSessionRoutes));
-app.use('/', guardAsync(localNetgetRoutes));
-app.use('/', guardAsync(openRestyInstallRoutes));
-app.use('/', guardAsync(adminSessionRoutes));
-app.use('/', guardAsync(gatewayAdminRoutes));
+// guardAsync edits each router in place, so the gate reads the route table from the very routers it protects.
+const gatewayRouters = [
+    setupSessionRoutes, localNetgetRoutes, openRestyInstallRoutes, adminSessionRoutes, gatewayAdminRoutes,
+].map(guardAsync);
+mountGatewayRouters(app, gatewayRouters, {
+    // The standalone has no monad in front: it answers /explain and /inspect itself, so none of the paths is delegated.
+    ownPaths: new Set(),
+    resolveSession: (token) => resolveAdminSession(token),
+    isOwner: (identityHash) => new GatewayClaimsManager().isOwner(identityHash),
+});
 
 // Serves the setup SPA directly from this bootstrap port — deliberately
 // NOT dependent on OpenResty being installed or running at all. Before

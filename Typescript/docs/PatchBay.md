@@ -131,10 +131,56 @@ Limits: modifying `netget.site` from here was **not** done: it needs the VM's ow
 panel's refresh reloads routes and states as well as the permission summary. The mesh (discovery, bridges between
 gateways) is separate and not part of the selector.
 
+## Authorization is applied where the write is executed (2026-10-13)
+
+The panel shows what a session may do (reads, "Modificar puertas", a disabled "Conectar puerta"). That is only a
+representation; the decision has to be taken by the process that executes the write.
+
+**Finding.** The standalone backend (`src/htmls/Netget-REACT/backend/proxy.js`, what `netget backend-start` runs on
+`:3000`) mounted the gateway's routers with no gate ("loopback only, nginx's job"). Anything that could reach
+`127.0.0.1:3000` could add, change or delete a route: a panel run against it created a route on the machine's real store
+with a bearer that was not a session. The gate (`gateway/adminGate.mjs`) existed only where the routes are mounted behind
+a monad (`gateway/monadModule.mjs`, as on the VM).
+
+**Now.** `proxy.js` mounts its routers through the same `mountGatewayRouters` (origin guard + gate), with the same
+`resolveAdminSession` and `GatewayClaimsManager.isOwner`. Same three classes of route:
+
+| class | routes | who |
+| --- | --- | --- |
+| public | the reads in `PUBLIC_ROUTES` (identity, namespace, `GET /domains` -> allow-listed view, health, ...) and, new, `POST /explain`, `POST /inspect` (forwarded to the monad's own public endpoints) | anyone |
+| own | `/setup/*`, `/admin-session/*`, `/gateway-admin/*`, `GET /logs`, and, new, `/openresty/install*` (its own `requireAuth`) | what the route itself verifies |
+| trusted | everything else: `add/update/delete-domain`, `provision-cert`, `domains/metadata`, `domains/status`, `openresty-restart|stop`, `frontend-mode`, `__gateway/claim`, `apps/report` | the machine's internal caller (token) or a verified admin session with `gateway:write` |
+
+What it means for a client: no session -> 401 `ADMIN_SESSION_REQUIRED`; a session without `gateway:write` -> 403
+`CAPABILITY_DENIED` naming `gateway:write`; identity headers (`x-netget-identity` / `x-netget-scopes`) are set from the
+session and any the request carried are discarded. A read-only admin still reads the configuration (`GET /domains` with
+its bearer). `gateway:write:domain-metadata` stays a second check inside `/domains/metadata`, on top of the gate.
+
+**Not the same as before.** (1) The panel needs a stored session to enable writes (sign-in is the Logs page / the
+challenge-verify flow); a bare `curl` to `:3000` no longer writes. (2) The identity headers that nginx's Lua perimeter set
+for a signed proof are honored only from an internal caller, as on the VM. (3) The monad-only parts are unchanged.
+
+**Tests.** `tests/standalone-backend-gate.test.ts` starts that entry point itself (a child process,
+`tests/helpers/standaloneBackend.ts`) on a temp data dir, with a monad of its own and a marker namespace, and refuses to
+send any write until `GET /main-server-namespace` has answered this run's marker. It checks anonymous refusal (with
+forged headers and a bogus bearer), the public reads, a read-only admin, an owner's connect -> change destination ->
+disconnect (and a destination the validation refuses), a grant read fresh on every call and taken back, the second
+capability, and that none of the machine's own gateway files was written. Run against the previous `proxy.js` it fails at
+the first anonymous add (200 instead of 401). `gateway-capability-model.test.ts` is a LIVE test of the real gateway and is
+now opt-in (`NETGET_LIVE_GATEWAY_TEST=1`).
+
+The panel was walked against that entry (disposable data, a marker proven through the dev proxy before the first write):
+no session (summary "No", button disabled), a read-only session (reads the configuration, 403 on a hand-sent delete, the
+route survived), the owner (connect -> change destination -> disconnect from the panel, states and notices as shown).
+
 ## What each piece changes when it is activated on this machine
 
-Three things were being treated as one package; they are not, and none of them is activated yet:
+Four things were being treated as one package; they are not, and none of them is activated yet:
 
+0. **The backend of this branch** (`proxy.js` + routes) -- runs only when the real backend is restarted from a release that
+   carries it (see `CHANGES-r20261013-1.md`). It is what applies the gate (section above), and the panel's "Conectar" is
+   only as honest as the backend it talks to. The selector below must not go in front of the backend that is running
+   now: against it the controls would be drawn without anything enforcing them.
 1. **The selector (panel)** -- a static front-end build. Changes: the files nginx serves as the netget page
    (add-only hashed assets + `index.html`, with a backup and a rollback). No nginx reload, no Lua, no conf, no store.
    Against today's running backend (the older checkout) the selector and the reads work; "Cambiar destino" and the
@@ -142,13 +188,12 @@ Three things were being treated as one package; they are not, and none of them i
    show as "desconocido" / an error, not as invented state.
 2. **The main `nginx.conf` repair** -- already written to the file (backup in `~/.get/backups/nginx-main-conf-*`): only
    the data-dir and template paths that a test had replaced. The running master still holds what it loaded; it takes
-   effect on the next reload. It is independent of 1 and 3.
+   effect on the next reload (see "The configuration nginx has LOADED"). It is independent of 1 and 3.
 3. **Door connections** -- `conf.d/netget_app.conf`, two Lua handlers and one library, plus the main conf, with
    `prepare.sh` / `activate.sh` / `rollback.sh` (rehearsed byte-identical). Needs a reload. Only this one changes how
    requests are routed.
 
-The backend of this branch (new routes, route-target validation, the projection) runs only when the real netget backend
-is restarted from this code; none of the three above does that.
+The backend (0) is the one that must come first; none of the four activates another.
 
 ## Seeing other gateways (netget.site, a Raspberry) from this panel: what exists and what does not
 
@@ -166,6 +211,16 @@ elsewhere), which is right.
   is gated on;
 * "while a path exists" is health: each hop's answer, from the same status model, with a time bound and a stated unknown;
 * "patched by netget" means the operator's declaration decides the route, as it does for a local door.
+
+## The configuration nginx has LOADED (checked 2026-10-13)
+
+The master's pid and start time do not say what it runs: a reload keeps the master and replaces the workers. What does:
+the live worker (started 2026-10-11 21:32:16, after the last reload) was still opening
+`/var/folders/.../netget-nginxsync-data-GpPdmz/html/NetgetErrorCodeHandler.html` on 2026-10-13 15:09 -- a temp dir of a
+test that had rewritten `nginx.conf` on 2026-10-11. So the LOADED configuration is the polluted one of 2026-10-11, not the
+file repaired on 2026-10-12 22:23 (which has `~/.get/html`). Until `sudo openresty -t && sudo openresty -s reload`, the
+loaded `MAP_PATH`/templates/html root point at a directory that no longer exists. To check it again without reading
+memory: the worker's start time against the file's mtime, and which data directory the worker's own error lines name.
 
 ## A finding about the installed gateway (2026-10-12)
 

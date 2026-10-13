@@ -72,10 +72,14 @@ export function writeGatewayClaims(claimsPath: string, gatewayId: string, owner:
 /** The mesh registry entry the gateway resolves a namespace's keychain through, plus one live registered app (`app:demo`). */
 export function writeAppsRegistry(runtimeDir: string, rootNamespace: string, monadOrigin: string) {
   fs.mkdirSync(runtimeDir, { recursive: true });
+  const monadPort = Number(new URL(monadOrigin).port) || 0;
   fs.writeFileSync(path.join(runtimeDir, 'apps.json'), JSON.stringify({
     version: 1, updatedAt: new Date().toISOString(),
     apps: {
       'test-surface': { id: 'test-surface', name: 'test-surface', host: '127.0.0.1', port: 0, lastSeenMs: Date.now(), ttlMs: 3_600_000, trust: 'owner', metadata: { namespace: rootNamespace, endpoint: monadOrigin }, tags: [] },
+      // the gateway's own monad, registered the way a monad registers itself (the front end asks /apps/netget/ for its surface)
+      netget: { id: 'netget', name: 'monad:netget', kind: 'monad', host: '127.0.0.1', port: monadPort, lastSeenMs: Date.now(), ttlMs: 24 * 3600_000, trust: 'owner',
+        metadata: { monadName: 'netget', namespace: rootNamespace, identity: rootNamespace, endpoint: monadOrigin, directEndpoint: monadOrigin, claimed_namespaces: [rootNamespace] }, tags: ['monad', 'local'] },
       a: { name: 'monad:demo', kind: 'monad', host: '127.0.0.1', port: 9, ttlMs: 24 * 3600_000, lastSeenMs: Date.now(), trust: 'peer', metadata: { monadName: 'demo' }, exposure: { enabled: true, visibility: 'loopback', network: { allowLoopback: true } } },
     },
   }));

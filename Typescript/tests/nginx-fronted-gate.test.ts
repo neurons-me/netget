@@ -180,8 +180,11 @@ try {
 
   // ── what nginx itself logged, and what it did not touch ──────────────────────
   const errorLog = ng.errorLogPaths.map((f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '')).join('\n');
-  const fileErrors = errorLog.split('\n').filter((l) => /open\(\) .* failed \(2: No such file or directory\)|failed to load|attempt to/.test(l));
-  assert.deepEqual(fileErrors, [], 'the loaded configuration did not fail to open anything');
+  // Known and not about the configuration: the worker's one-off public-IP timer (status page) needs lua-resty-http, which
+  // this OpenResty install does not have (it is the same on the machine's own log); a browser asking for a favicon.
+  const known = [/module 'resty\.http' not found/, /favicon\.ico/];
+  const errors = errorLog.split('\n').filter((l) => /\[(error|crit|alert|emerg)\]/.test(l) && !known.some((re) => re.test(l)));
+  assert.deepEqual(errors, [], 'the loaded configuration produced no error besides the known ones');
   assert.deepEqual(realFiles.map(mtimeOf), realBefore, "none of the machine's own gateway files was written");
 } finally {
   if (ng) await ng.stop();

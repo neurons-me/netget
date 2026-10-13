@@ -147,6 +147,10 @@ Rehearsed on a copy of the real tree: activate then rollback is byte-identical (
 refused; an invalid staged conf is installed, fails `nginx -t` and is restored without help. The staged files pass the
 OpenResty walk (`DOOR_LUA_ROOT`, `DOOR_CONF_FILE`).
 
+`prepare.sh` also stages the **main `nginx.conf`** from this branch (the domain router's policy and header hygiene) and
+requires the installed one to be exactly what the release writes for this machine (`nginx-main-conf/repair.sh` puts it
+there); `activate.sh` installs it with the rest and `rollback.sh` restores it.
+
 Then, with the netget of this branch (a global `netget` from an older checkout lacks the command):
 
 1. register the door if it is not in the store (`fulltrailer.suis-macbook-air.local`, type `server`, target `app:fulltrailer`);

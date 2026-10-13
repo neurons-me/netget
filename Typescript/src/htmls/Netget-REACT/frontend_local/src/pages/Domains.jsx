@@ -6,6 +6,11 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { isRefusal, refusalMessage } from '../utils/adminAccess.js';
+import GatewayBar from '../components/GatewayBar/GatewayBar.jsx';
+import {
+    LOCAL_ID, loadGateways, addGateway, removeGateway, selectedGatewayId, selectGateway, sessionFor, saveSession, gatewayRequest,
+} from '../utils/gateways.js';
+import { probeGateway } from '../utils/gatewayProbe.js';
 import {
     Box,
     Button,
@@ -69,28 +74,24 @@ async function parseJsonResponse(res) {
 }
 
 // The full record (target, TLS files) is only for an admin session; without one /domains answers with the public
-// projection (domain, type, subdomain, tls). The session is the one LogsView keeps in this key after signing.
-const ADMIN_SESSION_STORAGE_KEY = 'netget:admin-session-token';
-function adminAuthHeaders() {
-    try {
-        const token = window.localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-        return token ? { Authorization: `Bearer ${token}` } : {};
-    } catch {
-        return {};
-    }
+// projection (domain, type, subdomain, tls). Every request below goes to the gateway the screen is looking at and carries
+// THAT gateway's session (kept per gateway: utils/gateways.js) -- never another's.
+function gwFetch(ctx, path, init = {}) {
+    const request = gatewayRequest(ctx.gateway, path, init, ctx.token);
+    return fetch(request.url, request.init);
 }
 
-async function fetchDomains() {
-    const res = await fetch('/domains', { headers: adminAuthHeaders() });
+async function fetchDomains(ctx) {
+    const res = await gwFetch(ctx, '/domains', { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const data = await parseJsonResponse(res);
     return Array.isArray(data.domains) ? data.domains : [];
 }
 
-async function addDomain({ domain, target, type, email }) {
-    const res = await fetch('/add-domain', {
+async function addDomain(ctx, { domain, target, type, email }) {
+    const res = await gwFetch(ctx, '/add-domain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, target, type, email }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('add-domain'));
@@ -99,10 +100,10 @@ async function addDomain({ domain, target, type, email }) {
     return data;
 }
 
-async function provisionCert({ domain, email }) {
-    const res = await fetch('/provision-cert', {
+async function provisionCert(ctx, { domain, email }) {
+    const res = await gwFetch(ctx, '/provision-cert', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, email }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('provision-cert', { domain }));
@@ -111,10 +112,10 @@ async function provisionCert({ domain, email }) {
     return data;
 }
 
-async function deleteDomain(domain) {
-    const res = await fetch('/delete-domain', {
+async function deleteDomain(ctx, domain) {
+    const res = await gwFetch(ctx, '/delete-domain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('delete-domain'));
@@ -124,10 +125,10 @@ async function deleteDomain(domain) {
 }
 
 // Changes where a door points. The same record: nothing is created, no identity, no namespace, no data copied.
-async function updateDomainRoute({ domain, type, target }) {
-    const res = await fetch('/update-domain', {
+async function updateDomainRoute(ctx, { domain, type, target }) {
+    const res = await gwFetch(ctx, '/update-domain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, updatedFields: { type, target } }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('update-domain'));
@@ -137,8 +138,8 @@ async function updateDomainRoute({ domain, type, target }) {
 }
 
 // The apps registered with this gateway (live ones), to point a door at by name.
-async function fetchApps() {
-    const res = await fetch('/apps', { headers: adminAuthHeaders() });
+async function fetchApps(ctx) {
+    const res = await gwFetch(ctx, '/apps', { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const data = await parseJsonResponse(res);
     return (Array.isArray(data.apps) ? data.apps : []).map((app) => ({
@@ -149,8 +150,8 @@ async function fetchApps() {
 
 // What each door is doing now (destination answers? certificate? applied?). Admin-only on the gateway. When it cannot
 // be had the panel says "unknown": it never invents a state.
-async function fetchStatuses() {
-    const res = await fetch('/domains/status', { headers: adminAuthHeaders() });
+async function fetchStatuses(ctx) {
+    const res = await gwFetch(ctx, '/domains/status', { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const data = await parseJsonResponse(res);
     const byDomain = {};
@@ -264,7 +265,7 @@ function destinationChip(status) {
     return { label: 'Estado desconocido', color: 'default', tip: tip || 'No se pudo comprobar.' };
 }
 
-function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onChangeDestination, onDisconnect }) {
+function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onChangeDestination, onDisconnect, canModify = true }) {
     const nodeId = `Domains.row.${row.domain}`;
     useRegisterGuiNode(nodeId, 'DomainRow', 'Domains.routesCard', { semanticPath: row.semanticPath });
     // Per-field registration — the row's own semanticPath points at the whole
@@ -345,7 +346,7 @@ function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert
                         <IconButton
                             size="small"
                             onClick={() => onChangeDestination({ ...row, target: row.target || status?.target || '', type: row.type || status?.type })}
-                            disabled={deleting === row.domain}
+                            disabled={deleting === row.domain || !canModify}
                             data-gui-node-id={`${nodeId}.change`}
                         >
                             <SwapHorizIcon fontSize="small" />
@@ -383,7 +384,7 @@ function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert
                             size="small"
                             color="error"
                             onClick={() => onDisconnect({ ...row, target: row.target || status?.target || '' })}
-                            disabled={deleting === row.domain}
+                            disabled={deleting === row.domain || !canModify}
                             data-gui-node-id={`${nodeId}.disconnect`}
                         >
                             {deleting === row.domain
@@ -402,7 +403,7 @@ function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert
 const EMPTY_DEST = { kind: 'server', app: '', hostport: '', folder: '' };
 const EMPTY_FORM = { domain: '', dest: EMPTY_DEST, email: '' };
 
-function AddDomainDialog({ open, onClose, onSuccess, apps, appsError }) {
+function AddDomainDialog({ open, onClose, onSuccess, apps, appsError, ctx }) {
     useRegisterGuiNode('Domains.addDialog', 'AddDomainDialog');
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
@@ -427,7 +428,7 @@ function AddDomainDialog({ open, onClose, onSuccess, apps, appsError }) {
         setSaving(true);
         setError(null);
         try {
-            await addDomain({ domain: form.domain.trim(), type: fields.type, target: fields.target, email: form.email });
+            await addDomain(ctx, { domain: form.domain.trim(), type: fields.type, target: fields.target, email: form.email });
             setForm(EMPTY_FORM);
             onSuccess();
             onClose();
@@ -494,7 +495,7 @@ function AddDomainDialog({ open, onClose, onSuccess, apps, appsError }) {
 
 // ─── Change destination ─────────────────────────────────────────────────
 
-function ChangeDestinationDialog({ row, open, onClose, onSuccess, apps, appsError }) {
+function ChangeDestinationDialog({ row, open, onClose, onSuccess, apps, appsError, ctx }) {
     useRegisterGuiNode('Domains.changeDialog', 'ChangeDestinationDialog');
     const [dest, setDest] = useState(EMPTY_DEST);
     const [saving, setSaving] = useState(false);
@@ -507,7 +508,7 @@ function ChangeDestinationDialog({ row, open, onClose, onSuccess, apps, appsErro
         setSaving(true);
         setError(null);
         try {
-            await updateDomainRoute({ domain: row.domain, type: fields.type, target: fields.target });
+            await updateDomainRoute(ctx, { domain: row.domain, type: fields.type, target: fields.target });
             onSuccess(row.domain);
             onClose();
         } catch (err) {
@@ -567,7 +568,7 @@ function hasPublicCert(row) {
     return !!mode && mode !== 'none' && mode !== 'off';
 }
 
-function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
+function ProvisionCertDialog({ row, open, onClose, onSuccess, ctx }) {
     useRegisterGuiNode('Domains.provisionDialog', 'ProvisionCertDialog');
     const [email, setEmail] = useState('');
     const [saving, setSaving] = useState(false);
@@ -596,7 +597,7 @@ function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
         setSaving(true);
         setError(null);
         try {
-            await provisionCert({ domain: row.domain, email: trimmedEmail });
+            await provisionCert(ctx, { domain: row.domain, email: trimmedEmail });
             await onSuccess(row.domain);
             onClose();
         } catch (err) {
@@ -746,6 +747,17 @@ export default function Domains() {
     const [deleteError, setDeleteError] = useState(null);
     const [editOpen, setEditOpen] = useState(null);         // row currently being edited
     const [descriptionNotice, setDescriptionNotice] = useState(null);
+    // Which gateway this screen is looking at: this netget, or one added by an explicit address. Its session is its own.
+    const pageOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const store = typeof window !== 'undefined' ? window.localStorage : null;
+    const [gatewayList, setGatewayList] = useState(() => (store ? loadGateways(store, pageOrigin) : []));
+    const [gatewayId, setGatewayId] = useState(() => (store ? selectedGatewayId(store, pageOrigin) : LOCAL_ID));
+    const gateway = gatewayList.find((g) => g.id === gatewayId) || gatewayList[0];
+    const [sessionToken, setSessionToken] = useState(() => (store && gateway ? sessionFor(store, gateway) : null));
+    const [report, setReport] = useState(null);
+    const [probing, setProbing] = useState(false);
+    const ctx = useMemo(() => ({ gateway, token: sessionToken }), [gateway, sessionToken]);
+    const canModify = report ? report.permissions.modify.state === 'yes' : null;   // null: not known yet
     const [statuses, setStatuses] = useState({});            // domain -> what the gateway says it is doing
     const [statusError, setStatusError] = useState(null);    // why the states are unknown, when they are
     const [apps, setApps] = useState([]);
@@ -803,11 +815,17 @@ export default function Domains() {
 
     const session = verified === true ? candidateSession : null;
 
+    const probe = useCallback(async () => {
+        if (!gateway) return;
+        setProbing(true);
+        try { setReport(await probeGateway(gateway, { token: sessionToken })); } finally { setProbing(false); }
+    }, [gateway, sessionToken]);
+
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            setDomains(await fetchDomains());
+            setDomains(await fetchDomains(ctx));
         } catch (err) {
             setError(err.message);
         } finally {
@@ -815,20 +833,56 @@ export default function Domains() {
         }
         // States and the apps to choose from are separate reads: when they fail the panel says "unknown", it does not
         // pretend, and the routes are still listed.
-        try { setStatuses(await fetchStatuses()); setStatusError(null); } catch (err) { setStatuses({}); setStatusError(err.message); }
-        try { setApps(await fetchApps()); setAppsError(null); } catch (err) { setApps([]); setAppsError(err.message); }
-    }, []);
+        try { setStatuses(await fetchStatuses(ctx)); setStatusError(null); } catch (err) { setStatuses({}); setStatusError(err.message); }
+        try { setApps(await fetchApps(ctx)); setAppsError(null); } catch (err) { setApps([]); setAppsError(err.message); }
+    }, [ctx]);
 
+    // A write changes what the gateway reports about itself (door count, whether its configuration is readable): the
+    // summary at the top asks again instead of keeping what it learned before the write.
+    const reload = useCallback(async () => { await load(); probe(); }, [load, probe]);
+
+    // Changing gateway (or its session) asks that gateway again; what was shown for the other is not kept.
+    useEffect(() => { setReport(null); setDomains([]); setStatuses({}); probe(); }, [probe]);
     useEffect(() => { load(); }, [load]);
+    // What a write said about one gateway is not said about another.
+    useEffect(() => { setNotice(null); setCertNotice(null); setDeleteError(null); setDescriptionNotice(null); }, [gatewayId]);
+
+    // `list` is passed in because state set a moment ago is not yet what this closure sees.
+    const selectFrom = (list, id) => {
+        const next = list.find((g) => g.id === id) || list[0];
+        if (store) selectGateway(store, next.id);
+        setGatewayId(next.id);
+        setSessionToken(store ? sessionFor(store, next) : null);
+    };
+    const handleSelectGateway = (id) => selectFrom(gatewayList, id);
+    const handleAddGateway = (address, label) => {
+        const result = addGateway(store, address, label, pageOrigin);
+        if (result.ok) {
+            const list = loadGateways(store, pageOrigin);
+            setGatewayList(list);
+            selectFrom(list, result.gateway.id);
+        }
+        return result;
+    };
+    const handleRemoveGateway = (id) => {
+        removeGateway(store, id);
+        const list = loadGateways(store, pageOrigin);
+        setGatewayList(list);
+        selectFrom(list, LOCAL_ID);
+    };
+    const handleSaveSession = (token) => {
+        saveSession(store, gateway, token);
+        setSessionToken(sessionFor(store, gateway));
+    };
 
     const handleDelete = async (domain) => {
         setDisconnectOpen(null);
         setDeleting(domain);
         setDeleteError(null);
         try {
-            await deleteDomain(domain);
+            await deleteDomain(ctx, domain);
             setNotice(`${domain} desconectado. Sus archivos y la app a la que apuntaba siguen donde estaban.`);
-            await load();
+            await reload();
         } catch (err) {
             setDeleteError(err.message);
         } finally {
@@ -840,7 +894,7 @@ export default function Domains() {
         setProvisioning(domain);
         setCertNotice(null);
         try {
-            await load();
+            await reload();
             setCertNotice(`Certificate updated for ${domain}.`);
         } finally {
             setProvisioning(null);
@@ -849,7 +903,7 @@ export default function Domains() {
 
     const handleDestinationChanged = async (domain) => {
         setNotice(`${domain} apunta a otro destino. Es el mismo registro; no se creó nada nuevo.`);
-        await load();
+        await reload();
     };
 
     const handleDescriptionSaved = async (description) => {
@@ -859,6 +913,19 @@ export default function Domains() {
     return (
         <>
             <Box sx={{ px: 3, py: 2, maxWidth: 1100, mx: 'auto' }}>
+
+                <GatewayBar
+                    gateways={gatewayList}
+                    selectedId={gateway?.id}
+                    onSelect={handleSelectGateway}
+                    onAdd={handleAddGateway}
+                    onRemove={handleRemoveGateway}
+                    report={report}
+                    probing={probing}
+                    onProbe={probe}
+                    hasSession={Boolean(sessionToken)}
+                    onSaveSession={handleSaveSession}
+                />
 
                 {/* Header */}
                 <Box
@@ -914,6 +981,8 @@ export default function Domains() {
                             variant="contained"
                             startIcon={<AddIcon />}
                             onClick={() => setAddOpen(true)}
+                            disabled={canModify === false}
+                            title={canModify === false ? 'Este gateway no autoriza modificar con la sesión actual' : undefined}
                         >
                             Conectar puerta
                         </Button>
@@ -994,7 +1063,7 @@ export default function Domains() {
                                                 key={row.domain}
                                                 row={row}
                                                 status={statusError ? undefined : statuses[row.domain]}
-                                                session={session}
+                                                session={gateway?.local ? session : null}
                                                 provisioning={provisioning}
                                                 deleting={deleting}
                                                 hasPublicCert={hasPublicCert}
@@ -1002,6 +1071,7 @@ export default function Domains() {
                                                 onProvision={setProvisionOpen}
                                                 onChangeDestination={setChangeOpen}
                                                 onDisconnect={setDisconnectOpen}
+                                                canModify={canModify !== false}
                                             />
                                         ))}
                                     </TableBody>
@@ -1019,9 +1089,10 @@ export default function Domains() {
             <AddDomainDialog
                 open={addOpen}
                 onClose={() => setAddOpen(false)}
-                onSuccess={load}
+                onSuccess={reload}
                 apps={apps}
                 appsError={appsError}
+                ctx={ctx}
             />
             <ChangeDestinationDialog
                 row={changeOpen}
@@ -1030,6 +1101,7 @@ export default function Domains() {
                 onSuccess={handleDestinationChanged}
                 apps={apps}
                 appsError={appsError}
+                ctx={ctx}
             />
             <DisconnectDialog
                 row={disconnectOpen}
@@ -1042,13 +1114,14 @@ export default function Domains() {
                 open={!!provisionOpen}
                 onClose={() => setProvisionOpen(null)}
                 onSuccess={handleCertProvisioned}
+                ctx={ctx}
             />
             <EditDescriptionDialog
                 row={editOpen}
                 open={!!editOpen}
                 onClose={() => setEditOpen(null)}
                 onSuccess={handleDescriptionSaved}
-                session={session}
+                session={gateway?.local ? session : null}
             />
         </>
     );

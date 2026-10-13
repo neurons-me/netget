@@ -67,6 +67,44 @@ real peer in `X-Forwarded-For` (replaced, not appended) and none of `X-NetGet-Id
 * **A connections editor in the panel** (CLI only), and a **per-door "why it failed" history**.
 * **Other gateways** (below).
 
+## Gateway selector (the panel looks at one gateway at a time, and says which)
+
+The Domains panel has a gateway bar: "Este netget" (the one that serves the panel) plus the gateways the operator adds by an
+**explicit address** (`netget.site`, `raspberrypi.local:3000`, `http://192.168.1.40`). Nothing is discovered and nothing is
+added by itself; the list lives in this browser (`localStorage`). The bar says which gateway is being viewed and, for it:
+
+* **what can be queried**: its four public reads (`/gateway-identity`, `/healthcheck`, `/main-server-namespace`,
+  `/domains`), each tried and classified (responds / refused / unreachable / not JSON). A browser cannot tell "nothing is
+  there" from "CORS refused it"; the panel says so instead of choosing;
+* **what may be modified**: asked of that gateway with the session stored FOR it, by `POST /add-domain {}` -- the capability
+  gate answers before the handler looks at the body (401 not accepted, 403 valid but no `gateway:write`, 400 may: the empty
+  request was refused, nothing written). Without a session the panel does not ask and says "solo lo que divulga";
+* **whether its configuration is readable**: `/domains` with the session returning destinations. A gateway with no doors
+  has nothing to check this against and is "Desconocido", not "Sí".
+
+A session is stored under the gateway's own origin and only ever sent there. The existing endpoints and authorization are
+reused as they are: no new route, no new scope. Writes (connect, change destination, disconnect) go to the selected
+gateway with its session; the button is disabled while the gateway has not authorized writes. After a write the summary
+asks again, and notices from one gateway are dropped when another is selected.
+
+Walked in the Browser pane against a disposable second gateway B (CORS on, tokens `b-reader`, `b-admin`) and the real
+`https://netget.site` without a session:
+
+| gateway / session | reads | modify | observed |
+| --- | --- | --- | --- |
+| local, session | 4 respond | yes | empty request refused after authorization |
+| B, none | 4 respond | no | "Conectar puerta" disabled |
+| B, token of another gateway | 4 respond | no | 401 "no acepta esta sesión" |
+| B, `b-reader` | 4 respond | no | 403 "solo lectura" |
+| B, `b-admin` | 4 respond | yes | door connected from the panel exists on B and not on local; disconnected the same way |
+| `netget.site`, none | 4 respond | no | identity, namespace `cleaker.me`, v2.56, 4 public doors; `/domains/status` is 404 there, so the panel lists the routes and says the state is unknown |
+
+Limits seen while doing it: the disposable B resolves `b-admin` with the test gate for `gateway:write` but `/domains`
+decides what to disclose with the real `resolveAdminSession` (`gateway:read`), so B keeps answering the public projection
+and the panel correctly says "Leer su configuración: No" (destinations still show through `/domains/status`). That is the
+disposable harness, not the panel. Modifying `netget.site` from here was **not** done: it needs the VM's own admin session
+and an explicit go. The mesh (discovery, bridges between gateways) is separate and not part of the selector.
+
 ## Seeing other gateways (netget.site, a Raspberry) from this panel: what exists and what does not
 
 *Read* works today for what a gateway publishes: `https://netget.site/gateway-identity`, `/domains` (public projection:

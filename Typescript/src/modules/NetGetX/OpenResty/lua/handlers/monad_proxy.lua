@@ -257,6 +257,8 @@ ngx.var.monad_proxy_target = target
 -- prefix under /apps/<name>/ that belongs to a service of the app which is not the monad (FullTrailer's own server
 -- at /api/fuel). It is answered by that service or by a JSON error, never by the monad and never by the app's
 -- HTML. The service sees the path without the /apps/<name> mount, as the monad does. See lib/door_connections.lua.
+-- Who may use it is already decided: Gate 1 (trust) and Gate 2 (the app's exposure policy) ran above, so a peer the
+-- app's policy does not admit never gets here.
 do
   local okdc, dc = pcall(require, "lib.door_connections")
   local door_map = read_domain_map()

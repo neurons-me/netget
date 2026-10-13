@@ -104,13 +104,14 @@ await listen(monad, monadPort); await listen(appServer, serverPort); await liste
 const ROOT = 'suis-macbook-air.local';
 const FT_HOST = `fulltrailer.${ROOT}`;
 const now = Date.now();
-const regEntry = (name: string, port: number) => ({
+const regEntry = (name: string, port: number, exposure: Record<string, unknown> = { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: false, allowWan: false } }) => ({
   name: `monad:${name}`, kind: 'monad', host: '127.0.0.1', port, protocol: 'http', ttlMs: 600000, lastSeenMs: now, trust: 'peer',
-  tags: ['monad'], exposure: { enabled: true, visibility: 'loopback' },
+  tags: ['monad'], exposure,
   metadata: { monadName: name, namespace: `${name}.${ROOT}`, identity: `${name}.${ROOT}`, identity_hash: `${name}-id`,
     endpoint: `http://127.0.0.1:${port}`, directEndpoint: `http://127.0.0.1:${port}`, claimed_namespaces: [`${name}.${ROOT}`] },
 });
-fs.writeFileSync(path.join(dataDir, 'runtime', 'apps.json'), JSON.stringify({ apps: { a: regEntry('fulltrailer', monadPort), b: regEntry('other', otherMonadPort) } }));
+const writeApps = (ftExposure?: Record<string, unknown>) => fs.writeFileSync(path.join(dataDir, 'runtime', 'apps.json'), JSON.stringify({ apps: { a: regEntry('fulltrailer', monadPort, ftExposure), b: regEntry('other', otherMonadPort) } }));
+writeApps();
 const writeMap = (connections: unknown) => fs.writeFileSync(path.join(dataDir, 'runtime', 'domain-map.json'), JSON.stringify({
   version: 1, domains: { [FT_HOST]: { type: 'server', target: 'app:fulltrailer', ssl: { enabled: false }, ...(connections === undefined ? {} : { connections }) } },
 }));
@@ -123,6 +124,8 @@ writeMap(GOOD);
 
 // ── a real OpenResty with those blocks ──────────────────────────────────────
 const luaRoot = path.resolve('src/modules/NetGetX/OpenResty/lua');
+// a peer that is NOT loopback: connect to this machine's own LAN address, so nginx sees that address as the client
+const lanIp = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
 const prefix = path.join(tmp, 'or');
 for (const d of ['conf', 'logs']) fs.mkdirSync(path.join(prefix, d), { recursive: true });
 fs.symlinkSync(luaRoot, path.join(prefix, 'lua'));
@@ -137,6 +140,7 @@ http {
 ${cacheMap}
     server {
         listen 127.0.0.1:${nginxPort};
+${lanIp ? `        listen ${lanIp}:${nginxPort};` : ''}
         server_name _;
         client_max_body_size 50m;
         set $door_entry "";
@@ -156,9 +160,9 @@ for (let i = 0; i < 60 && !(await listening()); i += 1) await new Promise((r) =>
 assert.ok(await listening(), 'the disposable OpenResty is up');
 
 type Res = { status: number; type: string; text: string; json: any; headers: http.IncomingHttpHeaders };
-function request(opts: { host: string; path: string; method?: string; headers?: Record<string, string>; body?: Buffer }): Promise<Res> {
+function request(opts: { host: string; path: string; method?: string; headers?: Record<string, string>; body?: Buffer; via?: string }): Promise<Res> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: nginxPort, path: opts.path, method: opts.method ?? 'GET', headers: { Host: opts.host, ...(opts.headers ?? {}) } }, (res) => {
+    const req = http.request({ host: opts.via ?? '127.0.0.1', port: nginxPort, path: opts.path, method: opts.method ?? 'GET', headers: { Host: opts.host, ...(opts.headers ?? {}) } }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
@@ -245,6 +249,41 @@ try {
   // an app that is not this door's is untouched: /apps/other/... never goes to FullTrailer's server
   const other = await request({ host: 'localhost', path: '/apps/other/api/fuel' });
   assert.equal(other.json?.who, 'monad', 'another app keeps going to its own monad');
+
+  // ── who may use a connection: the app's exposure policy, on the address that connected ──────────────────────────
+  // FullTrailer's server has no authentication of its own (/api/fuel, /api/upload and /uploads answer anyone who reaches
+  // them), so the gateway is the only thing between a stranger and the fleet's fuel data and a disk to write on.
+  if (lanIp) {
+    // policy: loopback only (what the real local FullTrailer has today). A LAN peer: refused, as JSON, on both doors
+    const viaHost = await host('/api/fuel', { via: lanIp, headers: { Accept: 'application/json' } });
+    assert.equal(viaHost.status, 403, 'host door, LAN peer, loopback-only policy');
+    assert.equal(viaHost.json?.error, 'connection_forbidden');
+    assert.notEqual(viaHost.json?.who, 'server');
+    const viaMount = await mount('/api/fuel', { via: lanIp, headers: { Accept: 'application/json' } });
+    assert.equal(viaMount.status, 403, '/apps/ door, LAN peer, loopback-only policy');
+    assert.notEqual(viaMount.json?.who, 'server');
+    assert.ok(!isHtmlOfApp(viaMount));
+    for (const p of ['/api/upload', '/uploads/a.png']) {
+      assert.equal((await host(p, { via: lanIp, method: p === '/api/upload' ? 'POST' : 'GET' })).status, 403, `${p} refused to the LAN peer`);
+    }
+    // the same peer is not locked out of the door's own front end by the connection gate (that is the monad's)
+    assert.equal((await host('/', { via: lanIp, headers: { Accept: 'text/html' } })).status, 200);
+
+    // policy: the operator admits the LAN -> the same peer is served, and the service sees ITS address, not 127.0.0.1
+    writeApps({ enabled: true, visibility: 'lan', network: { allowLoopback: true, allowLan: true, allowWan: false } });
+    const lanOk = await host('/api/fuel', { via: lanIp, headers: { 'X-Forwarded-For': '9.9.9.9' } });
+    assert.equal(lanOk.json?.who, 'server', 'visibility lan admits the LAN peer');
+    assert.equal(lanOk.json.headers['x-forwarded-for'], lanIp, 'the service sees the real peer (not loopback, not the forged one)');
+    assert.equal((await mount('/api/fuel', { via: lanIp })).json?.who, 'server');
+
+    // policy: disabled -> nothing, not even for a loopback peer
+    writeApps({ enabled: false, visibility: 'loopback', network: { allowLoopback: true } });
+    assert.equal((await host('/api/fuel')).status, 404, 'a disabled app has no connections');
+    writeApps();   // back to the default policy
+  } else {
+    console.log('door-connections-openresty: no non-loopback IPv4 on this machine; the LAN-peer cases are skipped');
+  }
+  assert.equal((await host('/api/fuel')).json?.who, 'server', 'loopback peer, default policy: served');
 
   // ── connections that are not allowed: an error, never the monad answering in their place ──────────────────────
   const refused: Array<[string, unknown]> = [

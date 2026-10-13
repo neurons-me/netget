@@ -10,7 +10,7 @@ local lua_root = handler:match("^(.*)/handlers/[^/]+$")
 if lua_root then package.path = lua_root .. "/?.lua;" .. package.path end
 local out = { status = 200, vars = {}, body = {} }
 ngx = {
-  var = setmetatable({ host = host, uri = os.getenv("HARNESS_URI") or "/", http_accept = accept, NETGET_DATA_DIR = dir, surface_proxy_target = "", surface_proxy_identity = "", door_connection_target = "", door_connection_prefix = "" }, {
+  var = setmetatable({ host = host, uri = os.getenv("HARNESS_URI") or "/", remote_addr = os.getenv("HARNESS_REMOTE") or "127.0.0.1", http_accept = accept, NETGET_DATA_DIR = dir, surface_proxy_target = "", surface_proxy_identity = "", door_connection_target = "", door_connection_prefix = "" }, {
     __newindex = function(t, k, v) rawset(t, k, v) end,
   }),
   header = {}, HTTP_SERVICE_UNAVAILABLE = 503, WARN = "WARN", ERR = "ERR",

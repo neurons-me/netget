@@ -113,6 +113,39 @@ function M.decide(connections, path, registry)
   return { upstream = upstream, prefix = c.prefix }
 end
 
+-- Who may use a connection. A service behind a connection is the app's OWN server and usually has no authentication of
+-- its own (FullTrailer's: /api/fuel, /api/upload and /uploads answer anyone who reaches them). What stops a stranger is
+-- therefore the gateway: a connection follows the exposure policy the operator set for the app (the same rules
+-- /apps/<name>/ applies to the monad: enabled, visibility loopback|lan|wan, network.allowLoopback|allowLan|allowWan),
+-- judged on the address that connected to nginx and never on a forwarded header. An app with no policy is judged as
+-- `visibility = loopback` (fail closed). A `guest`-trust app has no connections.
+--   returns true, nil          allowed
+--   returns false, <status>    refused (404 when the app is disabled, otherwise 403)
+local function is_loopback_ip(ip) return ip == "127.0.0.1" or ip == "::1" or ip == "unix:" end
+local function is_lan_ip(ip)
+  if is_loopback_ip(ip) then return true end
+  if ip:match("^10%.") or ip:match("^192%.168%.") or ip:match("^169%.254%.") then return true end
+  local second = tonumber(ip:match("^172%.(%d+)%."))
+  if second and second >= 16 and second <= 31 then return true end
+  if ip:match("^fe80:") or ip:match("^fd") then return true end
+  return false
+end
+
+function M.exposure_allows(app, remote_addr)
+  local remote = tostring(remote_addr or "")
+  local entry = type(app) == "table" and app or {}
+  if tostring(entry.trust or "") == "guest" then return false, 403 end
+  local exposure = type(entry.exposure) == "table" and entry.exposure or {}
+  if exposure.enabled == false then return false, 404 end
+  local visibility = tostring(exposure.visibility or "loopback")
+  local network = type(exposure.network) == "table" and exposure.network or {}
+  if is_loopback_ip(remote) then return network.allowLoopback ~= false, 403 end
+  if visibility == "loopback" then return false, 403 end
+  if visibility == "lan" then return (is_lan_ip(remote) and network.allowLan ~= false) or false, 403 end
+  if visibility == "wan" then return network.allowWan ~= false, 403 end
+  return false, 403
+end
+
 -- Connections of the domain-map route whose destination is `app:<name>` (the /apps/<name>/ door), or {}.
 -- A host can have one record; if several records point at the same app, the first one with connections (in host
 -- name order, so the answer does not depend on table iteration order) is used.

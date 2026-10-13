@@ -55,6 +55,20 @@ local map = { domains = {
   ["fulltrailer.suis.local"] = { type = "server", target = "app:fulltrailer", connections = conns },
   ["other.suis.local"] = { type = "server", target = "app:polls-studio", connections = { { prefix = "/api/meta", target = "127.0.0.1:9004" } } },
 } }
+local function allowed(app, remote) local ok, status = dc.exposure_allows(app, remote); return { ok = ok, status = (not ok) and status or nil } end
+put("x_default_loopback", allowed({}, "127.0.0.1"))
+put("x_default_lan", allowed({}, "192.168.1.20"))
+put("x_default_wan", allowed({}, "8.8.8.8"))
+put("x_loopback_policy", allowed({ exposure = { visibility = "loopback", network = { allowLoopback = true } } }, "192.168.1.20"))
+put("x_loopback_off", allowed({ exposure = { network = { allowLoopback = false } } }, "127.0.0.1"))
+put("x_lan_ok", allowed({ exposure = { visibility = "lan", network = { allowLan = true } } }, "192.168.1.20"))
+put("x_lan_wan_peer", allowed({ exposure = { visibility = "lan", network = { allowLan = true } } }, "8.8.8.8"))
+put("x_lan_denied", allowed({ exposure = { visibility = "lan", network = { allowLan = false } } }, "10.0.0.7"))
+put("x_wan_ok", allowed({ exposure = { visibility = "wan", network = { allowWan = true } } }, "8.8.8.8"))
+put("x_wan_denied", allowed({ exposure = { visibility = "wan", network = { allowWan = false } } }, "8.8.8.8"))
+put("x_disabled", allowed({ exposure = { enabled = false } }, "127.0.0.1"))
+put("x_guest", allowed({ trust = "guest", exposure = { visibility = "wan", network = { allowWan = true } } }, "127.0.0.1"))
+put("x_unknown_visibility", allowed({ exposure = { visibility = "everyone" } }, "8.8.8.8"))
 put("for_app", #dc.for_app(map, "fulltrailer"))
 put("for_app_other", dc.for_app(map, "polls-studio")[1].prefix)
 put("for_app_none", #dc.for_app(map, "nobody"))
@@ -77,6 +91,20 @@ for (const [key, re] of Object.entries({
 }) as [string, RegExp][]) {
   assert.match(String(L[key]), re, `${key}: ${L[key]}`);
 }
+// who may use a connection: the app's exposure policy, judged on the connecting address; no policy = loopback only
+assert.deepEqual(L.x_default_loopback, { ok: true });
+assert.deepEqual(L.x_default_lan, { ok: false, status: 403 }, 'an app with no policy is not served to the LAN');
+assert.deepEqual(L.x_default_wan, { ok: false, status: 403 });
+assert.deepEqual(L.x_loopback_policy, { ok: false, status: 403 }, 'visibility loopback refuses a LAN peer');
+assert.deepEqual(L.x_loopback_off, { ok: false, status: 403 }, 'allowLoopback = false refuses even a loopback peer');
+assert.deepEqual(L.x_lan_ok, { ok: true });
+assert.deepEqual(L.x_lan_wan_peer, { ok: false, status: 403 }, 'visibility lan does not admit a public address');
+assert.deepEqual(L.x_lan_denied, { ok: false, status: 403 });
+assert.deepEqual(L.x_wan_ok, { ok: true });
+assert.deepEqual(L.x_wan_denied, { ok: false, status: 403 });
+assert.deepEqual(L.x_disabled, { ok: false, status: 404 }, 'a disabled app has no connections');
+assert.deepEqual(L.x_guest, { ok: false, status: 403 }, 'a guest-trust app has no connections, whatever its policy says');
+assert.deepEqual(L.x_unknown_visibility, { ok: false, status: 403 }, 'an unknown visibility fails closed');
 assert.equal(L.for_app, 3);
 assert.equal(L.for_app_other, '/api/meta');
 assert.equal(L.for_app_none, 0);
@@ -89,14 +117,14 @@ const apps = [{
   metadata: { monadName: 'fulltrailer', namespace: FT_HOST, identity: FT_HOST, identity_hash: 'ft-identity',
     endpoint: 'http://127.0.0.1:4100', directEndpoint: 'http://127.0.0.1:4100', claimed_namespaces: [FT_HOST] },
 }];
-function door(uri: string, connections: unknown, extra: Record<string, unknown> = {}) {
+function door(uri: string, connections: unknown, extra: Record<string, unknown> = {}, remote = '127.0.0.1', appPatch: Record<string, unknown> = {}, target = 'app:fulltrailer') {
   const dir = fs.mkdtempSync(path.join(tmp, 'case-'));
   fs.mkdirSync(path.join(dir, 'runtime'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'runtime', 'apps.json'), JSON.stringify({ apps: { id0: apps[0] } }));
+  fs.writeFileSync(path.join(dir, 'runtime', 'apps.json'), JSON.stringify({ apps: { id0: { ...apps[0], ...appPatch } } }));
   fs.writeFileSync(path.join(dir, 'runtime', 'domain-map.json'), JSON.stringify({
-    version: 1, domains: { [FT_HOST]: { type: 'server', target: 'app:fulltrailer', ssl: { enabled: false }, connections, ...extra } },
+    version: 1, domains: { [FT_HOST]: { type: 'server', target, ssl: { enabled: false }, connections, ...extra } },
   }));
-  const r = spawnSync(resty, [harness, handler, dir, FT_HOST, 'text/html'], { env: { ...process.env, NETGET_DATA_DIR: dir, HARNESS_URI: uri }, encoding: 'utf8' });
+  const r = spawnSync(resty, [harness, handler, dir, FT_HOST, 'text/html'], { env: { ...process.env, NETGET_DATA_DIR: dir, HARNESS_URI: uri, HARNESS_REMOTE: remote }, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout.trim().split('\n').pop() as string) as { exit?: number; exec?: string; target: string; identity: string; connection_target: string; connection_prefix: string; reason?: string; status?: number };
 }
@@ -138,5 +166,39 @@ assert.equal(door('/operadores', [{ prefix: '/api/fuel', target: '10.0.0.5:4000'
 // no connections: the door behaves as before
 assert.equal(door('/api/fuel', undefined).target, 'http://127.0.0.1:4100');
 assert.equal(door('/api/fuel', []).target, 'http://127.0.0.1:4100');
+
+// ── who may use a connection (the app's exposure policy; the monad's own paths are not affected) ──────────────────────
+const LAN_PEER = '192.168.1.20', WAN_PEER = '8.8.8.8';
+const fuelFrom = (remote: string, appPatch: Record<string, unknown> = {}, target?: string) => door('/api/fuel', conns, {}, remote, appPatch, target);
+// no policy on the app: only a loopback peer
+assert.equal(fuelFrom('127.0.0.1').exec, '@door_connection');
+for (const remote of [LAN_PEER, WAN_PEER]) {
+  const r = fuelFrom(remote);
+  assert.equal(r.exit, 403, `no policy, ${remote}: refused`);
+  assert.equal(r.reason, 'connection_forbidden');
+  assert.equal(r.exec, undefined);
+  assert.equal(r.target, '', 'not handed to the monad either');
+}
+// the app's own policy is what decides
+const lan = { exposure: { enabled: true, visibility: 'lan', network: { allowLoopback: true, allowLan: true, allowWan: false } } };
+assert.equal(fuelFrom(LAN_PEER, lan).exec, '@door_connection', 'visibility lan admits a LAN peer');
+assert.equal(fuelFrom(WAN_PEER, lan).exit, 403, 'and not a public one');
+const closed = { exposure: { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: true, allowWan: true } } };
+assert.equal(fuelFrom(LAN_PEER, closed).exit, 403, 'visibility loopback wins over allowLan');
+assert.equal(fuelFrom('127.0.0.1', { exposure: { enabled: false } }).exit, 404, 'a disabled app');
+assert.equal(fuelFrom('127.0.0.1', { trust: 'guest' }).exit, 403, 'a guest app');
+// a forwarded header is not a peer
+{
+  const r = door('/api/fuel', conns, {}, WAN_PEER);
+  assert.equal(r.exit, 403, 'the connecting address decides');
+}
+// the app behind the door is not live: said as JSON, not handed to the monad or to a page
+assert.equal(fuelFrom('127.0.0.1', { lastSeenMs: 1_000 }).exit, 503);
+assert.equal(fuelFrom('127.0.0.1', { lastSeenMs: 1_000 }).reason, 'app_not_available');
+// a door that points at a bare host:port has no app and therefore no policy: loopback only
+assert.equal(fuelFrom('127.0.0.1', {}, '127.0.0.1:5173').exec, '@door_connection');
+assert.equal(fuelFrom(LAN_PEER, {}, '127.0.0.1:5173').exit, 403);
+// and the monad's own paths are untouched by any of this: a LAN peer asking for something that is not a connection
+assert.equal(door('/operadores', conns, {}, LAN_PEER).target, 'http://127.0.0.1:4100');
 
 console.log('door-connections-lua: ok');

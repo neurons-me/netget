@@ -296,6 +296,37 @@ local function answer_connection(route)
   end
   local decision = dc.decide(route.connections, ngx.var.uri, registry)
   if not decision then return end
+  -- Who may use it: the exposure policy of the app this door points at (an `app:<name>` target). A door that points
+  -- at a bare host:port has no app and therefore no policy: judged as loopback-only.
+  local door_app
+  local want = tostring(route.target or ""):match("^app:(.+)$")
+  if want then
+    want = want:lower()
+    for _, app in pairs(registry.apps) do
+      local meta = type(app.metadata) == "table" and app.metadata or {}
+      local name = tostring(app.name or ""):lower()
+      local short = name:gsub("^monad:", "")
+      if (name == want or short == want or tostring(meta.monadName or ""):lower() == want) and is_live(app) then
+        door_app = app
+        break
+      end
+    end
+    if not door_app then
+      ngx.status = 503
+      ngx.header["Content-Type"] = "application/json; charset=utf-8"
+      ngx.say(cjson.encode({ ok = false, error = "app_not_available", prefix = decision.prefix,
+        message = "The app behind this door is not live." }))
+      return ngx.exit(503)
+    end
+  end
+  local allowed, denied_status = dc.exposure_allows(door_app or {}, ngx.var.remote_addr)
+  if not allowed then
+    ngx.status = denied_status or 403
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = "connection_forbidden", prefix = decision.prefix,
+      message = "This door does not serve that path to this address." }))
+    return ngx.exit(ngx.status)
+  end
   if decision.error then
     ngx.log(ngx.WARN, "surface_proxy: connection ", decision.prefix, " of ", host, " not applied: ", decision.error)
     ngx.status = 502

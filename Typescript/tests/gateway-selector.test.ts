@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   LOCAL_ID, normalizeGatewayAddress, loadGateways, addGateway, removeGateway, selectedGatewayId, selectGateway,
-  sessionFor, saveSession, gatewayRequest,
+  sessionFor, saveSession, gatewayRequest, scopeKey,
 } from '../src/htmls/Netget-REACT/frontend_local/src/utils/gateways.js';
 import { probeGateway } from '../src/htmls/Netget-REACT/frontend_local/src/utils/gatewayProbe.js';
 
@@ -118,6 +118,18 @@ for (const [status, want] of [[400, 'yes'], [403, 'no'], [401, 'no'], [500, 'unk
   assert.equal(rep2.reachable, true);
   const rep3 = await probeGateway(site, { token: 'T', fetchImpl: fakeFetch((u, init) => init.method === 'POST' ? 'throw' : PUBLIC(u), []) as any });
   assert.equal(rep3.permissions.modify.state, 'unknown');
+}
+
+// the scope an asynchronous answer is applied under: the gateway AND the session it was asked with. A late answer for
+// another gateway, or for the same gateway under another session, has a different key and is dropped by the panel.
+{
+  const a = { id: 'local' }; const b = { id: 'gw-netget-site' };
+  assert.equal(scopeKey(a, 'T'), scopeKey({ id: 'local' }, 'T'), 'the same gateway and session is the same scope');
+  assert.notEqual(scopeKey(a, 'T'), scopeKey(b, 'T'), 'another gateway is another scope');
+  assert.notEqual(scopeKey(a, 'T'), scopeKey(a, 'U'), 'another session on the same gateway is another scope');
+  assert.notEqual(scopeKey(a, null), scopeKey(a, 'T'), 'signing in or out changes the scope');
+  assert.equal(scopeKey(a, null), scopeKey(a, ''), 'no session is one scope');
+  assert.notEqual(scopeKey(undefined, null), scopeKey(a, null));
 }
 
 console.log('gateway-selector: ok');

@@ -106,3 +106,11 @@ export function gatewayRequest(gateway, path, init = {}, token = null) {
   const headers = { ...(init.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   return { url, init: { ...init, headers } };
 }
+
+/**
+ * What identifies the gateway AND the session an answer was asked with. An asynchronous answer is applied only while this
+ * is still the one on screen (a late answer from the gateway that was left is dropped, not shown as the new one's).
+ */
+export function scopeKey(gateway, token) {
+  return `${gateway && gateway.id ? gateway.id : ''}\u0000${token || ''}`;
+}

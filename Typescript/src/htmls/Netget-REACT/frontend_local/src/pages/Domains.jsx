@@ -4,12 +4,11 @@
 // Allows adding and deleting entries.
 // Changes bump domain-map.version so Nginx routing hot-reloads.
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { isRefusal, refusalMessage } from '../utils/adminAccess.js';
 import GatewayBar from '../components/GatewayBar/GatewayBar.jsx';
 import {
-    LOCAL_ID, loadGateways, addGateway, removeGateway, selectedGatewayId, selectGateway, sessionFor, saveSession, gatewayRequest,
-} from '../utils/gateways.js';
+    LOCAL_ID, loadGateways, addGateway, removeGateway, selectedGatewayId, selectGateway, sessionFor, saveSession, gatewayRequest, scopeKey } from '../utils/gateways.js';
 import { probeGateway } from '../utils/gatewayProbe.js';
 import {
     Box,
@@ -757,6 +756,11 @@ export default function Domains() {
     const [report, setReport] = useState(null);
     const [probing, setProbing] = useState(false);
     const ctx = useMemo(() => ({ gateway, token: sessionToken }), [gateway, sessionToken]);
+    // What is on screen belongs to ONE gateway + session. Every asynchronous answer (probe, lists, a write that was already
+    // sent) is applied only if that scope is still the one on screen; a late answer from the gateway that was left must not
+    // be shown as the state of the one that is selected now. An operation already sent keeps its original destination.
+    const scopeRef = useRef(null);
+    scopeRef.current = scopeKey(gateway, sessionToken);
     const canModify = report ? report.permissions.modify.state === 'yes' : null;   // null: not known yet
     const [statuses, setStatuses] = useState({});            // domain -> what the gateway says it is doing
     const [statusError, setStatusError] = useState(null);    // why the states are unknown, when they are
@@ -817,24 +821,39 @@ export default function Domains() {
 
     const probe = useCallback(async () => {
         if (!gateway) return;
+        const mine = scopeKey(gateway, sessionToken);
         setProbing(true);
-        try { setReport(await probeGateway(gateway, { token: sessionToken })); } finally { setProbing(false); }
+        try {
+            const next = await probeGateway(gateway, { token: sessionToken });
+            if (scopeRef.current === mine) setReport(next);
+        } finally {
+            if (scopeRef.current === mine) setProbing(false);
+        }
     }, [gateway, sessionToken]);
 
     const load = useCallback(async () => {
+        const mine = scopeKey(ctx.gateway, ctx.token);
+        const current = () => scopeRef.current === mine;
         setLoading(true);
         setError(null);
         try {
-            setDomains(await fetchDomains(ctx));
+            const rows = await fetchDomains(ctx);
+            if (current()) setDomains(rows);
         } catch (err) {
-            setError(err.message);
+            if (current()) setError(err.message);
         } finally {
-            setLoading(false);
+            if (current()) setLoading(false);
         }
         // States and the apps to choose from are separate reads: when they fail the panel says "unknown", it does not
         // pretend, and the routes are still listed.
-        try { setStatuses(await fetchStatuses(ctx)); setStatusError(null); } catch (err) { setStatuses({}); setStatusError(err.message); }
-        try { setApps(await fetchApps(ctx)); setAppsError(null); } catch (err) { setApps([]); setAppsError(err.message); }
+        try {
+            const next = await fetchStatuses(ctx);
+            if (current()) { setStatuses(next); setStatusError(null); }
+        } catch (err) { if (current()) { setStatuses({}); setStatusError(err.message); } }
+        try {
+            const next = await fetchApps(ctx);
+            if (current()) { setApps(next); setAppsError(null); }
+        } catch (err) { if (current()) { setApps([]); setAppsError(err.message); } }
     }, [ctx]);
 
     // A write changes what the gateway reports about itself (door count, whether its configuration is readable): the
@@ -845,7 +864,7 @@ export default function Domains() {
     useEffect(() => { setReport(null); setDomains([]); setStatuses({}); probe(); }, [probe]);
     useEffect(() => { load(); }, [load]);
     // What a write said about one gateway is not said about another.
-    useEffect(() => { setNotice(null); setCertNotice(null); setDeleteError(null); setDescriptionNotice(null); }, [gatewayId]);
+    useEffect(() => { setNotice(null); setCertNotice(null); setDeleteError(null); setDescriptionNotice(null); setDeleting(null); setProvisioning(null); }, [gatewayId]);
 
     // `list` is passed in because state set a moment ago is not yet what this closure sees.
     const selectFrom = (list, id) => {
@@ -875,34 +894,48 @@ export default function Domains() {
         setSessionToken(sessionFor(store, gateway));
     };
 
+    // An operation is sent to the gateway that was selected when it was started. If another one is selected by the time it
+    // answers, the answer is still shown, naming the gateway it belongs to, and nothing else on screen is touched by it.
     const handleDelete = async (domain) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        const here = () => scopeRef.current === mine;
         setDisconnectOpen(null);
         setDeleting(domain);
         setDeleteError(null);
         try {
             await deleteDomain(ctx, domain);
-            setNotice(`${domain} desconectado. Sus archivos y la app a la que apuntaba siguen donde estaban.`);
+            setNotice(here()
+                ? `${domain} desconectado. Sus archivos y la app a la que apuntaba siguen donde estaban.`
+                : `${domain} desconectado en ${where}.`);
             await reload();
         } catch (err) {
-            setDeleteError(err.message);
+            setDeleteError(here() ? err.message : `No se pudo desconectar ${domain} en ${where}: ${err.message}`);
         } finally {
-            setDeleting(null);
+            if (here()) setDeleting(null);
         }
     };
 
     const handleCertProvisioned = async (domain) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        const here = () => scopeRef.current === mine;
         setProvisioning(domain);
         setCertNotice(null);
         try {
             await reload();
-            setCertNotice(`Certificate updated for ${domain}.`);
+            setCertNotice(here() ? `Certificate updated for ${domain}.` : `Certificate updated for ${domain} en ${where}.`);
         } finally {
-            setProvisioning(null);
+            if (here()) setProvisioning(null);
         }
     };
 
     const handleDestinationChanged = async (domain) => {
-        setNotice(`${domain} apunta a otro destino. Es el mismo registro; no se creó nada nuevo.`);
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        setNotice(scopeRef.current === mine
+            ? `${domain} apunta a otro destino. Es el mismo registro; no se creó nada nuevo.`
+            : `${domain} apunta a otro destino en ${where}.`);
         await reload();
     };
 
@@ -922,7 +955,7 @@ export default function Domains() {
                     onRemove={handleRemoveGateway}
                     report={report}
                     probing={probing}
-                    onProbe={probe}
+                    onProbe={reload}
                     hasSession={Boolean(sessionToken)}
                     onSaveSession={handleSaveSession}
                 />

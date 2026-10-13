@@ -102,7 +102,8 @@ try {
   map = readMap();
   assert.deepEqual(Object.keys(map.domains).sort(), ['app.example.test', 'example.test']);
   assert.equal(map.domains['app.example.test'].type, 'server');
-  assert.equal(map.domains['app.example.test'].target, 'http://127.0.0.1:9000');
+  // the store keeps one form of a service address (routeTargets.ts): host:port, the scheme is not part of it
+  assert.equal(map.domains['app.example.test'].target, '127.0.0.1:9000');
   assert.equal(map.domains['app.example.test'].ssl.enabled, false);
 
   // the same domain twice is refused
@@ -111,7 +112,7 @@ try {
   // updating follows into the table
   const upd = await post('/update-domain', { domain: 'app.example.test', updatedFields: { target: 'http://127.0.0.1:9100' } });
   assert.equal(upd.status, 200);
-  assert.equal(readMap().domains['app.example.test'].target, 'http://127.0.0.1:9100');
+  assert.equal(readMap().domains['app.example.test'].target, '127.0.0.1:9100');
 
   // deleting removes it from the kernel and from the table
   assert.equal((await post('/delete-domain', { domain: 'app.example.test' })).status, 200);

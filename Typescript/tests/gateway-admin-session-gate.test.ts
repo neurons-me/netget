@@ -254,16 +254,16 @@ try {
   }
   // an admin session with gateway:read sees the full record (what the admin page and the router's source hold)
   const adminRow = (await rowsOf(bearer(aliceToken))).find((r) => r.domain === 'bob-new-key.test');
-  assert.equal(adminRow.target, 'http://127.0.0.1:9100');
+  assert.equal(adminRow.target, '127.0.0.1:9100');
   assert.equal(adminRow.sslCertificate, '/etc/letsencrypt/live/bob-new-key.test/fullchain.pem');
   assert.ok(adminRow.semanticPath, 'the full record includes its graph path');
-  assert.equal((await rowsOf(bearer(bobToken2))).find((r) => r.domain === 'bob-new-key.test').target, 'http://127.0.0.1:9100', 'read-only admins read the configuration too');
+  assert.equal((await rowsOf(bearer(bobToken2))).find((r) => r.domain === 'bob-new-key.test').target, '127.0.0.1:9100', 'read-only admins read the configuration too');
   // routing is fed by the store, not by this answer: the map still holds the full record
   const mapPath = path.join(process.env.NETGET_DATA_DIR || '', 'runtime', 'domain-map.json');
   assert.ok(fs.existsSync(mapPath), `the router's map exists at ${mapPath}`);
   {
     const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
-    assert.equal(map.domains?.['bob-new-key.test']?.target ?? map.domains?.['bob-new-key.test']?.root, 'http://127.0.0.1:9100', 'domain-map.json keeps the target the router needs');
+    assert.equal(map.domains?.['bob-new-key.test']?.target ?? map.domains?.['bob-new-key.test']?.root, '127.0.0.1:9100', 'domain-map.json keeps the target the router needs');
   }
   // the subdomains listing is projected the same way
   const subs = await (await send('GET', '/domains/bob-new-key.test/subdomains')).json() as any;

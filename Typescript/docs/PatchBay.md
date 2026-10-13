@@ -99,11 +99,56 @@ Walked in the Browser pane against a disposable second gateway B (CORS on, token
 | B, `b-admin` | 4 respond | yes | door connected from the panel exists on B and not on local; disconnected the same way |
 | `netget.site`, none | 4 respond | no | identity, namespace `cleaker.me`, v2.56, 4 public doors; `/domains/status` is 404 there, so the panel lists the routes and says the state is unknown |
 
-Limits seen while doing it: the disposable B resolves `b-admin` with the test gate for `gateway:write` but `/domains`
-decides what to disclose with the real `resolveAdminSession` (`gateway:read`), so B keeps answering the public projection
-and the panel correctly says "Leer su configuración: No" (destinations still show through `/domains/status`). That is the
-disposable harness, not the panel. Modifying `netget.site` from here was **not** done: it needs the VM's own admin session
-and an explicit go. The mesh (discovery, bridges between gateways) is separate and not part of the selector.
+### With the real authorization, and with answers that arrive late (2026-10-13)
+
+The table above used a test gate. The same walk was repeated against two disposable gateways that run the real gate
+(`tests/gateway-admin-session-gate.test.ts`'s setup: a monad with the gateway module, an owner and a read-only admin that
+sign in with a keychain key -> challenge -> session; CORS in front, an optional delay per request):
+
+| session on that gateway | reads | its configuration | modify | observed |
+| --- | --- | --- | --- | --- |
+| none | 4 respond | No | No | "solo lo que divulga" |
+| read-only admin | 4 respond | **Sí** (targets) | No | 403 "solo lectura"; "Conectar puerta" disabled; row states stay "desconocido" (`/domains/status` is gated) |
+| the same admin after `gateway:write` is granted | 4 respond | Sí | **Sí** | same token, re-asked: the button enables |
+| the same admin after the grant is taken back | 4 respond | Sí | No | 403 again, button disabled |
+| owner | 4 respond | Sí | Sí | a door was connected from the panel; it shows "TLS pendiente / Responde" |
+
+Answers that arrive late. Every asynchronous answer (probe, route list, states, apps, and a write already sent) is applied
+only while the gateway AND session it was asked under are the ones on screen (`scopeKey`). Walked with a gateway that
+answers in 4-5 s:
+
+* **Before the guard** (control, the previous build): selecting the slow gateway and then "Este netget" before it answered
+  left the slow gateway's route (`puerta-slow.test`) and a probe report under the "Este netget" header.
+* **With the guard**: the same sequence left only "Este netget"'s own data for the 20 s observed.
+* **An operation already sent keeps its destination**: "Desconectar" on the slow gateway, then switching to local before
+  it answered: the door was removed on the slow gateway (checked there), the local table did not change, and the notice
+  names the gateway ("... desconectado en Real lento."). An add cannot be switched away from: its dialog is modal.
+
+Not walked: a session that changes while its requests are in flight (covered only by the scope key's unit test), and a key
+revoked under a live session (covered by `gateway-admin-session-gate.test.ts`, not through the panel).
+
+Limits: modifying `netget.site` from here was **not** done: it needs the VM's own admin session and an explicit go. The
+panel's refresh reloads routes and states as well as the permission summary. The mesh (discovery, bridges between
+gateways) is separate and not part of the selector.
+
+## What each piece changes when it is activated on this machine
+
+Three things were being treated as one package; they are not, and none of them is activated yet:
+
+1. **The selector (panel)** -- a static front-end build. Changes: the files nginx serves as the netget page
+   (add-only hashed assets + `index.html`, with a backup and a rollback). No nginx reload, no Lua, no conf, no store.
+   Against today's running backend (the older checkout) the selector and the reads work; "Cambiar destino" and the
+   per-door state need the backend routes of this branch (`/domains/status`, `/update-domain`), which are 404 there and
+   show as "desconocido" / an error, not as invented state.
+2. **The main `nginx.conf` repair** -- already written to the file (backup in `~/.get/backups/nginx-main-conf-*`): only
+   the data-dir and template paths that a test had replaced. The running master still holds what it loaded; it takes
+   effect on the next reload. It is independent of 1 and 3.
+3. **Door connections** -- `conf.d/netget_app.conf`, two Lua handlers and one library, plus the main conf, with
+   `prepare.sh` / `activate.sh` / `rollback.sh` (rehearsed byte-identical). Needs a reload. Only this one changes how
+   requests are routed.
+
+The backend of this branch (new routes, route-target validation, the projection) runs only when the real netget backend
+is restarted from this code; none of the three above does that.
 
 ## Seeing other gateways (netget.site, a Raspberry) from this panel: what exists and what does not
 

@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { installMonadOriginGuard } from '../src/kernel/testing/monadOriginGuard.ts';
 import { reservePort } from '../src/kernel/testing/reservePort.ts';
+import { meDistUrl } from './_meDist.ts';
 
 const tmpDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'netget-target-verify-'));
 process.env.NETGET_DATA_DIR = tmpDataDir;
@@ -47,7 +48,7 @@ const { startMonadProcess, deleteMonadProcess, readInstallationAuthorization } =
 // exact relative path: 'this.me' (published) lacks these newer primitives.
 // @ts-expect-error -- no .d.ts resolution across this relative path.
 const { deriveBranchProofSeed, importEd25519SigningKey, normalizeProofMessage, signEd25519Proof } =
-  await import('../../../../me/Typescript/dist/me.es.js');
+  await import(meDistUrl());
 
 async function post(origin: string, urlPath: string, body: unknown) {
   const res = await fetch(`${origin}${urlPath}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

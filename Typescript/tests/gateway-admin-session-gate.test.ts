@@ -36,7 +36,7 @@ const PREFIX: string = (await import(modulePath)).GATEWAY_PREFIX ?? '';
 const { getGatewayClaimsPath } = await import('../src/modules/NetGetX/Auth/GatewayClaimsManager.ts');
 // @ts-expect-error -- no .d.ts resolution across this relative path (see admin-session-live-keychain.test.ts).
 const { deriveBranchProofSeed, importEd25519SigningKey, normalizeProofMessage, signEd25519Proof } =
-  await import('../../../../me/Typescript/dist/me.es.js');
+  await import((await import('./_meDist.ts')).meDistUrl());
 
 async function post(origin: string, urlPath: string, body: unknown) {
   const res = await fetch(`${origin}${urlPath}`, {

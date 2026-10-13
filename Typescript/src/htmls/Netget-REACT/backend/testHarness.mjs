@@ -9,6 +9,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import localNetgetRoutes from './routes/localNetget.js';
 import adminSessionRoutes from './routes/adminSession.js';
+import { gatewayAdminGate } from '../../../gateway/adminGate.mjs';
 
 export function createLocalNetgetTestApp(options = {}) {
     const app = express();
@@ -37,6 +38,9 @@ export function createLocalNetgetTestApp(options = {}) {
         });
     }
     app.use(bodyParser.json());
+    // options.gate = { resolveSession, isOwner }: the same capability gate the monad-mounted gateway applies, so a test
+    // can show what an anonymous caller, a session without gateway:write and one with it each get.
+    if (options.gate) app.use(gatewayAdminGate([localNetgetRoutes, adminSessionRoutes], options.gate));
     app.use('/', localNetgetRoutes);
     app.use('/', adminSessionRoutes);
     return app;

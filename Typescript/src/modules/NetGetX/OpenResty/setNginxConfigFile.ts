@@ -471,8 +471,19 @@ http {
                         local now_ms = ngx.now() * 1000
                         local resolved = nil
 
+                        -- app:<name> names an app as the registry knows it: a monad reports itself as
+                        -- "monad:<name>" (and carries metadata.monadName), so the bare name, the prefixed one and the
+                        -- monad's own name all mean the same app (surface_proxy.lua resolves it the same way).
+                        local want = string.lower(app_name)
+                        local function names_app(app)
+                            local name = string.lower(tostring(app.name or ""))
+                            local short = (name:gsub("^monad:", ""))
+                            local meta = type(app.metadata) == "table" and app.metadata or {}
+                            return name == want or short == want or string.lower(tostring(meta.monadName or "")) == want
+                        end
+
                         for _, app in pairs(apps) do
-                            if app.name == app_name and app.port then
+                            if names_app(app) and app.port then
                                 local ttl = tonumber(app.ttlMs) or 12000
                                 local last_seen = tonumber(app.lastSeenMs) or 0
                                 if now_ms - last_seen <= ttl then

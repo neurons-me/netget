@@ -19,11 +19,24 @@
  * Real, disposable monad processes throughout, never the real ambient one.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { reservePort } from '../src/kernel/testing/reservePort.ts';
+import { pidsWithEnv, killAll, listeningPortsOf } from './helpers/processHygiene.ts';
+
+// The monad records and state live under HOME: a temp one, so a run leaves nothing in the machine's ~/.monad and a
+// leftover record cannot be mistaken for a live monad.
+const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'statedir-lock-home-'));
+process.env.HOME = tmpHome;
+process.env.MONADS_HOME = path.join(tmpHome, '.monad', 'monads');
 
 const { startMonadProcess, getMonadStatus, deleteMonadProcess } = await import('monad.ai');
 
 const NAME = `statedir-lock-test-${process.pid}-${Date.now()}`;
+// STATEDIR_LOCK_TEST_FAIL=after-start: throw while both processes are alive, to prove the cleanup runs on failure too
+// (tests/monad-statedir-lock-hygiene.test.ts is the only thing that sets it).
+const INJECT = process.env.STATEDIR_LOCK_TEST_FAIL === 'after-start';
 const portA = await reservePort();
 const portB = await reservePort();
 
@@ -46,6 +59,7 @@ try {
   assert.ok(fulfilled.length >= 1, 'at least one of the two concurrent starts must have returned a record');
 
   await sleep(2000); // let both genuinely boot (or crash) for real
+  if (INJECT) throw new Error('injected failure after both starts (hygiene check)');
 
   const statuses = await Promise.all(fulfilled.map((r) => getMonadStatus(r.value.record)));
   const aliveCount = statuses.filter((s) => s.pidAlive && s.healthy).length;
@@ -71,7 +85,17 @@ try {
   const recoveredStatus = await getMonadStatus(recovered.record);
   assert.ok(recoveredStatus.pidAlive && recoveredStatus.healthy, 'a fresh start after full cleanup must succeed normally');
 } finally {
+  // The record names ONE pid, and in this race two processes were started under one name: whichever lost the write is
+  // not in it. Everything that was started is found by what it is (its environment carries the name) and stopped.
   await deleteMonadProcess(NAME).catch(() => {});
+  const mine = pidsWithEnv('MONAD_NAME', NAME);
+  const ports = listeningPortsOf(mine);
+  const stuck = await killAll(mine);
+  fs.rmSync(tmpHome, { recursive: true, force: true });
+  if (stuck.length) {
+    console.error(`monad-statedir-lock: processes that would not stop: ${stuck.join(', ')} (ports ${ports.join(', ')})`);
+    process.exitCode = 1;
+  }
 }
 
 console.log('monad-statedir-lock ok');

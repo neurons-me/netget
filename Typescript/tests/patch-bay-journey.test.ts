@@ -90,12 +90,18 @@ const layout = { ...detectOpenRestyLayout(), confDDir: path.join(tmp, 'conf.d'),
 fs.mkdirSync(layout.confDDir, { recursive: true }); fs.mkdirSync(layout.logDir, { recursive: true });
 const cert = path.join(tmp, 'cert.pem'); const key = path.join(tmp, 'key.pem');
 execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-subj', '/CN=localhost', '-days', '1'], { stdio: 'ignore' });
+const lanIp = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
 let conf = buildNginxConfigContent(layout as any);
 conf = conf
   .replace('listen 80 default_server;', `listen 127.0.0.1:${p80} default_server;`).replace(/\n\s*listen \[::\]:80 default_server;/, '')
   .replace('listen 443 ssl default_server;', `listen 127.0.0.1:${p443} ssl default_server;`).replace(/\n\s*listen \[::\]:443 ssl default_server;/, '')
   .replace(/ssl_certificate\s+[^;]+;/, `ssl_certificate ${cert};`).replace(/ssl_certificate_key\s+[^;]+;/, `ssl_certificate_key ${key};`)
-  .replace(/^\s*user\s+[^;]+;\s*$/m, '');
+  .replace(/^\s*user\s+[^;]+;\s*$/m, '')
+  // the repo's lua/ first: the policy library (lib/door_connections.lua) is not installed on this machine, and this test
+  // must not install it
+  .replace(/lua_package_path "/, `lua_package_path "${path.resolve('src/modules/NetGetX/OpenResty/lua')}/?.lua;`)
+  // and a listener on this machine's LAN address: a peer that is not loopback
+  .replace(/listen 127\.0\.0\.1:\d+ ssl default_server;/, (m) => (lanIp ? `${m}\n        listen ${lanIp}:${p443} ssl default_server;` : m));
 const confPath = path.join(tmp, 'nginx.conf');
 fs.writeFileSync(confPath, conf);
 fs.writeFileSync(path.join(tmp, 'mime.types'), 'types { text/html html htm; text/css css; application/javascript js; text/plain txt; }\n');
@@ -109,9 +115,9 @@ assert.ok(await up(), 'the disposable gateway is up');
 // no TLS session reuse and no keep-alive: every open() is a full handshake against the router's CURRENT map
 const agent = new https.Agent({ maxCachedSessions: 0, keepAlive: false });
 type Res = { status: number; type: string; body: string };
-const open = (host: string, { port = p443, tls = true, pathname = '/' } = {}) => new Promise<Res>((resolve, reject) => {
+const open = (host: string, { port = p443, tls = true, pathname = '/', via = '127.0.0.1', headers = {} as Record<string, string> } = {}) => new Promise<Res>((resolve, reject) => {
   const mod: any = tls ? https : http;
-  const req = mod.request({ host: '127.0.0.1', port, path: pathname, method: 'GET', headers: { Host: host, Accept: 'text/html' }, ...(tls ? { servername: host, rejectUnauthorized: false, agent } : { agent: false }) }, (res: http.IncomingMessage) => {
+  const req = mod.request({ host: via, port, path: pathname, method: 'GET', headers: { Host: host, Accept: 'text/html', ...headers }, ...(tls ? { servername: host, rejectUnauthorized: false, agent } : { agent: false }) }, (res: http.IncomingMessage) => {
     const chunks: Buffer[] = [];
     res.on('data', (c) => chunks.push(c));
     res.on('end', () => resolve({ status: res.statusCode ?? 0, type: String(res.headers['content-type'] ?? ''), body: Buffer.concat(chunks).toString('utf8') }));
@@ -196,6 +202,84 @@ try {
   const reg = await until('registered-app.test', (r) => r.status === 200 || r.status === 503, 'an app: target answers');
   assert.equal(reg.status, 200, `a monad registered as monad:demo is found by app:demo (got ${reg.status}: ${reg.body.slice(0, 120)})`);
   assert.match(reg.body, /SERVICE-1/);
+
+  // 6b. what a route may point at: ONE definition, refused with a code and a reason, whichever door writes it
+  const refused = async (domain: string, type: string, target: string, code: string) => {
+    const r = await add(domain, type, target, 'admin');
+    assert.equal(r.status, 400, `${type} ${target} is refused`);
+    assert.equal(r.json?.code, code, `${type} ${target}: ${JSON.stringify(r.json)}`);
+  };
+  await refused('bad-1.test', 'server', '127.0.0.1:3000', 'GATEWAY_PORT');
+  await refused('bad-2.test', 'server', `127.0.0.1:${svc1Port}`, 'REGISTERED_APP_PORT');
+  await refused('bad-3.test', 'server', 'https://127.0.0.1:4000', 'UPSTREAM_TLS');
+  await refused('bad-4.test', 'server', '169.254.169.254:80', 'LINK_LOCAL');
+  await refused('bad-5.test', 'static', 'relative/dir', 'STATIC_NOT_ABSOLUTE');
+  await refused('bad-6.test', 'server', 'app:bad name', 'APP_NAME');
+  await refused('bad-7.test', 'weird', '127.0.0.1:4000', 'TYPE');
+  assert.equal((await add('lan-service.test', 'server', 'raspberrypi.local:8080', 'admin')).json?.success, true, 'another machine on the network is a destination');
+  const refusedUpdate = await call('POST', '/update-domain', { domain: 'service-app.test', updatedFields: { target: '127.0.0.1:443' } }, 'admin');
+  assert.equal(refusedUpdate.status, 400, 'changing a destination is checked too');
+  assert.equal(refusedUpdate.json?.code, 'GATEWAY_PORT');
+  assert.equal((await call('POST', '/update-domain', { domain: 'never-registered.test', updatedFields: { target: '127.0.0.1:4000' } }, 'admin')).status, 404);
+  // the same rules at the store, so `netget routing` and any other writer get the same answer
+  const { updateDomainRoute } = await import('../src/kernel/domainStore.ts');
+  await assert.rejects(updateDomainRoute('service-app.test', 'server', '127.0.0.1:80'), (e: any) => e.name === 'RouteTargetError' && e.code === 'GATEWAY_PORT');
+  assert.equal((await call('GET', '/domains')).json?.domains?.some((d: any) => d.domain.startsWith('bad-')), false, 'nothing was written by the refused calls');
+
+  // 6c. the state of each door, from the gateway (admin-only; "unknown" is a state)
+  assert.equal((await call('GET', '/domains/status')).status, 401, 'anonymous cannot probe destinations');
+  assert.equal((await call('GET', '/domains/status', undefined, 'reader')).status, 403);
+  // a door with no certificate: TLS pending, no address that can open
+  assert.equal((await call('POST', '/add-domain', { domain: 'no-cert.test', type: 'server', target: `127.0.0.1:${svc1Port + 0}`.replace(String(svc1Port), String(await freePort())), owner: 'journey' }, 'admin')).json?.success, true);
+  const st = (await call('GET', '/domains/status', undefined, 'admin')).json?.statuses as any[];
+  const by = (d: string) => st.find((x) => x.domain === d);
+  assert.equal(by('registered-app.test').destination.state, 'ok', 'app: a live registered app');
+  assert.equal(by('registered-app.test').tls.state, 'configured');
+  assert.equal(by('registered-app.test').open.url, 'https://registered-app.test/');
+  assert.equal(by('service-app.test').destination.state, 'down', 'the service that was stopped');
+  assert.equal(by('service-app.test').applied, true);
+  assert.equal(by('static-app.test').destination.state, 'ok');
+  assert.equal(by('no-cert.test').tls.state, 'pending');
+  assert.equal(by('no-cert.test').open.url, null, 'TLS pending: no address is offered');
+  assert.equal(by('no-cert.test').open.why, 'TLS pendiente');
+  assert.equal(by('no-cert.test').destination.state, 'down', 'and its (made-up) destination does not answer');
+
+  // 6d. a domain is one more way in to an app, not a way around what the app declared
+  const appEntry = (patch: Record<string, unknown>) => fs.writeFileSync(path.join(dataDir, 'runtime', 'apps.json'), JSON.stringify({ apps: { m: {
+    name: 'monad:demo', kind: 'monad', host: '127.0.0.1', port: svc1Port, ttlMs: 600000, lastSeenMs: Date.now(), trust: 'peer',
+    metadata: { monadName: 'demo' }, ...patch,
+  } } }));
+  const readBody = (r: Res) => r.body.slice(0, 140);
+  if (lanIp) {
+    appEntry({ exposure: { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: false, allowWan: false } } });
+    const local = await open('registered-app.test');
+    assert.equal(local.status, 200, `a loopback peer reaches an app whose policy keeps it on this machine (${readBody(local)})`);
+    const lan = await open('registered-app.test', { via: lanIp });
+    assert.equal(lan.status, 403, `a LAN peer does not: the domain does not widen the app's policy (${readBody(lan)})`);
+    assert.match(lan.body, /app_not_exposed/);
+    appEntry({ exposure: { enabled: true, visibility: 'lan', network: { allowLoopback: true, allowLan: true, allowWan: false } } });
+    assert.equal((await open('registered-app.test', { via: lanIp })).status, 200, 'once the OPERATOR widened the app to the LAN, the LAN peer is served');
+    appEntry({ exposure: { enabled: false } });
+    assert.equal((await open('registered-app.test')).status, 404, 'a disabled app is not served through a domain either');
+    appEntry({ trust: 'guest', exposure: { enabled: true, visibility: 'wan', network: { allowWan: true } } });
+    assert.equal((await open('registered-app.test')).status, 403, 'a guest-trust app is not published by a domain');
+  } else {
+    console.log('patch-bay-journey: no non-loopback IPv4 here; the LAN-peer cases are skipped');
+  }
+  appEntry({});
+
+  // 6e. what a service receives from a domain: the real peer, and nothing the gateway trusts from itself
+  const echo = http.createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(req.headers)); });
+  const echoPort = await freePort();
+  await new Promise<void>((r) => echo.listen(echoPort, '127.0.0.1', () => r()));
+  assert.equal((await add('echo-app.test', 'server', `127.0.0.1:${echoPort}`, 'admin')).json?.success, true);
+  const seen = await until('echo-app.test', (r) => r.status === 200 && r.body.startsWith('{'), 'the echo service opens', {
+    headers: { 'X-Forwarded-For': '1.2.3.4', 'X-NetGet-Identity': 'someone-else', 'X-Netget-Scopes': 'gateway:write', 'X-Me-Proof': 'p', 'X-Monad-Internal-Token': 't', 'X-NetGet-Internal': '1' },
+  });
+  const got = JSON.parse(seen.body);
+  assert.equal(got['x-forwarded-for'], '127.0.0.1', 'X-Forwarded-For is the peer, replaced');
+  for (const h of ['x-netget-identity', 'x-netget-scopes', 'x-me-proof', 'x-monad-internal-token', 'x-netget-internal']) assert.equal(got[h], undefined, `${h} does not reach the service`);
+  echo.close();
 
   // 7. disconnect: the door goes away; the app and its files are not touched
   assert.equal((await call('POST', '/delete-domain', { domain: 'static-app.test' }, 'reader')).status, 403, 'a session without gateway:write cannot disconnect');

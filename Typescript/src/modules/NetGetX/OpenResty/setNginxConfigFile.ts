@@ -482,12 +482,14 @@ http {
                             return name == want or short == want or string.lower(tostring(meta.monadName or "")) == want
                         end
 
+                        local resolved_app = nil
                         for _, app in pairs(apps) do
                             if names_app(app) and app.port then
                                 local ttl = tonumber(app.ttlMs) or 12000
                                 local last_seen = tonumber(app.lastSeenMs) or 0
                                 if now_ms - last_seen <= ttl then
                                     resolved = (app.host or "127.0.0.1") .. ":" .. tostring(app.port)
+                                    resolved_app = app
                                     break
                                 end
                             end
@@ -496,6 +498,27 @@ http {
                         if not resolved then
                             ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
                             ngx.say("NetGet app is not available: " .. app_name)
+                            return
+                        end
+
+                        -- A domain is one more way in to the app, not a way around what the app declared: the same
+                        -- policy that /apps/<name>/ and the host door apply (enabled, visibility, network.allow*, a
+                        -- guest-trust app) is applied here, on the address that connected. A domain cannot publish an
+                        -- app whose policy keeps it on this machine; widening that is the operator's change of the
+                        -- app's policy, not a side effect of pointing a domain at it. (The app's own writes are
+                        -- authorized by the app, with a proof; this does not refuse them.) If the policy library is not
+                        -- installed the answer is "no", not "allowed".
+                        local okdc, dc = pcall(require, "lib.door_connections")
+                        if not okdc then
+                            ngx.status = ngx.HTTP_SERVICE_UNAVAILABLE
+                            ngx.say("NetGet cannot apply this app's exposure policy on this gateway (policy library missing): " .. app_name)
+                            return
+                        end
+                        local allowed, denied_status = dc.exposure_allows(resolved_app, ngx.var.remote_addr)
+                        if not allowed then
+                            ngx.status = denied_status or ngx.HTTP_FORBIDDEN
+                            ngx.header["Content-Type"] = "application/json; charset=utf-8"
+                            ngx.say('{"ok":false,"error":"app_not_exposed","message":"This app is not exposed to this address by its own policy."}')
                             return
                         end
 
@@ -541,10 +564,16 @@ http {
             proxy_cache_bypass                 $http_upgrade;
             proxy_ssl_server_name              on;
             proxy_set_header X-Real-IP         $remote_addr;
-            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            # the real peer, replaced (not appended: a forged value is not passed on), and nothing the gateway trusts
+            # from itself or its own proof reaches the service -- the same hygiene the door connections have.
+            proxy_set_header X-Forwarded-For   $remote_addr;
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_set_header X-Forwarded-Host  $host;
             proxy_set_header X-Monad-Internal-Token "";
+            proxy_set_header X-NetGet-Internal "";
+            proxy_set_header X-NetGet-Identity "";
+            proxy_set_header X-NetGet-Scopes "";
+            proxy_set_header X-Me-Proof "";
             proxy_set_header X-Forwarded-Port  $server_port;
             proxy_connect_timeout              60s;
             proxy_send_timeout                 60s;

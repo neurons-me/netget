@@ -42,6 +42,9 @@ import {
     Lock as LockIcon,
     LockOpen as LockOpenIcon,
     Refresh as RefreshIcon,
+    OpenInNew as OpenInNewIcon,
+    SwapHoriz as SwapHorizIcon,
+    LinkOff as LinkOffIcon,
 } from '@mui/icons-material';
 import { deriveCleakerNodeFromMe, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
 import { useRegisterGuiNode } from 'this.gui';
@@ -87,7 +90,7 @@ async function fetchDomains() {
 async function addDomain({ domain, target, type, email }) {
     const res = await fetch('/add-domain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
         body: JSON.stringify({ domain, target, type, email }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('add-domain'));
@@ -99,7 +102,7 @@ async function addDomain({ domain, target, type, email }) {
 async function provisionCert({ domain, email }) {
     const res = await fetch('/provision-cert', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
         body: JSON.stringify({ domain, email }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('provision-cert', { domain }));
@@ -111,13 +114,48 @@ async function provisionCert({ domain, email }) {
 async function deleteDomain(domain) {
     const res = await fetch('/delete-domain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
         body: JSON.stringify({ domain }),
     });
     if (isRefusal(res)) throw new Error(refusalMessage('delete-domain'));
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
+}
+
+// Changes where a door points. The same record: nothing is created, no identity, no namespace, no data copied.
+async function updateDomainRoute({ domain, type, target }) {
+    const res = await fetch('/update-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...adminAuthHeaders() },
+        body: JSON.stringify({ domain, updatedFields: { type, target } }),
+    });
+    if (isRefusal(res)) throw new Error(refusalMessage('update-domain'));
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(data.error ?? `${res.status}`);
+    return data;
+}
+
+// The apps registered with this gateway (live ones), to point a door at by name.
+async function fetchApps() {
+    const res = await fetch('/apps', { headers: adminAuthHeaders() });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await parseJsonResponse(res);
+    return (Array.isArray(data.apps) ? data.apps : []).map((app) => ({
+        name: String(app?.metadata?.monadName || String(app?.name || '').replace(/^monad:/, '')),
+        port: app?.port,
+    })).filter((app) => app.name);
+}
+
+// What each door is doing now (destination answers? certificate? applied?). Admin-only on the gateway. When it cannot
+// be had the panel says "unknown": it never invents a state.
+async function fetchStatuses() {
+    const res = await fetch('/domains/status', { headers: adminAuthHeaders() });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await parseJsonResponse(res);
+    const byDomain = {};
+    for (const entry of Array.isArray(data.statuses) ? data.statuses : []) byDomain[entry.domain] = entry;
+    return byDomain;
 }
 
 // Capability-gated — requires an unlocked .me signing session. Whatever the
@@ -145,7 +183,88 @@ async function editDomainMetadata(session, domain, description) {
 // domainStore.ts's toDomainRecord() — already the real, fully-qualified
 // kernel path (users.<owner>.domains.<key>), so Explain works against real
 // data with zero owner/escaping logic duplicated here.
-function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onDelete }) {
+// What a door can point at (mirrors src/runtime/routeTargets.ts, which is the one the gateway enforces).
+const DESTINATION_KINDS = [
+    { kind: 'app', label: 'App registrada', type: 'server', hint: 'Una app registrada en este gateway: hereda su política de exposición y autorización.' },
+    { kind: 'server', label: 'Servicio en un puerto', type: 'server', hint: 'Un servicio HTTP en host:puerto (esta máquina u otra de la red). Por TLS (https://) todavía no.' },
+    { kind: 'static', label: 'Carpeta de archivos', type: 'static', hint: 'Una carpeta absoluta que tenga index.html.' },
+    { kind: 'proxy', label: 'Superficie del monad', type: 'proxy', hint: 'La resuelve el monad de este gateway; sin destino.' },
+];
+
+function destinationOfRow(row) {
+    const type = String(row?.type || 'proxy').toLowerCase();
+    const target = String(row?.target || '');
+    if (type === 'static') return { kind: 'static', app: '', hostport: '', folder: target };
+    if (/^app:/i.test(target)) return { kind: 'app', app: target.slice(4), hostport: '', folder: '' };
+    if (type === 'server' || target) return { kind: 'server', app: '', hostport: target, folder: '' };
+    return { kind: 'proxy', app: '', hostport: '', folder: '' };
+}
+
+// -> { type, target } or { error }. The gateway checks it again: this only says what is missing before asking.
+function destinationFields(dest) {
+    if (dest.kind === 'app') return dest.app ? { type: 'server', target: `app:${dest.app}` } : { error: 'Elige una app.' };
+    if (dest.kind === 'server') return dest.hostport.trim() ? { type: 'server', target: dest.hostport.trim() } : { error: 'Escribe host:puerto.' };
+    if (dest.kind === 'static') return dest.folder.trim() ? { type: 'static', target: dest.folder.trim() } : { error: 'Escribe la ruta absoluta de la carpeta.' };
+    return { type: 'proxy', target: '' };
+}
+
+function DestinationPicker({ value, onChange, apps, appsError }) {
+    const kind = DESTINATION_KINDS.find((k) => k.kind === value.kind) || DESTINATION_KINDS[1];
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }} data-gui-node-id="Domains.destinationPicker">
+            <FormControl fullWidth size="small">
+                <InputLabel>Destino</InputLabel>
+                <Select label="Destino" value={value.kind} onChange={(e) => onChange({ ...value, kind: e.target.value })}>
+                    {DESTINATION_KINDS.map((k) => <MenuItem key={k.kind} value={k.kind}>{k.label}</MenuItem>)}
+                </Select>
+            </FormControl>
+            {value.kind === 'app' && (
+                apps.length > 0 ? (
+                    <FormControl fullWidth size="small">
+                        <InputLabel>App</InputLabel>
+                        <Select label="App" value={value.app} onChange={(e) => onChange({ ...value, app: e.target.value })}>
+                            {apps.map((a) => <MenuItem key={a.name} value={a.name}>{a.name}</MenuItem>)}
+                        </Select>
+                    </FormControl>
+                ) : (
+                    <TextField
+                        label="App"
+                        placeholder="fulltrailer"
+                        value={value.app}
+                        onChange={(e) => onChange({ ...value, app: e.target.value.trim() })}
+                        helperText={appsError
+                            ? `No se pudo leer el registro de apps (${appsError}). Puedes escribir el nombre; el estado dirá si está viva.`
+                            : 'No hay apps vivas registradas ahora. Puedes escribir el nombre; el estado dirá si está viva.'}
+                        size="small"
+                        fullWidth
+                    />
+                )
+            )}
+            {value.kind === 'server' && (
+                <TextField label="Servicio" placeholder="127.0.0.1:4000" value={value.hostport}
+                    onChange={(e) => onChange({ ...value, hostport: e.target.value })} size="small" fullWidth />
+            )}
+            {value.kind === 'static' && (
+                <TextField label="Carpeta" placeholder="/Users/yo/mi-sitio/dist" value={value.folder}
+                    onChange={(e) => onChange({ ...value, folder: e.target.value })} size="small" fullWidth />
+            )}
+            <Typography variant="caption" sx={{ opacity: 0.6 }}>{kind.hint}</Typography>
+        </Box>
+    );
+}
+
+// The chips that say what a door is doing. "Estado desconocido" is a state: it is shown when the gateway could not say.
+function destinationChip(status) {
+    if (!status) return { label: 'Estado desconocido', color: 'default', tip: 'El gateway no pudo decir el estado de esta puerta.' };
+    const state = status.destination?.state;
+    const tip = status.destination?.detail || '';
+    if (state === 'ok') return { label: 'Responde', color: 'success', tip };
+    if (state === 'down') return { label: 'No responde', color: 'error', tip };
+    if (state === 'missing') return { label: 'Falta el destino', color: 'error', tip };
+    return { label: 'Estado desconocido', color: 'default', tip: tip || 'No se pudo comprobar.' };
+}
+
+function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onChangeDestination, onDisconnect }) {
     const nodeId = `Domains.row.${row.domain}`;
     useRegisterGuiNode(nodeId, 'DomainRow', 'Domains.routesCard', { semanticPath: row.semanticPath });
     // Per-field registration — the row's own semanticPath points at the whole
@@ -159,6 +278,12 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
     useRegisterGuiNode(targetNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.target` } : undefined);
     useRegisterGuiNode(typeNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.type` } : undefined);
     useRegisterGuiNode(sslNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.sslMode` } : undefined);
+
+    const dest = destinationChip(status);
+    const tlsKnown = !!status?.tls;
+    const tlsPending = tlsKnown && status.tls.state === 'pending';
+    const openUrl = status?.open?.url || null;
+    const openWhy = status ? (status.open?.why || 'No se puede abrir todavía') : 'Estado desconocido: no se sabe si abre';
     return (
         <TableRow
             data-gui-node-id={nodeId}
@@ -168,7 +293,8 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
                 {row.domain}
             </TableCell>
             <TableCell data-gui-node-id={targetNodeId} sx={{ fontFamily: 'monospace', opacity: 0.7 }}>
-                {row.target || '—'}
+                {/* the listing is the public projection without a read grant; the status (admin-only) carries it */}
+                {row.target || status?.target || '—'}
             </TableCell>
             <TableCell data-gui-node-id={typeNodeId}>
                 <Chip
@@ -178,14 +304,54 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
                 />
             </TableCell>
             <TableCell data-gui-node-id={sslNodeId}>
-                <Chip
-                    label={row.sslMode || 'none'}
-                    size="small"
-                    variant={row.sslMode && row.sslMode !== 'none' ? 'filled' : 'outlined'}
-                    color={row.sslMode && row.sslMode !== 'none' ? 'success' : 'default'}
-                />
+                <Tooltip title={tlsKnown ? status.tls.detail : (row.sslMode && row.sslMode !== 'none' ? `Modo: ${row.sslMode}` : 'Estado de TLS desconocido')}>
+                    <span>
+                        <Chip
+                            label={tlsKnown ? (tlsPending ? 'TLS pendiente' : 'TLS configurado') : (row.sslMode || 'none')}
+                            size="small"
+                            variant={tlsKnown && !tlsPending ? 'filled' : 'outlined'}
+                            color={tlsKnown ? (tlsPending ? 'warning' : 'success') : 'default'}
+                        />
+                    </span>
+                </Tooltip>
             </TableCell>
-            <TableCell align="right">
+            <TableCell data-gui-node-id={`${nodeId}.state`}>
+                <Tooltip title={dest.tip}>
+                    <span>
+                        <Chip label={dest.label} size="small" color={dest.color} variant={dest.color === 'default' ? 'outlined' : 'filled'} />
+                    </span>
+                </Tooltip>
+                {status && status.applied === false && (
+                    <Tooltip title="El registro existe pero el router no lo ha cargado todavía.">
+                        <span><Chip label="No aplicada" size="small" color="warning" variant="outlined" sx={{ ml: 0.5 }} /></span>
+                    </Tooltip>
+                )}
+            </TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                <Tooltip title={openUrl ? `Abrir ${openUrl}` : openWhy}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            disabled={!openUrl}
+                            onClick={() => window.open(openUrl, '_blank', 'noopener')}
+                            data-gui-node-id={`${nodeId}.open`}
+                        >
+                            <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Tooltip title="Cambiar destino">
+                    <span>
+                        <IconButton
+                            size="small"
+                            onClick={() => onChangeDestination({ ...row, target: row.target || status?.target || '', type: row.type || status?.type })}
+                            disabled={deleting === row.domain}
+                            data-gui-node-id={`${nodeId}.change`}
+                        >
+                            <SwapHorizIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
                 <Tooltip title={session ? 'Edit description' : 'Unlock .me proof to attempt this'}>
                     <span>
                         <IconButton
@@ -211,17 +377,18 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
                         </IconButton>
                     </span>
                 </Tooltip>
-                <Tooltip title={`Delete ${row.domain}`}>
+                <Tooltip title={`Desconectar ${row.domain} (no borra archivos ni detiene la app)`}>
                     <span>
                         <IconButton
                             size="small"
                             color="error"
-                            onClick={() => onDelete(row.domain)}
+                            onClick={() => onDisconnect({ ...row, target: row.target || status?.target || '' })}
                             disabled={deleting === row.domain}
+                            data-gui-node-id={`${nodeId}.disconnect`}
                         >
                             {deleting === row.domain
                                 ? <CircularProgress size={16} />
-                                : <DeleteIcon fontSize="small" />}
+                                : <LinkOffIcon fontSize="small" />}
                         </IconButton>
                     </span>
                 </Tooltip>
@@ -230,11 +397,12 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
     );
 }
 
-// ─── Add Domain Dialog ────────────────────────────────────────────────────────
+// ─── Add Domain Dialog ────────────────────────────────────────────────
 
-const EMPTY_FORM = { domain: '', target: '', type: 'proxy', email: '' };
+const EMPTY_DEST = { kind: 'server', app: '', hostport: '', folder: '' };
+const EMPTY_FORM = { domain: '', dest: EMPTY_DEST, email: '' };
 
-function AddDomainDialog({ open, onClose, onSuccess }) {
+function AddDomainDialog({ open, onClose, onSuccess, apps, appsError }) {
     useRegisterGuiNode('Domains.addDialog', 'AddDomainDialog');
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
@@ -248,17 +416,18 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
 
     const handleSubmit = async () => {
         if (!form.domain.trim()) {
-            setError('Domain is required.');
+            setError('El dominio es obligatorio.');
             return;
         }
-        if ((form.type === 'server' || form.type === 'static') && !form.target.trim()) {
-            setError('Target is required for server and static routes.');
+        const fields = destinationFields(form.dest);
+        if (fields.error) {
+            setError(fields.error);
             return;
         }
         setSaving(true);
         setError(null);
         try {
-            await addDomain(form);
+            await addDomain({ domain: form.domain.trim(), type: fields.type, target: fields.target, email: form.email });
             setForm(EMPTY_FORM);
             onSuccess();
             onClose();
@@ -278,57 +447,114 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
             data-gui-node-id="Domains.addDialog"
             data-gui-component="AddDomainDialog"
         >
-            <DialogTitle>Add Domain Route</DialogTitle>
+            <DialogTitle>Conectar una puerta</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
                 <TextField
-                    label="Domain"
+                    label="Dominio"
                     placeholder="api.suis-macbook-air.local"
-                    helperText="The hostname this gateway should route."
+                    helperText="El nombre que este gateway debe enrutar."
                     value={form.domain}
                     onChange={(e) => setForm(f => ({ ...f, domain: e.target.value }))}
                     autoFocus
                     fullWidth
                 />
-                <TextField
-                    label="Target"
-                    placeholder="http://127.0.0.1:3001"
-                    helperText="Optional for monad-resolved semantic surfaces; required for server/static routes."
-                    value={form.target}
-                    onChange={(e) => setForm(f => ({ ...f, target: e.target.value }))}
-                    fullWidth
+                <DestinationPicker
+                    value={form.dest}
+                    onChange={(dest) => setForm(f => ({ ...f, dest }))}
+                    apps={apps}
+                    appsError={appsError}
                 />
                 <TextField
                     label="Let's Encrypt Email"
                     placeholder="admin@example.com"
-                    helperText="Optional now; required later when issuing a public certificate."
+                    helperText="Opcional ahora; hace falta al pedir un certificado público."
                     value={form.email}
                     onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
                     fullWidth
                 />
-                <FormControl fullWidth size="small">
-                    <InputLabel>Type</InputLabel>
-                    <Select
-                        label="Type"
-                        value={form.type}
-                        onChange={(e) => setForm(f => ({ ...f, type: e.target.value }))}
-                    >
-                        <MenuItem value="proxy">proxy</MenuItem>
-                        <MenuItem value="static">static</MenuItem>
-                        <MenuItem value="server">server</MenuItem>
-                    </Select>
-                </FormControl>
+                <Alert severity="info" sx={{ py: 0 }}>
+                    Sin certificado, la puerta queda con <b>TLS pendiente</b>: no abre por HTTPS hasta que se aprovisione uno.
+                </Alert>
                 {error && <Alert severity="error">{error}</Alert>}
             </DialogContent>
             <DialogActions>
-                <Button onClick={handleClose}>Cancel</Button>
+                <Button onClick={handleClose}>Cancelar</Button>
                 <Button
                     variant="contained"
                     onClick={handleSubmit}
                     disabled={saving}
                     startIcon={saving ? <CircularProgress size={14} /> : <AddIcon />}
                 >
-                    {saving ? 'Adding…' : 'Add Route'}
+                    {saving ? 'Conectando…' : 'Conectar'}
                 </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Change destination ─────────────────────────────────────────────────
+
+function ChangeDestinationDialog({ row, open, onClose, onSuccess, apps, appsError }) {
+    useRegisterGuiNode('Domains.changeDialog', 'ChangeDestinationDialog');
+    const [dest, setDest] = useState(EMPTY_DEST);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    useEffect(() => { if (row) { setDest(destinationOfRow(row)); setError(null); } }, [row]);
+
+    const handleSubmit = async () => {
+        const fields = destinationFields(dest);
+        if (fields.error) { setError(fields.error); return; }
+        setSaving(true);
+        setError(null);
+        try {
+            await updateDomainRoute({ domain: row.domain, type: fields.type, target: fields.target });
+            onSuccess(row.domain);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-gui-node-id="Domains.changeDialog" data-gui-component="ChangeDestinationDialog">
+            <DialogTitle>Cambiar destino de {row?.domain}</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                    Es el mismo registro: no se crea otra identidad ni se copian datos. Ahora apunta a{' '}
+                    <b style={{ fontFamily: 'monospace' }}>{row?.target || '—'}</b>.
+                </Typography>
+                <DestinationPicker value={dest} onChange={setDest} apps={apps} appsError={appsError} />
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button variant="contained" onClick={handleSubmit} disabled={saving}
+                    startIcon={saving ? <CircularProgress size={14} /> : <SwapHorizIcon />}>
+                    {saving ? 'Cambiando…' : 'Cambiar destino'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Disconnect ─────────────────────────────────────────────────────────
+
+function DisconnectDialog({ row, open, onClose, onConfirm }) {
+    useRegisterGuiNode('Domains.disconnectDialog', 'DisconnectDialog');
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth data-gui-node-id="Domains.disconnectDialog" data-gui-component="DisconnectDialog">
+            <DialogTitle>Desconectar {row?.domain}</DialogTitle>
+            <DialogContent>
+                <Typography variant="body2">
+                    La puerta deja de existir: el dominio ya no abre. <b>No se borran archivos ni se detiene la app</b> a la que apuntaba
+                    ({row?.target || 'sin destino'}); solo desaparece esta conexión.
+                </Typography>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button color="error" variant="contained" onClick={() => onConfirm(row.domain)} startIcon={<LinkOffIcon />}>Desconectar</Button>
             </DialogActions>
         </Dialog>
     );
@@ -520,6 +746,13 @@ export default function Domains() {
     const [deleteError, setDeleteError] = useState(null);
     const [editOpen, setEditOpen] = useState(null);         // row currently being edited
     const [descriptionNotice, setDescriptionNotice] = useState(null);
+    const [statuses, setStatuses] = useState({});            // domain -> what the gateway says it is doing
+    const [statusError, setStatusError] = useState(null);    // why the states are unknown, when they are
+    const [apps, setApps] = useState([]);
+    const [appsError, setAppsError] = useState(null);
+    const [changeOpen, setChangeOpen] = useState(null);      // row whose destination is being changed
+    const [disconnectOpen, setDisconnectOpen] = useState(null);
+    const [notice, setNotice] = useState(null);
 
     // The .me session lives in MeLauncher (sidebar bubble) now — this page
     // just reads it. candidateSession.node/hostname are re-derived from the
@@ -580,15 +813,21 @@ export default function Domains() {
         } finally {
             setLoading(false);
         }
+        // States and the apps to choose from are separate reads: when they fail the panel says "unknown", it does not
+        // pretend, and the routes are still listed.
+        try { setStatuses(await fetchStatuses()); setStatusError(null); } catch (err) { setStatuses({}); setStatusError(err.message); }
+        try { setApps(await fetchApps()); setAppsError(null); } catch (err) { setApps([]); setAppsError(err.message); }
     }, []);
 
     useEffect(() => { load(); }, [load]);
 
     const handleDelete = async (domain) => {
+        setDisconnectOpen(null);
         setDeleting(domain);
         setDeleteError(null);
         try {
             await deleteDomain(domain);
+            setNotice(`${domain} desconectado. Sus archivos y la app a la que apuntaba siguen donde estaban.`);
             await load();
         } catch (err) {
             setDeleteError(err.message);
@@ -608,6 +847,11 @@ export default function Domains() {
         }
     };
 
+    const handleDestinationChanged = async (domain) => {
+        setNotice(`${domain} apunta a otro destino. Es el mismo registro; no se creó nada nuevo.`);
+        await load();
+    };
+
     const handleDescriptionSaved = async (description) => {
         setDescriptionNotice(`Description saved: "${description}"`);
     };
@@ -625,7 +869,7 @@ export default function Domains() {
                     <Box>
                         <Typography variant="h5" fontWeight={700}>Domains</Typography>
                         <Typography variant="body2" sx={{ opacity: 0.5, mt: 0.25 }}>
-                            Registered domain → upstream routes. Changes hot-reload Nginx.
+                            Puertas: dominio → destino (app registrada, servicio en un puerto o carpeta). Los cambios se aplican al router en caliente.
                         </Typography>
                     </Box>
                     <Box
@@ -671,7 +915,7 @@ export default function Domains() {
                             startIcon={<AddIcon />}
                             onClick={() => setAddOpen(true)}
                         >
-                            Add Route
+                            Conectar puerta
                         </Button>
                     </Box>
                 </Box>
@@ -679,6 +923,19 @@ export default function Domains() {
                 {descriptionNotice && (
                     <Alert severity="success" sx={{ mb: 2 }} onClose={() => setDescriptionNotice(null)}>
                         {descriptionNotice}
+                    </Alert>
+                )}
+
+                {notice && (
+                    <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice(null)}>
+                        {notice}
+                    </Alert>
+                )}
+
+                {statusError && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        Estado desconocido: el gateway no devolvió el estado de las puertas ({statusError}). Las rutas se listan,
+                        pero no se sabe si responden ni si su TLS está configurado.
                     </Alert>
                 )}
 
@@ -717,7 +974,7 @@ export default function Domains() {
                                     No domain routes registered.
                                 </Typography>
                                 <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
-                                    Add first route
+                                    Conectar la primera puerta
                                 </Button>
                             </Box>
                         ) : (
@@ -725,10 +982,9 @@ export default function Domains() {
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Domain</TableCell>
-                                            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target</TableCell>
-                                            <TableCell sx={{ fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Type</TableCell>
-                                            <TableCell sx={{ fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>SSL</TableCell>
+                                            {['Dominio', 'Destino', 'Tipo', 'TLS', 'Estado'].map((h) => (
+                                                <TableCell key={h} sx={{ fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</TableCell>
+                                            ))}
                                             <TableCell align="right" />
                                         </TableRow>
                                     </TableHead>
@@ -737,13 +993,15 @@ export default function Domains() {
                                             <DomainRow
                                                 key={row.domain}
                                                 row={row}
+                                                status={statusError ? undefined : statuses[row.domain]}
                                                 session={session}
                                                 provisioning={provisioning}
                                                 deleting={deleting}
                                                 hasPublicCert={hasPublicCert}
                                                 onEdit={setEditOpen}
                                                 onProvision={setProvisionOpen}
-                                                onDelete={handleDelete}
+                                                onChangeDestination={setChangeOpen}
+                                                onDisconnect={setDisconnectOpen}
                                             />
                                         ))}
                                     </TableBody>
@@ -762,6 +1020,22 @@ export default function Domains() {
                 open={addOpen}
                 onClose={() => setAddOpen(false)}
                 onSuccess={load}
+                apps={apps}
+                appsError={appsError}
+            />
+            <ChangeDestinationDialog
+                row={changeOpen}
+                open={!!changeOpen}
+                onClose={() => setChangeOpen(null)}
+                onSuccess={handleDestinationChanged}
+                apps={apps}
+                appsError={appsError}
+            />
+            <DisconnectDialog
+                row={disconnectOpen}
+                open={!!disconnectOpen}
+                onClose={() => setDisconnectOpen(null)}
+                onConfirm={handleDelete}
             />
             <ProvisionCertDialog
                 row={provisionOpen}

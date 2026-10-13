@@ -35,6 +35,7 @@
 
 import { parseStoredDoorConnections, checkDoorConnections, serializeDoorConnections, type DoorConnection } from '../runtime/doorConnections.js';
 import { registeredMonadPorts } from '../runtime/doorConnectionPorts.js';
+import { checkRouteTarget } from '../runtime/routeTargets.js';
 import { getNetgetMonadOrigin, getGatewayRootNamespace } from './netgetMonadProcess.js';
 import { writeToMonad, readFromMonad } from './monadHttpClient.js';
 
@@ -200,6 +201,32 @@ async function regenerateMap(): Promise<void> {
   }
 }
 
+/**
+ * A route is written through several doors (the panel's /add-domain and /update-domain, `netget routing`, setup flows).
+ * The protections on what it may point at live HERE, in the store, so none of them depends on which door was used:
+ * routeTargets.ts says what a static/server/proxy destination may be (a gateway port, a registered app's port and a
+ * link-local address are refused). A record with no type, and the main server's own record, are not routing
+ * destinations and pass unchanged; any other kind must be one the router supports.
+ */
+export class RouteTargetError extends Error {
+  readonly code: string;
+  constructor(code: string, reason: string) {
+    super(reason);
+    this.name = 'RouteTargetError';
+    this.code = code;
+  }
+}
+
+function checkedRoute(type: string | undefined | null, target: string | undefined | null): { type?: string; target?: string } {
+  const kind = String(type ?? '').trim().toLowerCase();
+  // No type at all (registered, not routed yet) and the main server's own record are not routing destinations. Any other
+  // kind must be one the router supports: an unknown type would otherwise be projected as a proxy and skip this check.
+  if (kind === '' || kind === 'main_server') return { type: type ?? undefined, target: target ?? undefined };
+  const checked = checkRouteTarget(kind, target ?? '', { registeredPorts: registeredMonadPorts() });
+  if (checked.ok === false) throw new RouteTargetError(checked.code, checked.reason);
+  return { type: checked.type, target: checked.target };
+}
+
 // ── Public API (mirrors the pre-migration embedded-kernel version) ─────────
 
 export async function registerDomain(
@@ -217,6 +244,7 @@ export async function registerDomain(
   const key = domainKey(domain);
   const existingOwner = await resolveOwnerForKey(key);
   if (existingOwner) throw new Error(`The domain ${domain} already exists.`);
+  ({ type, target } = checkedRoute(type, target));
 
   const resolvedOwner = sanitizeOwnerLabel(owner);
   await writeIndexEntry(key, resolvedOwner);
@@ -261,6 +289,13 @@ export async function updateDomain(
 ): Promise<void> {
   const key = domainKey(domain);
   const currentOwner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  if (type !== undefined || target !== undefined) {
+    const current = await readRecordBranch(currentOwner, key);
+    ({ type, target } = checkedRoute(
+      type !== undefined ? type : (current?.type as string | undefined),
+      target !== undefined ? target : (current?.target as string | undefined),
+    ));
+  }
   // Reassigning `owner` moves this domain's *newly written* fields to the
   // new owner's namespace and updates the index. Fields not passed in this
   // call that already existed under the old owner are left there (a narrow,
@@ -280,6 +315,8 @@ export async function updateDomain(
 export async function updateDomainTarget(domain: string, target: string): Promise<void> {
   const key = domainKey(domain);
   const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  const current = await readRecordBranch(owner, key);
+  ({ target } = checkedRoute(current?.type as string | undefined, target) as { target: string });
   await writeField(owner, key, 'target', target);
   await regenerateMap();
 }
@@ -287,6 +324,8 @@ export async function updateDomainTarget(domain: string, target: string): Promis
 export async function updateDomainType(domain: string, type: string): Promise<void> {
   const key = domainKey(domain);
   const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  const current = await readRecordBranch(owner, key);
+  checkedRoute(type, current?.target as string | undefined);
   await writeField(owner, key, 'type', type);
   await regenerateMap();
 }
@@ -298,6 +337,15 @@ export async function updateDomainRoute(
 ): Promise<void> {
   const key = domainKey(domain);
   const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  if (type !== null || target !== null) {
+    const current = await readRecordBranch(owner, key);
+    const checked = checkedRoute(
+      type !== null ? type : (current?.type as string | undefined),
+      target !== null ? target : (current?.target as string | undefined),
+    );
+    if (type !== null) type = checked.type ?? type;
+    if (target !== null) target = checked.target ?? target;
+  }
   if (type !== null) await writeField(owner, key, 'type', type);
   if (target !== null) await writeField(owner, key, 'target', target);
   await regenerateMap();

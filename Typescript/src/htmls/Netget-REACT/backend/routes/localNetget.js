@@ -31,6 +31,8 @@ import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
 import { buildGatewayIdentityResponse, arrivalOf, localIPv4 } from "../../../../modules/NetGetX/Auth/gatewayIdentityResponse.ts";
 import { publicDomainView } from "../../../../gateway/domainsProjection.mjs";
+import net from "net";
+import { describeDomain } from "../../../../runtime/domainStatus.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -741,6 +743,15 @@ router.get('/domains/:parent/subdomains', async (req, res) => {
     res.json({ subdomains });
 });
 
+// What a route may point at is decided in ONE place (runtime/routeTargets.ts) and enforced by the store, so no door
+// into the store gets a different answer. The routes here only turn a refusal into a 400 that says why and with what code.
+function refusal(res, error) {
+    if (error && error.name === 'RouteTargetError') {
+        return res.status(400).json({ error: error.message, code: error.code });
+    }
+    return null;
+}
+
 router.post('/add-domain', async (req, res) => {
     const body = req.body || {};
     if (!body.domain) {
@@ -752,8 +763,8 @@ router.post('/add-domain', async (req, res) => {
             body.sslCertificate, body.sslCertificateKey, body.target,
             body.type, body.projectPath, body.owner,
         );
-    } catch {
-        return res.status(409).json({ error: 'Domain already exists' });
+    } catch (error) {
+        return refusal(res, error) || res.status(409).json({ error: 'Domain already exists' });
     }
     res.json({ success: true, domain: body.domain });
 });
@@ -764,11 +775,51 @@ router.post('/update-domain', async (req, res) => {
         return res.status(400).json({ error: 'domain and updatedFields are required' });
     }
     const f = body.updatedFields;
-    await updateDomain(
-        body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
-        f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
-    );
+    if (!(await getDomainByName(body.domain))) {
+        return res.status(404).json({ error: 'Domain not found' });
+    }
+    try {
+        await updateDomain(
+            body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
+            f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
+        );
+    } catch (error) {
+        return refusal(res, error) || res.status(500).json({ error: 'update failed' });
+    }
     res.json({ success: true, domain: body.domain });
+});
+
+// What each door is doing now: does its destination answer, is it applied to the router, is TLS configured, can it be
+// opened. Read-only; not a public route (it probes destinations), so it takes the same session as the writes. A state the
+// gateway cannot determine is reported as "unknown", never guessed.
+function probeTcp(host, port, timeoutMs = 800) {
+    return new Promise((resolve) => {
+        const socket = net.connect({ host, port });
+        const done = (ok) => { socket.destroy(); resolve(ok); };
+        socket.setTimeout(timeoutMs, () => done(false));
+        socket.once('connect', () => done(true));
+        socket.once('error', () => done(false));
+    });
+}
+
+function inspectFolder(folder) {
+    try {
+        const stat = fs.statSync(folder);
+        if (!stat.isDirectory()) return { directory: false, index: false };
+        return { directory: true, index: fs.existsSync(path.join(folder, 'index.html')) };
+    } catch {
+        return { directory: false, index: false };
+    }
+}
+
+router.get('/domains/status', async (req, res) => {
+    const rows = await getDomains();
+    const map = readJson(runtimePath('domain-map.json'));
+    const applied = map && map.domains ? new Set(Object.keys(map.domains).map((d) => d.toLowerCase())) : null;
+    const registry = readJson(runtimePath('apps.json'));
+    const apps = Object.values(registry?.apps ?? {});
+    const statuses = await Promise.all(rows.map((row) => describeDomain(row, { applied, apps, probeTcp, inspectFolder })));
+    res.json({ success: true, statuses, count: statuses.length, checkedAt: new Date().toISOString() });
 });
 
 router.post('/delete-domain', async (req, res) => {

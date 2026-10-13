@@ -6,6 +6,7 @@ import { getNetgetDataDir } from '../utils/netgetPaths.js';
 import { isReservedLocalDomain } from '../modules/NetGetX/Domains/reservedDomains.ts';
 import { checkDoorConnections, type DoorConnection } from './doorConnections.js';
 import { registeredMonadPorts } from './doorConnectionPorts.js';
+import { checkRouteTarget } from './routeTargets.js';
 
 export interface DomainRoute {
     type: 'proxy' | 'server' | 'static';
@@ -68,6 +69,19 @@ export async function generateDomainMap(): Promise<string> {
                 : { enabled: false };
 
         const route: DomainRoute = { type, ssl };
+
+        // The projection is the last gate before the router: what the store refuses on the way in is refused here too
+        // (a record edited by hand, written by an older version). A route that fails is not projected, so the router
+        // never sees a destination the gateway itself would not have accepted.
+        {
+            const registeredPorts = registeredMonadPorts();
+            const wanted = type === 'static' ? row.target : row.target ?? '';
+            const checked = checkRouteTarget(type, wanted, { registeredPorts });
+            if (checked.ok === false && !(row.type === 'main_server')) {
+                console.warn(`[domain-map] ${key}: not projected (${checked.code}: ${checked.reason})`);
+                continue;
+            }
+        }
 
         if (type === 'static') {
             if (!row.target) continue;

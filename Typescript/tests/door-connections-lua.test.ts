@@ -55,6 +55,19 @@ local map = { domains = {
   ["fulltrailer.suis.local"] = { type = "server", target = "app:fulltrailer", connections = conns },
   ["other.suis.local"] = { type = "server", target = "app:polls-studio", connections = { { prefix = "/api/meta", target = "127.0.0.1:9004" } } },
 } }
+local function authz(app, method) local ok, why = dc.authorization_allows(app, method); return { ok = ok, why = why } end
+put("a_get_default", authz({}, "GET"))
+put("a_head_default", authz({}, "HEAD"))
+put("a_post_default", authz({}, "POST"))
+put("a_post_lower", authz({}, "post"))
+put("a_put_default", authz({}, "PUT"))
+put("a_patch_default", authz({}, "PATCH"))
+put("a_delete_default", authz({}, "DELETE"))
+put("a_post_required", authz({ exposure = { auth = { requiredForDestructive = true } } }, "POST"))
+put("a_post_declared_open", authz({ exposure = { auth = { requiredForDestructive = false } } }, "POST"))
+put("a_get_read_required", authz({ exposure = { auth = { requiredForRead = true } } }, "GET"))
+put("a_get_read_open", authz({ exposure = { auth = { requiredForRead = false, requiredForDestructive = true } } }, "GET"))
+put("a_post_loopback_is_not_auth", authz({ exposure = { visibility = "loopback", network = { allowLoopback = true } } }, "POST"))
 local function allowed(app, remote) local ok, status = dc.exposure_allows(app, remote); return { ok = ok, status = (not ok) and status or nil } end
 put("x_default_loopback", allowed({}, "127.0.0.1"))
 put("x_default_lan", allowed({}, "192.168.1.20"))
@@ -91,6 +104,16 @@ for (const [key, re] of Object.entries({
 }) as [string, RegExp][]) {
   assert.match(String(L[key]), re, `${key}: ${L[key]}`);
 }
+// what the app declared about authorization is a requirement of the operation; the gateway cannot check a session on a
+// connection yet, so an operation that requires one is refused (not waved through because the peer is loopback)
+assert.deepEqual(L.a_get_default, { ok: true });
+assert.deepEqual(L.a_head_default, { ok: true });
+for (const key of ['a_post_default', 'a_post_lower', 'a_put_default', 'a_patch_default', 'a_delete_default', 'a_post_required', 'a_post_loopback_is_not_auth']) {
+  assert.deepEqual(L[key], { ok: false, why: 'authorization_required' }, `${key}: refused`);
+}
+assert.deepEqual(L.a_post_declared_open, { ok: true }, 'an app that explicitly declares destructive operations need no authorization');
+assert.deepEqual(L.a_get_read_required, { ok: false, why: 'authorization_required' }, 'requiredForRead refuses a read');
+assert.deepEqual(L.a_get_read_open, { ok: true });
 // who may use a connection: the app's exposure policy, judged on the connecting address; no policy = loopback only
 assert.deepEqual(L.x_default_loopback, { ok: true });
 assert.deepEqual(L.x_default_lan, { ok: false, status: 403 }, 'an app with no policy is not served to the LAN');
@@ -117,14 +140,14 @@ const apps = [{
   metadata: { monadName: 'fulltrailer', namespace: FT_HOST, identity: FT_HOST, identity_hash: 'ft-identity',
     endpoint: 'http://127.0.0.1:4100', directEndpoint: 'http://127.0.0.1:4100', claimed_namespaces: [FT_HOST] },
 }];
-function door(uri: string, connections: unknown, extra: Record<string, unknown> = {}, remote = '127.0.0.1', appPatch: Record<string, unknown> = {}, target = 'app:fulltrailer') {
+function door(uri: string, connections: unknown, extra: Record<string, unknown> = {}, remote = '127.0.0.1', appPatch: Record<string, unknown> = {}, target = 'app:fulltrailer', method = 'GET') {
   const dir = fs.mkdtempSync(path.join(tmp, 'case-'));
   fs.mkdirSync(path.join(dir, 'runtime'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'runtime', 'apps.json'), JSON.stringify({ apps: { id0: { ...apps[0], ...appPatch } } }));
   fs.writeFileSync(path.join(dir, 'runtime', 'domain-map.json'), JSON.stringify({
     version: 1, domains: { [FT_HOST]: { type: 'server', target, ssl: { enabled: false }, connections, ...extra } },
   }));
-  const r = spawnSync(resty, [harness, handler, dir, FT_HOST, 'text/html'], { env: { ...process.env, NETGET_DATA_DIR: dir, HARNESS_URI: uri, HARNESS_REMOTE: remote }, encoding: 'utf8' });
+  const r = spawnSync(resty, [harness, handler, dir, FT_HOST, 'text/html'], { env: { ...process.env, NETGET_DATA_DIR: dir, HARNESS_URI: uri, HARNESS_REMOTE: remote, HARNESS_METHOD: method }, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout.trim().split('\n').pop() as string) as { exit?: number; exec?: string; target: string; identity: string; connection_target: string; connection_prefix: string; reason?: string; status?: number };
 }
@@ -187,6 +210,23 @@ const closed = { exposure: { enabled: true, visibility: 'loopback', network: { a
 assert.equal(fuelFrom(LAN_PEER, closed).exit, 403, 'visibility loopback wins over allowLan');
 assert.equal(fuelFrom('127.0.0.1', { exposure: { enabled: false } }).exit, 404, 'a disabled app');
 assert.equal(fuelFrom('127.0.0.1', { trust: 'guest' }).exit, 403, 'a guest app');
+// authorization declared by the app (FullTrailer's real policy: reads open, destructive requires a session)
+const real = { exposure: { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: false, allowWan: false },
+  auth: { requiredForRead: false, requiredForDestructive: true, mode: 'session', rolesAllowed: ['admin'] } } };
+const call = (uri: string, method: string, appPatch: Record<string, unknown>) => door(uri, conns, {}, '127.0.0.1', appPatch, 'app:fulltrailer', method);
+assert.equal(call('/api/fuel', 'GET', real).exec, '@door_connection', 'a read is open as declared');
+assert.equal(call('/uploads/a.png', 'GET', real).exec, '@door_connection');
+for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+  const r = call('/api/upload', method, real);
+  assert.equal(r.exit, 403, `${method} requires a session: refused although the peer is loopback`);
+  assert.equal(r.reason, 'authorization_required');
+  assert.equal(r.exec, undefined, `${method}: never reaches the service`);
+  assert.equal(r.target, '', `${method}: and is not handed to the monad`);
+}
+assert.equal(call('/api/upload', 'POST', {}).exit, 403, 'no declaration = required (fail closed)');
+assert.equal(call('/api/upload', 'POST', { exposure: { auth: { requiredForDestructive: false } } }).exec, '@door_connection', 'only an explicit declaration opens it');
+assert.equal(call('/api/fuel', 'GET', { exposure: { enabled: true, visibility: 'loopback', auth: { requiredForRead: true } } }).exit, 403, 'a read that the app declared as requiring a session');
+assert.equal(call('/api/upload', 'POST', real).reason, 'authorization_required');
 // a forwarded header is not a peer
 {
   const r = door('/api/fuel', conns, {}, WAN_PEER);

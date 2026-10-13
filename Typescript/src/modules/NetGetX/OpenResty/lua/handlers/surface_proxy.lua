@@ -287,7 +287,8 @@ local function answer_connection(route)
   if not ok then
     ngx.log(ngx.ERR, "surface_proxy: lib.door_connections is not installed; connections of ", host, " are not applied")
     if type(route.connections) == "table" and #route.connections > 0 then
-      ngx.status = 502
+      ngx.req.discard_body()
+    ngx.status = 502
       ngx.header["Content-Type"] = "application/json; charset=utf-8"
       ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", message = "door connections are not available on this gateway" }))
       return ngx.exit(502)
@@ -312,6 +313,7 @@ local function answer_connection(route)
       end
     end
     if not door_app then
+      ngx.req.discard_body()
       ngx.status = 503
       ngx.header["Content-Type"] = "application/json; charset=utf-8"
       ngx.say(cjson.encode({ ok = false, error = "app_not_available", prefix = decision.prefix,
@@ -321,6 +323,7 @@ local function answer_connection(route)
   end
   local allowed, denied_status = dc.exposure_allows(door_app or {}, ngx.var.remote_addr)
   if not allowed then
+    ngx.req.discard_body()
     ngx.status = denied_status or 403
     ngx.header["Content-Type"] = "application/json; charset=utf-8"
     ngx.say(cjson.encode({ ok = false, error = "connection_forbidden", prefix = decision.prefix,
@@ -329,10 +332,22 @@ local function answer_connection(route)
   end
   if decision.error then
     ngx.log(ngx.WARN, "surface_proxy: connection ", decision.prefix, " of ", host, " not applied: ", decision.error)
+    ngx.req.discard_body()
     ngx.status = 502
     ngx.header["Content-Type"] = "application/json; charset=utf-8"
     ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", prefix = decision.prefix, message = decision.error }))
     return ngx.exit(502)
+  end
+  -- What the app declared about authorization is a requirement of the operation (lib/door_connections.lua): the gateway
+  -- cannot verify a session on a connection yet, so a destructive operation is refused, not waved through.
+  local auth_ok, auth_why = dc.authorization_allows(door_app or {}, ngx.req.get_method())
+  if not auth_ok then
+    ngx.req.discard_body()
+    ngx.status = 403
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = auth_why, prefix = decision.prefix,
+      message = "This operation requires an authorized session that the gateway cannot verify on a connection yet." }))
+    return ngx.exit(403)
   end
   ngx.var.door_connection_target = decision.upstream
   ngx.var.door_connection_prefix = decision.prefix

@@ -272,9 +272,19 @@ do
         ngx.header["Content-Type"] = "application/json; charset=utf-8"
         if decision.error then
           ngx.log(ngx.WARN, "monad_proxy: connection ", decision.prefix, " of app ", wanted, " not applied: ", decision.error)
+          ngx.req.discard_body()
           ngx.status = 502
           ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", prefix = decision.prefix, message = decision.error }))
           return ngx.exit(502)
+        end
+        -- What the app declared about authorization is a requirement of the operation (lib/door_connections.lua).
+        local auth_ok, auth_why = dc.authorization_allows(app, ngx.req.get_method())
+        if not auth_ok then
+          ngx.req.discard_body()
+          ngx.status = 403
+          ngx.say(cjson.encode({ ok = false, error = auth_why, prefix = decision.prefix,
+            message = "This operation requires an authorized session that the gateway cannot verify on a connection yet." }))
+          return ngx.exit(403)
         end
         ngx.var.door_connection_target = decision.upstream
         ngx.var.door_connection_prefix = decision.prefix
@@ -287,6 +297,7 @@ do
     for _, route in pairs(door_map.domains or {}) do
       if type(route) == "table" and type(route.connections) == "table" and #route.connections > 0
          and tostring(route.target or ""):lower() == "app:" .. wanted then
+        ngx.req.discard_body()
         ngx.status = 502
         ngx.header["Content-Type"] = "application/json; charset=utf-8"
         ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", message = "door connections are not available on this gateway" }))

@@ -105,7 +105,10 @@ await listen(monad, monadPort); await listen(appServer, serverPort); await liste
 const ROOT = 'suis-macbook-air.local';
 const FT_HOST = `fulltrailer.${ROOT}`;
 const now = Date.now();
-const regEntry = (name: string, port: number, exposure: Record<string, unknown> = { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: false, allowWan: false } }) => ({
+// The main loop runs with a policy that EXPLICITLY declares destructive operations open (auth.requiredForDestructive:
+// false); the cases below it run the real FullTrailer-like policy (true) and the undeclared one, which are refused.
+const OPEN_AUTH = { requiredForRead: false, requiredForDestructive: false, mode: 'session' };
+const regEntry = (name: string, port: number, exposure: Record<string, unknown> = { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: false, allowWan: false }, auth: OPEN_AUTH }) => ({
   name: `monad:${name}`, kind: 'monad', host: '127.0.0.1', port, protocol: 'http', ttlMs: 600000, lastSeenMs: now, trust: 'peer',
   tags: ['monad'], exposure,
   metadata: { monadName: name, namespace: `${name}.${ROOT}`, identity: `${name}.${ROOT}`, identity_hash: `${name}-id`,
@@ -164,7 +167,7 @@ assert.ok(await listening(), 'the disposable OpenResty is up');
 type Res = { status: number; type: string; text: string; json: any; headers: http.IncomingHttpHeaders };
 function request(opts: { host: string; path: string; method?: string; headers?: Record<string, string>; body?: Buffer; via?: string }): Promise<Res> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: opts.via ?? '127.0.0.1', port: nginxPort, path: opts.path, method: opts.method ?? 'GET', headers: { Host: opts.host, ...(opts.headers ?? {}) } }, (res) => {
+    const req = http.request({ host: opts.via ?? '127.0.0.1', port: nginxPort, path: opts.path, method: opts.method ?? 'GET', headers: { Host: opts.host, ...(opts.body ? { 'Content-Length': String(opts.body.length) } : {}), ...(opts.headers ?? {}) } }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
@@ -272,7 +275,7 @@ try {
     assert.equal((await host('/', { via: lanIp, headers: { Accept: 'text/html' } })).status, 200);
 
     // policy: the operator admits the LAN -> the same peer is served, and the service sees ITS address, not 127.0.0.1
-    writeApps({ enabled: true, visibility: 'lan', network: { allowLoopback: true, allowLan: true, allowWan: false } });
+    writeApps({ enabled: true, visibility: 'lan', network: { allowLoopback: true, allowLan: true, allowWan: false }, auth: OPEN_AUTH });
     const lanOk = await host('/api/fuel', { via: lanIp, headers: { 'X-Forwarded-For': '9.9.9.9' } });
     assert.equal(lanOk.json?.who, 'server', 'visibility lan admits the LAN peer');
     assert.equal(lanOk.json.headers['x-forwarded-for'], lanIp, 'the service sees the real peer (not loopback, not the forged one)');
@@ -286,6 +289,87 @@ try {
     console.log('door-connections-openresty: no non-loopback IPv4 on this machine; the LAN-peer cases are skipped');
   }
   assert.equal((await host('/api/fuel')).json?.who, 'server', 'loopback peer, default policy: served');
+
+  // ── authorization the app declared: the gateway cannot verify a session on a connection, so it refuses ───────────
+  // FullTrailer's real policy: reads open, destructive requires an admin session. Loopback is where a request comes from,
+  // not who it is: the upload is refused to a loopback peer, on both doors, and never reaches the service.
+  const hits = { n: 0 };
+  appServer.on('request', () => { hits.n += 1; });
+  const REAL = { enabled: true, visibility: 'loopback', network: { allowLoopback: true, allowLan: false, allowWan: false },
+    auth: { requiredForRead: false, requiredForDestructive: true, mode: 'session', rolesAllowed: ['admin'], requiredForControl: true } };
+  writeApps(REAL);
+  for (const [door, call] of [['host door', host], ['/apps/ door', mount]] as const) {
+    hits.n = 0;
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      const r = await call('/api/upload', { method, headers: { 'Content-Type': 'application/octet-stream' }, body: Buffer.alloc(1024, 1) });
+      assert.equal(r.status, 403, `${door}: ${method} refused`);
+      assert.equal(r.json?.error, 'authorization_required', `${door}: ${method}`);
+      assert.notEqual(r.json?.who, 'server');
+      assert.ok(!isHtmlOfApp(r));
+    }
+    assert.equal(hits.n, 0, `${door}: the service saw none of them`);
+    // reads stay open as declared (requiredForRead: false)
+    const readOk = await call('/api/fuel');
+    assert.equal(readOk.json?.who, 'server', `${door}: a read is served (got ${readOk.status} ${readOk.text.slice(0, 160)})`);
+    assert.equal((await call('/uploads/a.png')).json?.who, 'server', `${door}: /uploads is a read`);
+    assert.equal(hits.n, 2);
+  }
+  // a refused request that carries a body must not poison the connection it came on: the NEXT request on the same
+  // (keep-alive) socket is parsed normally. Raw sockets, both framings (a browser sends Content-Length; others chunk).
+  const rawSequence = (hostName: string, base: string, first: string, second: string): Promise<number[]> => new Promise((resolve, reject) => {
+    const sock = net.connect(nginxPort, '127.0.0.1');
+    const statuses: number[] = [];
+    let buf = '';
+    let sent = 1;
+    sock.on('error', reject);
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('latin1');
+      for (;;) {
+        const head = buf.indexOf('\r\n\r\n');
+        if (head < 0) return;
+        const m = /^HTTP\/1\.1 (\d{3})/.exec(buf);
+        if (!m) { statuses.push(-1); sock.destroy(); resolve(statuses); return; }
+        // a response is framed by Content-Length or by chunks (ngx.say answers are chunked)
+        const headers = buf.slice(0, head);
+        let end: number;
+        if (/transfer-encoding:\s*chunked/i.test(headers)) {
+          const term = buf.indexOf('\r\n0\r\n\r\n', head + 2);
+          if (term < 0) return;
+          end = term + 7;
+        } else {
+          const len = Number(/content-length: (\d+)/i.exec(headers)?.[1] ?? 0);
+          if (buf.length < head + 4 + len) return;
+          end = head + 4 + len;
+        }
+        statuses.push(Number(m[1]));
+        buf = buf.slice(end);
+        if (sent === 1) { sent = 2; sock.write(second); } else { sock.destroy(); resolve(statuses); return; }
+      }
+    });
+    sock.on('close', () => resolve(statuses));
+    sock.write(first);
+    setTimeout(() => { sock.destroy(); resolve(statuses); }, 4000);
+  });
+  for (const [label, hostName, base] of [['host door', FT_HOST, ''], ['/apps/ door', 'localhost', '/apps/fulltrailer']] as const) {
+    const body = 'x'.repeat(2048);
+    const get = `GET ${base}/api/fuel HTTP/1.1\r\nHost: ${hostName}\r\nAccept: application/json\r\n\r\n`;
+    const withLength = `POST ${base}/api/upload HTTP/1.1\r\nHost: ${hostName}\r\nContent-Type: application/octet-stream\r\nContent-Length: ${body.length}\r\n\r\n${body}`;
+    const chunked = `POST ${base}/api/upload HTTP/1.1\r\nHost: ${hostName}\r\nContent-Type: application/octet-stream\r\nTransfer-Encoding: chunked\r\n\r\n${body.length.toString(16)}\r\n${body}\r\n0\r\n\r\n`;
+    assert.deepEqual(await rawSequence(hostName, base, withLength, get), [403, 200], `${label}: refused POST (Content-Length) then GET on the same connection`);
+    assert.deepEqual(await rawSequence(hostName, base, chunked, get), [403, 200], `${label}: refused POST (chunked) then GET on the same connection`);
+  }
+
+  // no declaration at all: destructive is required (fail closed)
+  writeApps({ enabled: true, visibility: 'loopback', network: { allowLoopback: true } });
+  assert.equal((await host('/api/upload', { method: 'POST', body: Buffer.alloc(10, 1) })).json?.error, 'authorization_required', 'undeclared: refused');
+  assert.equal((await host('/api/fuel')).json?.who, 'server', 'undeclared: a read is served');
+  // a read the app declared as requiring a session
+  writeApps({ ...REAL, auth: { ...REAL.auth, requiredForRead: true } });
+  const readBlocked = await host('/api/fuel');
+  assert.equal(readBlocked.status, 403);
+  assert.equal(readBlocked.json?.error, 'authorization_required');
+  assert.equal((await mount('/uploads/a.png')).json?.error, 'authorization_required');
+  writeApps();   // back to the main loop's policy
 
   // ── connections that are not allowed: an error, never the monad answering in their place ──────────────────────
   const refused: Array<[string, unknown]> = [
@@ -327,7 +411,8 @@ try {
 } finally {
   nginx.kill();
   monad.close(); appServer.close(); otherMonad.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  if (process.env.DOOR_KEEP === '1') console.log(`kept: ${tmp}`);
+  else fs.rmSync(tmp, { recursive: true, force: true });
 }
 console.log('door-connections-openresty: ok');
 process.exit(0);

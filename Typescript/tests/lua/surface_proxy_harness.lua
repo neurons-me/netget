@@ -20,6 +20,7 @@ ngx = {
   print = function(...) end,
   exit = function(code) out.exit = code; error({ __exit = true }) end,
   exec = function(location) out.exec = location; error({ __exit = true }) end,
+  req = { get_method = function() return os.getenv("HARNESS_METHOD") or "GET" end, discard_body = function() out.discarded = true end },
 }
 setmetatable(ngx, { __index = function(_, k) return nil end })
 local ok, err = pcall(dofile, handler)

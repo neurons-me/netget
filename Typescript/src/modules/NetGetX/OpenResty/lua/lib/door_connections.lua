@@ -146,6 +146,29 @@ function M.exposure_allows(app, remote_addr)
   return false, 403
 end
 
+-- What the app DECLARED about authorization (its exposure policy's `auth` block: requiredForRead,
+-- requiredForDestructive, mode: "session", rolesAllowed) is a requirement on the operation, not a hint. A connection
+-- cannot verify a session or a role yet (a proof for a multipart upload is not built), so the gateway does not
+-- pretend to: an operation whose declared requirement cannot be checked is REFUSED, whatever the peer's address is.
+-- Loopback is where a request comes from, not who it is.
+--   * a read (GET/HEAD/OPTIONS) is refused when `auth.requiredForRead == true`;
+--   * anything else (POST/PUT/PATCH/DELETE: it changes something) is refused unless the app explicitly declared
+--     `auth.requiredForDestructive == false`. No declaration = required (fail closed).
+--   returns true            allowed
+--   returns false, "authorization_required"
+local READ_METHODS = { GET = true, HEAD = true, OPTIONS = true }
+function M.authorization_allows(app, method)
+  local exposure = type(app) == "table" and type(app.exposure) == "table" and app.exposure or {}
+  local auth = type(exposure.auth) == "table" and exposure.auth or {}
+  local verb = tostring(method or ""):upper()
+  if READ_METHODS[verb] then
+    if auth.requiredForRead == true then return false, "authorization_required" end
+    return true
+  end
+  if auth.requiredForDestructive == false then return true end
+  return false, "authorization_required"
+end
+
 -- Connections of the domain-map route whose destination is `app:<name>` (the /apps/<name>/ door), or {}.
 -- A host can have one record; if several records point at the same app, the first one with connections (in host
 -- name order, so the answer does not depend on table iteration order) is used.

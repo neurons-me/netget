@@ -1,6 +1,6 @@
 # Named spaces: `<name>.localhost`
 
-Status: **built and tested on disposable infrastructure; not installed, not in any release.** Activating it is a
+Status: **built and tested on disposable infrastructure; not installed, not in any release; do not activate until the monad isolation fix runs.** Activating it is a
 configuration change (one more server block, a reload), separate from everything activated so far.
 
 ## What it is
@@ -14,10 +14,11 @@ For a host `<name>.<root>` the gateway decides in this order:
 | --- | --- | --- |
 | 1 | The operator **declared** a route for that host (patch bay: domain -> app, folder, service, a surface) | that destination. A declared destination that is down is "not available"; it never falls back to the root. |
 | 2 | No route, a monad **declares** the host as its own (its namespace, or a name it lists) | that monad. Two identities that do: a conflict, not resolved by recency. |
-| 3 | No route, nobody declares it, a monad **is the nearest enclosing root** of the address (`localhost` for `whatever.localhost` and `a.b.localhost`) | that root monad, handed the request **as it came** (the `Host` is not rewritten to the root's own). It resolves the address with its full context and answers per what it discloses. |
-| 4 | No monad is root for the address at all | a neutral shell: HTTP 404, `Sin contenido disponible para esta dirección.` (JSON: `{"ok":false,"error":"no_content_available"}`). It states nothing about whether the name is claimed or exists, and writes nothing. |
+| 3 | No route, nobody declares it, and the address sits under a root that is **authorized** (see "Authorized roots") | the monad of the nearest authorized root **whose identity is the authorized one**, handed the request **as it came** (the `Host` is not rewritten to the root's own). It resolves the address with its full context and answers per what it discloses. |
+| 4 | No authorized root for the address (including: a monad announced itself as its root, but nothing authorizes it) | a neutral shell: HTTP 404, `Sin contenido disponible para esta dirección.` (JSON: `{"ok":false,"error":"no_content_available"}`). It states nothing about whether the name is claimed or exists, and writes nothing. |
 
-If the nearest root is registered but not live, the answer is 503 (a state of the machine), not "no content".
+If the authorized root is registered under its identity but not live, the answer is 503 (a state of the machine), not
+"no content". A live monad that announces the same namespace under another identity is never asked.
 
 What a name never gets:
 
@@ -30,14 +31,20 @@ What a name never gets:
 
 ## Where it lives
 
-* `lua/handlers/surface_proxy.lua`: steps 1-4. The nearest enclosing root is the longest monad namespace that is a proper
+* `lua/handlers/surface_proxy.lua`: steps 1-4. The nearest enclosing authorized root is the longest root that is a proper
   suffix of the host **on a label boundary** (`evillocalhost` is not under `localhost`). It replaces the old rule that
-  only knew roots with two or more labels (which is why `whatever.localhost` was a 503: its "root" was itself).
+  only knew roots with two or more labels (which is why `whatever.localhost` was a 503: its "root" was itself) and the
+  rule that took ANY registered monad's namespace as a root.
+* `runtime/authorizedRoots.ts` + `runtime/domainMap.ts`: the projection of the installation's root into
+  `domain-map.json` (`roots`), bound to the identity of the monad netget started. `kernel/domainStore.ts` refuses a
+  wildcard route of any other shape (`WILDCARD_SHAPE`).
 * `setNginxConfigRoutes.ts`: the `*.localhost` server block (port 80 only, loopback peers only, no https redirect).
-* Tests: `tests/surface-proxy-selection.test.ts` (section 9, the decision), `tests/named-spaces-localhost.test.ts`
-  (through a disposable OpenResty: declared route, root attends with the Host unchanged, neutral shell, root not live,
-  no root, nothing written by visiting, never the admin API, non-loopback peer refused). Both are red against the previous
-  selector and generator. `NAMED_SPACE_REAL_MONAD=1` runs the second against a disposable real monad as the root.
+* Tests: `tests/surface-proxy-selection.test.ts` (section 9, the decision), `tests/authorized-roots.test.ts` (the
+  projection), `tests/standalone-backend-gate.test.ts` (the real backend writes `roots` bound to its monad's identity and
+  refuses malformed wildcards), `tests/named-spaces-localhost.test.ts` (through a disposable OpenResty: declared route and
+  wildcard route, root attends with the Host unchanged, an announced-but-unauthorized root gets the neutral shell, an
+  impostor identity is not asked, root not live, nothing written by visiting, never the admin API, non-loopback peer
+  refused). They are red against the previous selector and generator. `NAMED_SPACE_REAL_MONAD=1` runs the second against a disposable real monad as the root.
 
 ## Contract between registry, netget and monad (2026-10-14; a draft to review, not built)
 
@@ -76,17 +83,28 @@ contract.
 3. The authorized monad of the nearest enclosing authorized root, handed the request as it came.
 4. Nothing authorized for the address: the neutral shell (404), asserting nothing about claims.
 
-### Reusing the gateway's existing authority for "authorized roots" (reviewed; nothing added)
+### Authorized roots (built, 2026-10-14; on disposable infrastructure only)
 
-The gateway already has a signed, owner-only authority record per installation (`daemon.gateways.<gatewayId>` in the
-monad, `gatewayAuthority.ts`): every mutation is verified in the monad with two separate checks, "vigencia" (the signing
-key is active now) and "autorización" (that identity is this gateway's owner, per the branch's own state), and netget only
-reads the confirmed state back to materialize its cache. `netget.main.server.name` is already bound to a gateway that way
-(`gateway-set-main-server`: owner only, replay-protected, one gateway per name). An authorized-roots declaration fits that
-shape without a second registry: an owner-signed operation of the same kind stores `roots` in the gateway's record, and
-the default, with nothing declared, is the root this installation is already configured with (the one
-`isNamespaceLocalToThisInstallation` recognizes), bound to the monad netget started. Changing it is a signed owner act; a
-monad's own announcement can never add one.
+A root is a name this gateway may hand an address to. Where it comes from, in order of authority, and nothing else:
+
+1. **The operator's wildcard route.** `*.<suffix>` (and only that shape: one leading `*` label, then literal labels) is a
+   route like any other, written through the same gate (`/add-domain`: owner session or a capability) and visible in the
+   patch bay. It wins over everything that is not an exact route, longest suffix first. A wildcard names a destination;
+   it does not create an owner of anything under it.
+2. **The installation's own root.** The root this installation is configured with (`getGatewayRootNamespace()`, the one
+   `isNamespaceLocalToThisInstallation` recognizes), bound to the `identity_hash` of the monad netget itself started. The
+   projection writes `roots[<namespace>] = { app, identity, source: "installation" }` into `domain-map.json`; the Lua
+   selector serves a root only from a registration whose identity IS that identity and whose app is that app.
+
+What cannot widen it: a monad's announcement (`namespace`, `claimed_namespaces`, aliases). It is capability: a live
+announcement under another identity is ignored (503 while the authorized one is down, never "the impostor answers"), and
+an announcement that no authorization names selects nothing (404). The same app name held by two identities is a conflict
+page, not recency. Aliases are authorized only as operator routes; step 2 (a monad declaring the exact host as its own)
+remains local-registration trust and is NOT an authorization of a root.
+
+Reuse of the gateway's signed authority record (`daemon.gateways.<gatewayId>`, owner-only, "vigencia" + "autorización")
+for declaring additional roots remains the intended next step; today the operator's route store is the declaration, and
+it is the same owner-gated surface.
 
 ### Not included, on purpose
 
@@ -95,12 +113,13 @@ heir of `equipo.localhost`, until a delegation is declared and signed); a second
 `*.localhost`. The firma of what a client signs stays verified over the bytes it sent (`signedNamespaceSpelling`): the
 normalization used to RESOLVE an address is a lookup concern and must never alter what was signed.
 
-### What has to be proven before netget changes (point 3, after review)
+### What was proven (point 3)
 
-Full context through the root (done for one level), aliases, nested names (the resolver decides their meaning),
-conflicts rejected without choosing, announced-but-unauthorized roots ignored, records without `roots` (older monads)
-treated as announcing only their own namespace and subject to the same authorization, the operator's connections first,
-and the signature checks unchanged.
+Full context through the root (one level), conflicts rejected without choosing, announced-but-unauthorized roots ignored
+(404), an impostor identity not asked, an authorized root that is down is 503, the operator's connections first, a
+wildcard declared by the operator wins over the installation's default, the suffix boundary, and the signature checks
+unchanged (the selector never touches what a client signed). Not proven here, deliberately: aliases as a separate record,
+mesh trust across hosts, certificates, delegation between names.
 
 ## Limits, stated
 
@@ -111,14 +130,28 @@ and the signature checks unchanged.
   namespace `whatever.localhost` (an empty tree, 404 for any path under it, an HTML shell titled with the address). A
   **nested** name (`a.b.localhost`) reaches the root with its Host intact but the monad resolves it as `unknown`. That is a
   gap of the monad's resolver (one handle under a root), recorded by the test, not of the routing.
-* **The root's `GET /` used to carry the root's user directory under any name. That was a defect, and it is fixed in the
-  monad (branch `fix/namespace-root-isolation`, `fc5e4630`; not merged, not in any release).** The cause: a host the monad
-  does not serve resolves to `unknown`, and the kernel maps every namespace it does not know onto its own root's storage,
-  so a name nobody had created listed everyone under the root. Now the directory is shown only to the root's own address
-  and to a read by network address (an IP literal with no forwarded host: how the GUI's users table and search read it);
-  an address that is one user receives that user's own row; any other name, none. Measured with the release's resolver:
-  `localhost` and the IP -> `[alice, bob]`; `alice.localhost` -> `[alice]`; `whatever.localhost` and `a.b.localhost` -> `[]`.
-  Named spaces are NOT to be activated before that monad change is part of what runs.
+* **The root's data used to be delivered under any name. That was a defect, fixed in the monad (branch
+  `fix/namespace-root-isolation`, `fc5e4630` and `860a95e5`; not merged, not in any release).** The cause: a host the
+  monad does not serve resolves to `unknown`, and the kernel maps every namespace it does not know onto its own root's
+  storage. Two deliveries followed: the directory of users in `GET /` (any name listed everyone under the root), and any
+  datum read by path (`/profile/motto` under `whatever.localhost`, or `/@root/profile/motto`, whose observer segment made a
+  foreign constant that also collapsed onto the root). Now:
+  * the directory is shown only to the root's own address and to a read by network address; an address that is one user
+    receives that user's own row; any other name, none;
+  * a path read under a name that resolves to `unknown`, or under a foreign constant that would collapse onto the root, is
+    404 (`isForeignNamespaceReadCollapsingToRoot`), not the root's value;
+  * the whole `GET /` response was checked (users, blocks, the datum, other users' names), not only the `users` field.
+  Measured with the release's resolver: `localhost` and the IP -> `[alice, bob]`; `alice.localhost` -> `[alice]`;
+  `whatever.localhost` and `a.b.localhost` -> `[]`. Named spaces are NOT to be activated before this monad change is part
+  of what runs.
+* **The view by network address is a public view, not an exception to permissions.** A request that arrives by an IP
+  literal with no forwarded name (the GUI's users table, an operator's `curl 127.0.0.1`) names no space; the monad answers
+  as itself, with what its root already publishes. It grants no privilege: a write by address passes the same signature,
+  claim and reserved-path guards as any other (tested: `users.<handle>.*` and `daemon.gateways.*` are refused), and what a
+  path discloses is decided per path as for any read.
+* **A nested name (`a.b.localhost`) is not multi-level resolution.** It no longer leaks data (it resolves to `unknown`
+  and receives nothing of the root), and it reaches the root with its Host intact, but the monad does not yet resolve it
+  as a space of its own. That is the resolver's job, not routing, and no inheritance between levels is implied.
 * **Browser origins.** Each name is its own origin: the panel's session (in `localhost`) is not shared with
   `whatever.localhost`. That isolation is intended; the admin panel stays on `localhost`.
 * **Canonical spelling.** `<name>.<machine>.local` is the same root spelled canonically; this change does not cover it.

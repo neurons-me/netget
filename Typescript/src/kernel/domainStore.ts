@@ -36,6 +36,7 @@
 import { parseStoredDoorConnections, checkDoorConnections, serializeDoorConnections, type DoorConnection } from '../runtime/doorConnections.js';
 import { registeredMonadPorts } from '../runtime/doorConnectionPorts.js';
 import { checkRouteTarget } from '../runtime/routeTargets.js';
+import { isValidDomainPattern } from '../runtime/authorizedRoots.js';
 import { getNetgetMonadOrigin, getGatewayRootNamespace } from './netgetMonadProcess.js';
 import { writeToMonad, readFromMonad } from './monadHttpClient.js';
 
@@ -241,6 +242,9 @@ export async function registerDomain(
   projectPath?: string,
   owner?: string,
 ): Promise<void> {
+  if (!isValidDomainPattern(domain)) {
+    throw new RouteTargetError('WILDCARD_SHAPE', 'un comodín solo es válido como *.<nombre> (un solo * al inicio, luego etiquetas)');
+  }
   const key = domainKey(domain);
   const existingOwner = await resolveOwnerForKey(key);
   if (existingOwner) throw new Error(`The domain ${domain} already exists.`);

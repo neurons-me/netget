@@ -3,19 +3,23 @@
 --
 -- Selection, strongest first (the registry says WHERE a monad is and whether it is alive; it does not decide which
 -- host it serves unless nothing else does):
---   1. A DECLARED route for this exact host in runtime/domain-map.json (the domain store: panel / `netget routing`).
+--   1. A DECLARED route for this host in runtime/domain-map.json (the domain store: panel / `netget routing`): the exact
+--      name first, else the longest wildcard `*.<suffix>` the operator declared.
 --      `app:<name>` is resolved by app name against the registry, live by TTL, exactly as the main routing table does.
 --      A declared target that is not available is "not available": it never falls back to another monad.
 --   2. Monads that DECLARE the host as their own (canonical namespace/identity, publicHost, domain, aliases, hosts,
 --      domains, claimed_namespaces). One identity: it serves (most recent registration of that identity). More than
 --      one distinct identity and no declared route: a CONFLICT is answered, not resolved by recency or trust.
---   3. Nobody declares the host (a handle under a root): only a monad that IS the nearest enclosing root may answer
---      for it, and it receives the request as it came (the Host is not rewritten to the root's own): it resolves the
---      address with its full context. This is how `<name>.localhost` is attended; a one-label root is a root like any
---      other. Never the root's own surface in place of the address, and never the admin block (that is an exact name).
---      Several identities that are all the nearest root: a conflict, as in 2.
---   4. No monad is root for the address at all: a neutral "no content available" (404). It says nothing about whether
---      the name is claimed or exists, and visiting creates nothing.
+--   3. Nobody declares the host (a name under a root): only the monad AUTHORIZED for the nearest enclosing root may
+--      answer for it, and it receives the request as it came (the Host is not rewritten to the root's own): it resolves
+--      the address with its full context. A root is authorized by the operator (a wildcard route `*.<root>`, in 1) or by
+--      the installation (domain-map.json `roots`: the gateway's own configured root, bound to the identity of the monad
+--      it started). What a monad ANNOUNCES -- its namespace, its aliases -- is capability: it never makes it the
+--      destination of a root, and a newer monad announcing the same root does not replace the authorized identity. The
+--      authorized monad being down is "not available", never someone else. Never the root's own surface in place of the
+--      address, and never the admin block (that is an exact name).
+--   4. Nobody is authorized for the address at all: a neutral "no content available" (404). It says nothing about
+--      whether the name is claimed or exists, and visiting creates nothing.
 --   A declared route may carry CONNECTIONS (lib/door_connections.lua): path prefixes the operator sent to a service of the
 --   app that is not its monad (FullTrailer's own server at /api/fuel). They are checked before the destination answers;
 --   a matching one is answered by that service or by a JSON error, never by the monad or the app's HTML.
@@ -109,22 +113,6 @@ local function declares_host(meta, target)
   if table_has_host(meta.claimedNamespaces, target) then return true end
   if table_has_host(meta.claimed_namespaces, target) then return true end
   return false
-end
-
--- The monad IS a root of the host (its canonical identity/namespace is a proper suffix of the host, on a label
--- boundary): `localhost` is the root of `whatever.localhost` and of `a.b.localhost`; `fulltrailer.<machine>.local` is the
--- root of `x.fulltrailer.<machine>.local`. Returns the length of that name (the longest is the nearest root), or nil.
--- Not a monad that merely lists the root among its tags, and not a substring: `evillocalhost` is not under `localhost`.
-local function root_depth(meta, host)
-  if type(meta) ~= "table" or not host or host == "" then return nil end
-  local best
-  for _, key in ipairs({ meta.namespace, meta.identity }) do
-    local n = normalize_host(key)
-    if n ~= "" and #host > #n + 1 and host:sub(-(#n + 1)) == "." .. n then
-      if not best or #n > best then best = #n end
-    end
-  end
-  return best
 end
 
 -- The monad registers a loopback address; `localhost` as a name would be looked up by nginx's (public) resolver and
@@ -302,16 +290,69 @@ end
 --       panel and `netget routing` write). It is the authority: the monad registry supplies where the target is and
 --       whether it is alive, never which host it serves. A declared target that is not available is "not available",
 --       not a reason to fall back to some other monad.
-local function declared_route(for_host)
+-- domain-map.json, read once per request.
+local _map_loaded, _map
+local function load_map()
+  if _map_loaded then return _map end
+  _map_loaded = true
   local rawMap = read_file(getNetgetDataDir() .. "/runtime/domain-map.json")
   if not rawMap or rawMap == "" then return nil end
   local okm, map = pcall(cjson.decode, rawMap)
-  if not okm or type(map) ~= "table" or type(map.domains) ~= "table" then return nil end
-  local route = map.domains[for_host]
+  if okm and type(map) == "table" then _map = map end
+  return _map
+end
+
+-- `*.<name>` and nothing else: one leading wildcard label, then plain labels. Anything else is not a route.
+local function wildcard_suffix(key)
+  if type(key) ~= "string" then return nil end
+  local suffix = key:match("^%*%.([%w%-%.]+)$")
+  if not suffix or suffix:find("..", 1, true) or suffix:sub(1, 1) == "." or suffix:sub(-1) == "." then return nil end
+  if suffix:find("*", 1, true) then return nil end
+  return suffix:lower()
+end
+
+-- Is `name` a proper descendant of `suffix` on a label boundary? (`evillocalhost` is not under `localhost`.)
+local function under(name, suffix)
+  return #name > #suffix + 1 and name:sub(-(#suffix + 1)) == "." .. suffix
+end
+
+local function usable_route(route)
   if type(route) ~= "table" then return nil end
   if route.type ~= "proxy" and route.type ~= "server" then return nil end
   if type(route.target) ~= "string" or route.target == "" then return nil end
   return route
+end
+
+local function declared_route(for_host)
+  local map = load_map()
+  if not map or type(map.domains) ~= "table" then return nil end
+  local exact = usable_route(map.domains[for_host])
+  if exact then return exact end
+  -- no exact route: the longest wildcard the operator declared that covers the host
+  local best, best_len
+  for key, route in pairs(map.domains) do
+    local suffix = wildcard_suffix(key)
+    if suffix and under(for_host, suffix) and usable_route(route) and (not best_len or #suffix > best_len) then
+      best, best_len = route, #suffix
+    end
+  end
+  return best
+end
+
+-- The roots the installation itself authorizes (domain-map.json `roots`, written by the gateway from its own configured
+-- root and the identity of the monad it started): the nearest enclosing one, as { root, app, identity }, or nil.
+local function authorized_root(for_host)
+  local map = load_map()
+  if not map or type(map.roots) ~= "table" then return nil end
+  local best, best_len
+  for root, entry in pairs(map.roots) do
+    local name = tostring(root):lower()
+    if type(entry) == "table" and type(entry.identity) == "string" and entry.identity ~= ""
+       and under(for_host, name) and (not best_len or #name > best_len) then
+      best, best_len = { root = name, app = tostring(entry.app or ""):lower(), identity = entry.identity }, #name
+    end
+  end
+  return best
 end
 
 -- A connection of the door answers a request before the door's main destination does (see lib/door_connections.lua).
@@ -396,7 +437,7 @@ if not host_is_ip then
     answer_connection(route)
     if declared:sub(1, 4) == "app:" then
       local want = declared:sub(5):lower()
-      local best
+      local best, identities, seen_identity = nil, {}, {}
       for _, app in pairs(registry.apps) do
         local meta = app.metadata or {}
         local name = tostring(app.name or ""):lower()
@@ -405,13 +446,22 @@ if not host_is_ip then
         if named and is_live(app) then
           local ep = endpoint_of(meta)
           if not ep and app.port then ep = "http://" .. (app.host or "127.0.0.1") .. ":" .. tostring(app.port) end
-          if ep and (not best or (tonumber(app.lastSeenMs) or 0) > best.lastSeen) then
-            best = { ep = ep, lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta) }
+          if ep then
+            local id = identity_of(meta) or "(no identity)"
+            if not seen_identity[id] then seen_identity[id] = true; table.insert(identities, id) end
+            if not best or (tonumber(app.lastSeenMs) or 0) > best.lastSeen then
+              best = { ep = ep, lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta) }
+            end
           end
         end
       end
       if not best then
         return send_no_monad_page("declared target " .. declared .. " for " .. host .. " is not available", true)
+      end
+      -- One app name, one identity. Several live identities under the same name is not something recency may settle:
+      -- the destination the operator wrote would silently become whichever registered last.
+      if #identities > 1 then
+        return send_conflict_page(identities)
       end
       route_to(best.ep, best.identity)
       return
@@ -424,7 +474,7 @@ if not host_is_ip then
 end
 
 -- ── 2. No declared route. Select by what monads DECLARE as their own (never by tags).
-local exact, root_candidates = {}, {}
+local exact = {}
 for _, app in pairs(registry.apps) do
   local meta = app.metadata
   if type(meta) == "table" and endpoint_of(meta) then
@@ -434,12 +484,6 @@ for _, app in pairs(registry.apps) do
       if entry.live then table.insert(exact, entry) end
     elseif declares_host(meta, host) then
       table.insert(exact, entry)
-    else
-      local depth = root_depth(meta, host)
-      if depth then
-        entry.depth = depth
-        table.insert(root_candidates, entry)
-      end
     end
   end
 end
@@ -480,30 +524,32 @@ if #exact > 0 then
   return
 end
 
--- ── 3. Nobody declares this host: it is a name under a root. Only the monad that IS the nearest enclosing root may attend
---      it, with the request as it came (full context). Never the root's own surface in its place.
-local deepest = 0
-for _, c in ipairs(root_candidates) do if c.depth > deepest then deepest = c.depth end end
-local nearest, live_roots, root_identities, seen_root = {}, {}, {}, {}
-for _, c in ipairs(root_candidates) do
-  if c.depth == deepest then
-    table.insert(nearest, c)
-    if c.live then
-      table.insert(live_roots, c)
-      local id = c.identity or "(no identity)"
-      if not seen_root[id] then seen_root[id] = true; table.insert(root_identities, id) end
+-- ── 3. Nobody declares this host: it is a name under a root. Only the monad AUTHORIZED for the nearest enclosing root
+--      may attend it, with the request as it came (full context). A registration that merely announces the root is not
+--      that monad: it must be the authorized identity.
+local authorized = (not host_is_ip) and authorized_root(host) or nil
+-- ── 4. Nobody is authorized for this address: the neutral shell (not a claim about the name).
+if not authorized then
+  return send_no_content()
+end
+local live_authorized, registered = {}, false
+for _, app in pairs(registry.apps) do
+  local meta = app.metadata
+  if type(meta) == "table" and endpoint_of(meta) and identity_of(meta) == authorized.identity then
+    local name = tostring(app.name or ""):lower()
+    local short = name:gsub("^monad:", "")
+    local names_it = authorized.app == "" or name == authorized.app or short == authorized.app
+      or tostring(meta.monadName or ""):lower() == authorized.app
+    if names_it then
+      registered = true
+      if is_live(app) then
+        table.insert(live_authorized, { ep = endpoint_of(meta), lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta) })
+      end
     end
   end
 end
--- ── 4. Nobody is root for this address: the neutral shell (not a claim about the name).
-if #nearest == 0 then
-  return send_no_content()
+if #live_authorized == 0 then
+  return send_no_monad_page("the monad authorized for " .. authorized.root .. " is " .. (registered and "not live" or "not available") .. ": " .. host, true)
 end
-if #live_roots == 0 then
-  return send_no_monad_page("the monad that serves " .. host .. " is not live", true)
-end
-if #root_identities > 1 then
-  return send_conflict_page(root_identities)
-end
-local best = most_recent(live_roots)
+local best = most_recent(live_authorized)
 route_to(best.ep, best.identity)

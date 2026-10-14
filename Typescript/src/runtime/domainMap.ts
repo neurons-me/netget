@@ -7,6 +7,7 @@ import { isReservedLocalDomain } from '../modules/NetGetX/Domains/reservedDomain
 import { checkDoorConnections, type DoorConnection } from './doorConnections.js';
 import { registeredMonadPorts } from './doorConnectionPorts.js';
 import { checkRouteTarget } from './routeTargets.js';
+import { installationRoots, isValidDomainPattern, type AuthorizedRoot } from './authorizedRoots.js';
 
 export interface DomainRoute {
     type: 'proxy' | 'server' | 'static';
@@ -27,6 +28,12 @@ export interface DomainMap {
     generatedAt: string;
     node: { hostname: string };
     domains: Record<string, DomainRoute>;
+    /**
+     * The roots the router may hand names to, and the identity authorized for each (runtime/authorizedRoots.ts). A monad
+     * that announces a root is not in here; absent or empty means nothing is authorized, and an address under a root
+     * gets the neutral shell. An operator's wildcard route is not here: it is a domain like any other.
+     */
+    roots?: Record<string, AuthorizedRoot>;
 }
 
 export function getDomainMapPath(): string {
@@ -57,6 +64,11 @@ export async function generateDomainMap(): Promise<string> {
         const key = row.domain.toLowerCase();
         if (isReservedLocalDomain(key)) continue;
         if (!row.type) continue;
+        // `*` is valid only as `*.<name>`: anything else is not a route (a pattern the router could read two ways).
+        if (!isValidDomainPattern(key)) {
+            console.warn(`[domain-map] ${key}: not projected (a wildcard is only valid as *.<name>)`);
+            continue;
+        }
 
         const type: DomainRoute['type'] =
             row.type === 'static' ? 'static'
@@ -110,6 +122,7 @@ export async function generateDomainMap(): Promise<string> {
         generatedAt: new Date().toISOString(),
         node: { hostname: os.hostname() },
         domains,
+        roots: await installationRoots(),
     };
 
     const outPath = getDomainMapPath();

@@ -76,8 +76,21 @@ try {
     rootOrigin = `http://127.0.0.1:${(rootStandIn!.address() as any).port}`;
   }
   writeAppsRegistry(runtime, be.namespace, rootOrigin);
+  // The installation's authorization of the root, as the gateway projects it into domain-map.json: bound to the root
+  // monad's IDENTITY. (That the projection writes exactly this from the monad's record is proven in
+  // standalone-backend-gate.test.ts; here the registration carries the same identity.)
+  const rootIdentity = 'root-identity-under-test';
+  {
+    const reg = JSON.parse(fs.readFileSync(path.join(runtime, 'apps.json'), 'utf8'));
+    for (const a of Object.values<any>(reg.apps)) if (a?.metadata?.namespace === 'localhost') a.metadata.identity_hash = rootIdentity;
+    fs.writeFileSync(path.join(runtime, 'apps.json'), JSON.stringify(reg));
+  }
   const appsPath = path.join(runtime, 'apps.json');
   const mapPath = path.join(runtime, 'domain-map.json');
+  const authorization = { localhost: { app: 'netget', identity: rootIdentity, source: 'installation' } };
+  const writeMap = (domains: Record<string, unknown>, roots: Record<string, unknown> | null = authorization) =>
+    fs.writeFileSync(mapPath, JSON.stringify({ version: 1, domains, ...(roots ? { roots } : {}) }));
+  writeMap({}); // the installation's root is authorized from the start
   const registry = () => JSON.parse(fs.readFileSync(appsPath, 'utf8'));
   const snapshot = () => fs.readdirSync(be.dataDir, { recursive: true }).map(String).filter((f) => !/backend\.(log|pid)$|\.log$/.test(f)).sort();
 
@@ -125,30 +138,45 @@ try {
   assert.equal(((await call('127.0.0.1', '/domains')).json?.domains ?? []).length, 0, 'and nothing was created');
 
   // ── 1. a declared route wins; removing it returns the name to the root's attendance ──
-  fs.writeFileSync(mapPath, JSON.stringify({ version: 1, domains: { 'camiones.localhost': { type: 'server', target: `127.0.0.1:${svcPort}`, protocol: 'http', ssl: { enabled: false } } } }));
+  writeMap({ 'camiones.localhost': { type: 'server', target: `127.0.0.1:${svcPort}`, protocol: 'http', ssl: { enabled: false } } });
   const declared = await call('camiones.localhost', '/', { accept: 'text/html' });
   assert.equal(declared.status, 200);
   assert.equal(declared.text, 'servicio-declarado', 'a declared name is its destination');
   assert.equal(seen(await call('otro.localhost', '/')), 'otro.localhost', 'an undeclared sibling is still attended by the root');
-  fs.writeFileSync(mapPath, JSON.stringify({ version: 1, domains: {} }));
+  writeMap({});
   assert.equal(seen(await call('camiones.localhost', '/')), 'camiones.localhost', 'undeclared again');
 
-  // ── 3. nobody is root: the neutral shell; nothing asserted, nothing created ──
+  // a wildcard the operator declared is a declared route for every name under it, and wins over the root
+  writeMap({ '*.obras.localhost': { type: 'server', target: `127.0.0.1:${svcPort}`, protocol: 'http', ssl: { enabled: false } } });
+  assert.equal((await call('uno.obras.localhost', '/', { accept: 'text/html' })).text, 'servicio-declarado', 'a wildcard route attends every name under it');
+  assert.equal(seen(await call('uno.localhost', '/')), 'uno.localhost', 'a name outside the wildcard is still the root\'s');
+  writeMap({});
+
+  // ── 3. nobody is AUTHORIZED as root: the neutral shell; an announcement does not make a root ──
   const apps = registry();
-  const withoutRoot = JSON.parse(JSON.stringify(apps));
-  // every registration that IS the root (the helper registers the gateway's monad and the surface entry for `localhost`)
-  for (const [k, a] of Object.entries<any>(withoutRoot.apps)) if (a?.metadata?.namespace === 'localhost') delete withoutRoot.apps[k];
-  fs.writeFileSync(appsPath, JSON.stringify(withoutRoot));
   const before = snapshot();
+  // the root monad is registered and live, but nothing authorizes it as the root of this address
+  writeMap({}, null);
   const shell = await call('whatever.localhost', '/', { accept: 'text/html' });
-  assert.equal(shell.status, 404);
+  assert.equal(shell.status, 404, 'an announced root that nobody authorized does not attend the address');
   assert.match(shell.text, /Sin contenido disponible para esta dirección/);
   assert.ok(!/reclam|claim|no existe|not exist/i.test(shell.text), 'it says nothing about claims or existence');
   const shellJson = await call('whatever.localhost', '/', { accept: 'application/json' });
   assert.equal(shellJson.status, 404);
   assert.equal(shellJson.json?.error, 'no_content_available');
-  assert.deepEqual(snapshot(), before, 'visiting wrote nothing');
-  // the root is registered but not live: a state of the machine (503), not "no content"
+  assert.equal(seen(shell), undefined, 'the announced monad was never handed the request');
+  assert.deepEqual(snapshot().filter((f) => !/domain-map\.json$/.test(f)), before.filter((f) => !/domain-map\.json$/.test(f)), 'visiting wrote nothing');
+  writeMap({});
+
+  // an announcement that claims the root's namespace under ANOTHER identity does not take the authorization over
+  const impostor = JSON.parse(JSON.stringify(apps));
+  for (const a of Object.values<any>(impostor.apps)) if (a?.metadata?.namespace === 'localhost') { a.metadata.identity_hash = 'impostor-identity'; }
+  fs.writeFileSync(appsPath, JSON.stringify(impostor));
+  assert.equal((await call('whatever.localhost', '/')).status, 503, 'the authorized identity is not live: unavailable, and the impostor is not asked');
+  fs.writeFileSync(appsPath, JSON.stringify(apps));
+  assert.equal((await call('whatever.localhost', '/')).status, 200, 'and the authorized identity attends again');
+
+  // the authorized root is registered but not live: a state of the machine (503), not "no content"
   const stale = JSON.parse(JSON.stringify(apps));
   for (const a of Object.values<any>(stale.apps)) if (a?.metadata?.namespace === 'localhost') { a.lastSeenMs = Date.now() - 24 * 3600_000 * 2; a.ttlMs = 12_000; }
   fs.writeFileSync(appsPath, JSON.stringify(stale));

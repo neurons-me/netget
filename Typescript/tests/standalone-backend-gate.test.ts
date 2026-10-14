@@ -220,6 +220,26 @@ try {
   assert.equal((await be.send('POST', '/delete-domain', { domain: 'bob.test' }, bearer(ownerToken))).status, 200);
   assert.deepEqual(await names(), []);
 
+  // ── the installation's root, bound to ITS monad's identity, and the only shape a wildcard may take ──
+  {
+    const { readMonadRecord } = await import('monad.ai');
+    const record: any = await readMonadRecord(be.monadName);
+    assert.ok(record?.identity_hash, "the disposable monad has an identity");
+    assert.equal(
+      (await be.send('POST', '/add-domain', { domain: '*.casa.test', type: 'server', target: 'app:demo' }, bearer(ownerToken))).status, 200,
+      'an operator may declare a wildcard route (the same gate as any route)');
+    for (const bad of ['*', 'a*.casa.test', '*.*.casa.test', 'casa.*']) {
+      const r = await be.send('POST', '/add-domain', { domain: bad, type: 'server', target: 'app:demo' }, bearer(ownerToken));
+      assert.equal(r.status, 400, `${bad} is not a wildcard route`);
+      assert.equal(((await r.json()) as any).code, 'WILDCARD_SHAPE');
+    }
+    const map = JSON.parse(fs.readFileSync(path.join(be.dataDir, 'runtime', 'domain-map.json'), 'utf8'));
+    assert.deepEqual(map.roots, { [be.namespace]: { app: be.monadName, identity: record.identity_hash, source: 'installation' } },
+      "the projection authorizes the installation's own root, bound to its monad's identity, and nothing an announcement could add");
+    assert.ok(map.domains['*.casa.test'], 'the wildcard is projected as a route');
+    assert.equal((await be.send('POST', '/delete-domain', { domain: '*.casa.test' }, bearer(ownerToken))).status, 200);
+  }
+
   // ── a second capability, on top of the gate: gateway:write:domain-metadata ───
   // Being let in by the gate (gateway:write) is not being granted this write: two checks, on purpose.
   assert.equal((await add(bearer(ownerToken), { domain: 'meta.test', type: 'server', target: '127.0.0.1:4000' })).status, 200);

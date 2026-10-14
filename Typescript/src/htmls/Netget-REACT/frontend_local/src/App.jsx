@@ -208,6 +208,9 @@ function GatewayApp() {
   const shell = (
     <Cleaker
       namespace={door.namespace || GATEWAY_NAMESPACE}
+      // The main server's door declares its namespace (the gateway says it); anywhere else it is only the page's own
+      // hostname: a draft of the transport, not a namespace, until the service answers which one it serves.
+      namespaceSource={door.isMainServerDoor ? 'declared' : 'address'}
       transport={netgetMonadTransportOrigin()}
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
       document={NETGET_DOCUMENT}

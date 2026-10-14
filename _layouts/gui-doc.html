@@ -1,0 +1,95 @@
+<!doctype html>
+{% comment %}
+  .GUI doc page from Markdown: the .md stays the source. Same head (title, description, Open Graph / Twitter, favicon)
+  as the theme's "readme" layout, then the theme's static page (me-theme.css, the markdown below) as the no-JS /
+  CDN-failure fallback. With JS, /.me/assets/landing-gui/landing-gui.js (#static-landing[data-layout=doc]) renders the
+  same content through GUI.mount: the shared topbar (brain, me:// path, search, theme, light/dark, gear with Inspector +
+  Grid Layout), headings, tables, cards, and the code blocks through the .me highlighter (assets/me-syntax).
+  Front matter: title, description, image, mepath (list of {text, url} after me://), crumb (the last, current segment),
+  scripts (optional list of site paths loaded before landing-gui.js, e.g. /assets/kernel-timeline/kernel-timeline.js).
+{% endcomment %}
+{% comment %} Ported from neurons-me/.me _layouts/gui-doc.html; shares /.me/assets (landing-gui.js, me-syntax). Favicon: the neurons brain, as on every neurons-me page. {% endcomment %}
+<html lang="{{ page.lang | default: site.lang | default: 'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% assign page_title = page.title | default: site.title | escape %}
+  {% assign page_description = page.description | default: site.description | escape %}
+  {% assign social_image = page.image | default: site.me_theme.social_image | default: site.image %}
+  {% assign page_url = page.canonical | default: page.url | absolute_url %}
+  <title>{{ page_title }}</title>
+  <meta name="description" content="{{ page_description }}" />
+  {% if page.canonical %}<link rel="canonical" href="{{ page.canonical }}" />{% endif %}
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="{{ page_title }}" />
+  <meta property="og:description" content="{{ page_description }}" />
+  <meta property="og:url" content="{{ page_url }}" />
+  {% if social_image %}
+  <meta property="og:image" content="{{ social_image }}" />
+  <meta property="og:image:secure_url" content="{{ social_image }}" />
+  {% endif %}
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ page_title }}" />
+  <meta name="twitter:description" content="{{ page_description }}" />
+  {% if social_image %}
+  <meta name="twitter:image" content="{{ social_image }}" />
+  {% endif %}
+  {% assign favicon_url = "https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" %}
+  <link rel="icon" type="image/png" href="{{ favicon_url }}">
+  <link rel="apple-touch-icon" href="{{ favicon_url }}">
+  <!-- Same page-scoped theme keys as /.me/docs/ (neurons.me, dark by default), so the choice carries across the docs. -->
+  <script>
+    window.__thisGuiThemeScope = { scopeId: "me-docs", themeModeKey: "me-docs.themeMode", themeIdKey: "me-docs.themeId", defaultMode: "dark" };
+    try {
+      if (!localStorage.getItem("me-docs.themeMode")) localStorage.setItem("me-docs.themeMode", "dark");
+      if (!localStorage.getItem("me-docs.themeId")) localStorage.setItem("me-docs.themeId", "neurons.me");
+    } catch (e) {}
+    document.documentElement.classList.add("gui-boot");
+  </script>
+  <style>.material-symbols-rounded,.material-symbols-outlined,.material-icons{display:none!important} .gui-boot #static-landing{display:none} html.gui-on body{margin:0}
+    /* no-JS: the topbar path and the .doc-cards grid (the rest is the theme's me-theme.css) */
+    html:not(.gui-on) .topnav{display:flex;gap:12px;margin-left:16px;font:600 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    html:not(.gui-on) .mepath{margin-left:auto;font:600 13px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    html:not(.gui-on) .doc-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin:0 0 24px}
+    html:not(.gui-on) .doc-cards a.card{display:flex;flex-direction:column;border:1px solid rgba(127,127,127,.35);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit}
+    html:not(.gui-on) .doc-cards img{display:block;width:100%;height:120px;object-fit:cover;margin:0}
+    html:not(.gui-on) .doc-cards .card-kind{padding:10px 14px 0;font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.75}
+    html:not(.gui-on) .doc-cards .card-title{padding:4px 14px 0;font-weight:700}
+    html:not(.gui-on) .doc-cards .card-desc{padding:4px 14px 14px;font-size:.88rem;opacity:.8}
+  </style>
+  <!-- Static (no-JS) page: the theme stylesheet; landing-gui.js switches it off once .GUI has rendered. -->
+  <link rel="stylesheet" href="{{ '/assets/css/me-theme.css' | relative_url }}" data-static-only>
+  <!-- .me syntax colours (shared: /.me/assets/me-syntax/), from the .GUI theme tokens -->
+  <link rel="stylesheet" href="/.me/assets/me-syntax/me-syntax.css">
+  <script src="/.me/assets/me-syntax/me-syntax.js"></script>
+  <!-- Pinned dependencies (jsDelivr, exact versions, Subresource Integrity), same as /.me/docs/ and /.me/Demos/. -->
+  <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/this.gui@4.2.0/dist/this.gui.umd.js" integrity="sha384-tAyskhiyJweQ9xXPVOSEJ0OQDE+lFsqRJvGRb8LVoqLbdNxYmJEhW21+fxcAYG0d" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+<div id="static-landing" data-layout="doc">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="https://neurons-me.github.io/" title="neurons.me">
+        <img class="brand-logo" src="https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" alt="neurons.me" width="28" height="28" />
+      </a>
+      <nav class="mepath" aria-label="me path">
+        <a href="{{ page.root_url | default: site.gui_doc.root_url | default: 'https://neurons-me.github.io/.me/' }}" title="{{ page.root_title | default: site.gui_doc.root_title | default: '.me' }}">me://</a>
+        {% for seg in page.mepath %}<a href="{{ seg.url }}">{{ seg.text }}</a> / {% endfor %}<span class="here">{{ page.crumb | default: page.title }}</span>
+      </nav>
+      <nav class="topnav" aria-label="links">
+        <a data-topbar="docs" href="{{ page.docs_url | default: site.gui_doc.docs_url | default: 'https://neurons-me.github.io/.me/docs/' }}">Docs</a>
+        <a class="gh" href="{{ page.github_url | default: site.gui_doc.github_url | default: 'https://github.com/neurons-me/.me' }}">GitHub</a>
+      </nav>
+    </div>
+  </header>
+  <main class="markdown-body doc">
+    {{ content }}
+  </main>
+</div>
+{% for s in page.scripts %}<script src="{{ s | relative_url }}"></script>
+{% endfor %}<script src="/.me/assets/landing-gui/landing-gui.js?v=17" onerror="document.documentElement.classList.remove('gui-boot')"></script>
+</body>
+</html>

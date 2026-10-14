@@ -1,6 +1,14 @@
 ---
-layout: readme
-title: whatever.localhost
+layout: gui-doc
+title: "whatever.localhost"
+description: "What NetGet and monad do today with <label>.localhost names: OpenResty routing, monad namespace mapping, and the Host-header limitation. Read from source."
+image: https://res.cloudinary.com/dkwnxf6gm/image/upload/v1778254832/me.docs.axioms__1_-removebg-preview_xvdqof.png
+mepath:
+  - text: netget
+    url: https://neurons-me.github.io/netget/
+  - text: docs
+    url: https://neurons-me.github.io/netget/docs/
+crumb: whatever.localhost
 ---
 
 # whatever.localhost

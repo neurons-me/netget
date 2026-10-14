@@ -50,3 +50,9 @@ me_theme:
       url: https://github.com/neurons-me/netget
     - label: All.This
       url: https://neurons-me.github.io/all.this/
+
+gui_doc:
+  root_url: https://neurons-me.github.io/
+  root_title: neurons.me
+  docs_url: https://neurons-me.github.io/netget/docs/
+  github_url: https://github.com/neurons-me/netget

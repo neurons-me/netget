@@ -96,7 +96,8 @@ const NETGET_DOCUMENT = {
               dashboard: { label: 'Dashboard', to: '/home', icon: 'dashboard', placement: 'end' },
               domains: { label: 'Domains', to: '/domains', icon: 'language', requires: 'session', placement: 'end' },
               logs: { label: 'Logs', to: '/logs', icon: 'article', requires: 'session', placement: 'end' },
-              monad: { label: 'Monad', to: '/monad', icon: 'memory', placement: 'end' },
+              // the monad.ai orb, the same one the Monad surface draws (not a generic chip icon)
+              monad: { label: 'Monad', to: '/monad', icon: 'orb:monad', placement: 'end' },
             },
           },
         },

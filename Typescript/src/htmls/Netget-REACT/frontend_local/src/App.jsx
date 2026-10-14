@@ -108,7 +108,7 @@ function MonadPage() {
   }, []);
   return (
     <Box sx={{ px: 3, py: 3, width: '100%', maxWidth: 560, mx: 'auto', boxSizing: 'border-box' }}>
-      <MonadNamespaceCard namespace={GATEWAY_NAMESPACE} healthy={healthy} apps={apps} orbScale={2} meshDefaultOpen />
+      <MonadNamespaceCard healthy={healthy} apps={apps} orbScale={2} meshDefaultOpen />
     </Box>
   );
 }

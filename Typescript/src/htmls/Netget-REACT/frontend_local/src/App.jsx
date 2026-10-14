@@ -164,6 +164,10 @@ function GatewayApp() {
       // so its directory views (Users, Blockchain) are not this app's navigation either. Icons only -- the pages and
       // their routes still exist.
       hideBarItems={door.isMainServerDoor ? ['users', 'blockchain', 'url', 'dashboard'] : ['url', 'dashboard']}
+      // Where the position label points inside the namespace. Only what a door DECLARES counts: the main server's door
+      // is the namespace's `netget` node (netget.site/ -> cleaker.me/netget); everywhere else the label is the namespace's
+      // root. A GUI route such as /domains or /logs is where this page navigated, not a node of the namespace.
+      semanticPath={door.isMainServerDoor ? '/netget' : '/'}
     />
   );
   return (

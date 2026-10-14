@@ -160,9 +160,10 @@ function GatewayApp() {
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
       document={NETGET_DOCUMENT}
       pages={NETGET_PAGES}
-      // The main server's own door is netget's app, not the namespace: its directory views (Users, Blockchain, URL)
-      // are not this app's navigation. Icons only -- the pages and their routes still exist.
-      hideBarItems={door.isMainServerDoor ? ['users', 'blockchain', 'url'] : undefined}
+      // Dashboard and URL are not in the rail for now. The main server's own door is netget's app, not the namespace,
+      // so its directory views (Users, Blockchain) are not this app's navigation either. Icons only -- the pages and
+      // their routes still exist.
+      hideBarItems={door.isMainServerDoor ? ['users', 'blockchain', 'url', 'dashboard'] : ['url', 'dashboard']}
     />
   );
   return (

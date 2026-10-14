@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import Box from '@mui/material/Box';
 import { LauncherPopoverProvider } from 'this.gui';
-import { SeedSessionProvider, Namespace, HostSurface, Cleaker, Me } from 'this.gui/react';
+import { SeedSessionProvider, Namespace, MonadNamespaceCard, Cleaker, Me } from 'this.gui/react';
 import { SpecBoundary } from 'this.gui/devtools';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
@@ -58,16 +59,66 @@ const LOGS_SPEC = {
 
 // The pages netget adds to the shell, as components the GUI document can name. The wrapper
 // pages keep their SpecBoundary so the inspector still sees them as before.
+// The monad's own page: the orb, large, and under it the mesh -- the monads that are live under this namespace, read
+// from the gateway's registry (/apps). Read-only: waking or restarting monads is an operator action that needs its own
+// authorization, so no controls are offered here. The HOST's hardware view is not this page's: it is the gateway's
+// (pages/Home.jsx, the dashboard).
+const MESH_POLL_MS = 5000;
+
+function monadsFromRegistry(registry) {
+  const now = Date.now();
+  return (Array.isArray(registry?.apps) ? registry.apps : [])
+    .filter((a) => String(a?.name || '').startsWith('monad:') || a?.kind === 'monad')
+    .map((a) => {
+      const ttl = Number(a.ttlMs) > 0 ? Number(a.ttlMs) : 45_000;
+      const seen = Number(a.lastSeenMs) || 0;
+      return {
+        name: String(a.name || '').replace(/^monad:/, ''),
+        port: Number(a.port) || 0,
+        healthy: seen > 0 && now - seen <= ttl,
+      };
+    })
+    .sort((x, y) => x.name.localeCompare(y.name));
+}
+
 function MonadPage() {
-  return <HostSurface endpoint={netgetMonadTransportOrigin()} />;
+  const [apps, setApps] = useState([]);
+  // null while unknown: the orb keeps its default glow until the monad has answered or refused
+  const [healthy, setHealthy] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const read = async () => {
+      try {
+        const res = await fetch('/apps', { cache: 'no-store', credentials: 'same-origin' });
+        const data = res.ok ? await res.json() : null;
+        if (!cancelled) setApps(monadsFromRegistry(data));
+      } catch {
+        if (!cancelled) setApps([]);
+      }
+      try {
+        const res = await fetch(`${netgetMonadTransportOrigin()}/__surface`, { cache: 'no-store' });
+        if (!cancelled) setHealthy(res.ok);
+      } catch {
+        if (!cancelled) setHealthy(false);
+      }
+    };
+    read();
+    const timer = setInterval(read, MESH_POLL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+  return (
+    <Box sx={{ px: 3, py: 3, width: '100%', maxWidth: 560, mx: 'auto', boxSizing: 'border-box' }}>
+      <MonadNamespaceCard namespace={GATEWAY_NAMESPACE} healthy={healthy} apps={apps} orbScale={2} meshDefaultOpen />
+    </Box>
+  );
 }
 
 const MONAD_SPEC = {
   type: 'div',
   props: { 'data-gui-component': 'Monad', style: { display: 'contents' } },
   provenance: {
-    source: 'this.gui HostSurface',
-    note: "This netget's own monad — polls its /__bootstrap for the surface it self-reports (hardware and activity, not verified by the mesh), no kernel binding.",
+    source: 'this.gui MonadNamespaceCard',
+    note: "This netget's own monad: the orb (reachability of its /__surface) and the mesh of monads registered with the gateway (/apps, polled). Read-only.",
   },
   children: { type: MonadPage },
 };

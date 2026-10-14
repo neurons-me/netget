@@ -7,7 +7,7 @@ import { isReservedLocalDomain } from '../modules/NetGetX/Domains/reservedDomain
 import { checkDoorConnections, type DoorConnection } from './doorConnections.js';
 import { registeredMonadPorts } from './doorConnectionPorts.js';
 import { checkRouteTarget } from './routeTargets.js';
-import { installationRoots, isValidDomainPattern, type AuthorizedRoot } from './authorizedRoots.js';
+import { installationRoots, isValidDomainPattern, appNameOfTarget, type AuthorizedRoot } from './authorizedRoots.js';
 
 export interface DomainRoute {
     type: 'proxy' | 'server' | 'static';
@@ -16,6 +16,9 @@ export interface DomainRoute {
     root?: string;
     /** Door connections (runtime/doorConnections.ts), re-checked here; surface_proxy.lua checks them again. */
     connections?: DoorConnection[];
+    /** The identity the operator bound this wildcard's app to when declaring it (kernel/domainStore.ts). The router
+     *  treats a wildcard `app:` route that does not carry it as unserved. */
+    identity?: string;
     ssl: {
         enabled: boolean;
         cert?: string;
@@ -113,6 +116,11 @@ export async function generateDomainMap(): Promise<string> {
             const checked = checkDoorConnections(row.connections, registeredMonadPorts());
             if (checked.ok) route.connections = checked.connections;
         }
+
+        // A wildcard route to an app is served only from the identity it was bound to at declaration. A record with no
+        // identity (written by hand, or by a version that did not bind) is projected as such and the router refuses it,
+        // never serving "whoever is registered under that name".
+        if (key.startsWith('*.') && row.identity && appNameOfTarget(row.target)) route.identity = row.identity;
 
         domains[key] = route;
     }

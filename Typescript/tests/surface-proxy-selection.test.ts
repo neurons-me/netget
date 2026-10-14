@@ -184,15 +184,33 @@ const camionesDown = run([LOCALROOT, app({ ...FT, seen: STALE })], 'camiones.loc
 assert.ok(!served(camionesDown) && camionesDown.exit === 503 && /not available/.test(camionesDown.reason ?? ''), `declared + down: ${JSON.stringify(camionesDown)}`);
 // a wildcard route `*.localhost` -> an app: every name under it goes there, a more specific exact route still wins,
 // and it also overrides the installation's own default for the same root
-const wild = { '*.localhost': { type: 'proxy', target: 'app:polls-studio', protocol: 'http', ssl: { enabled: false } }, ...exactCamiones };
+const wild = { '*.localhost': { type: 'proxy', target: 'app:polls-studio', identity: 'polls-identity', protocol: 'http', ssl: { enabled: false } }, ...exactCamiones };
 const w1 = run(rootLive, 'cualquiera.localhost', withLocal({ map: wild }));
 assert.ok(served(w1) && w1.identity === 'polls-identity', `a wildcard declaration -> its app, over the installation's default: ${JSON.stringify(w1)}`);
 assert.equal(run(rootLive, 'camiones.localhost', withLocal({ map: wild })).identity, 'ft-identity', 'an exact route beats the wildcard');
 assert.equal(run(rootLive, 'a.b.localhost', withLocal({ map: wild })).identity, 'polls-identity', 'a wildcard attends names with levels');
 assert.ok(!served(run(rootLive, 'evillocalhost', withLocal({ map: wild }))), 'a wildcard is a label boundary too');
 // the longest wildcard wins
-const twoWild = { '*.localhost': wild['*.localhost'], '*.taller.localhost': { type: 'proxy', target: 'app:fulltrailer', protocol: 'http', ssl: { enabled: false } } };
+const twoWild = { '*.localhost': wild['*.localhost'], '*.taller.localhost': { type: 'proxy', target: 'app:fulltrailer', identity: 'ft-identity', protocol: 'http', ssl: { enabled: false } } };
 assert.equal(run(rootLive, 'x.taller.localhost', withLocal({ map: twoWild })).identity, 'ft-identity', 'the longest wildcard wins');
+// A wildcard is BOUND to the identity of the app it names (decided when the operator declared it). Naming the app is not
+// enough: a process that registers under the same name with another identity does not receive the names under it.
+{
+  const impostorPolls = { ...app({ name: 'polls-studio', id: 'impostor-identity', port: 4999 }) };
+  const real = app(PS);
+  assert.equal(run([LOCALROOT, impostorPolls, real], 'x.localhost', withLocal({ map: wild })).identity, 'polls-identity', 'the bound identity is the destination, the impostor under the same name is not asked');
+  const onlyImpostor = run([LOCALROOT, impostorPolls, app({ ...PS, seen: STALE })], 'x.localhost', withLocal({ map: wild }));
+  assert.ok(!served(onlyImpostor) && onlyImpostor.exit === 503, `bound identity down, an impostor live: unavailable, never the impostor: ${JSON.stringify(onlyImpostor)}`);
+  const unbound = { '*.localhost': { type: 'proxy', target: 'app:polls-studio', protocol: 'http', ssl: { enabled: false } } };
+  const u = run(rootLive, 'x.localhost', withLocal({ map: unbound }));
+  assert.ok(!served(u) && u.exit === 503 && /no identity bound/.test(u.reason ?? ''), `a wildcard app route with no bound identity is not served: ${JSON.stringify(u)}`);
+  // a wildcard to host:port names its own address: there is no announcement to bind to
+  const direct = { '*.localhost': { type: 'server', target: '127.0.0.1:4555', protocol: 'http', ssl: { enabled: false } } };
+  const d = run(rootLive, 'x.localhost', withLocal({ map: direct }));
+  assert.ok(served(d) && d.target === 'http://127.0.0.1:4555', `a wildcard to an address needs no identity: ${JSON.stringify(d)}`);
+  // an exact route to an app keeps its previous meaning (name; conflicts rejected)
+  assert.equal(run(rootLive, 'camiones.localhost', withLocal({ map: exactCamiones })).identity, 'ft-identity');
+}
 // a wildcard that is not `*.<name>` is not a route
 const badWild = { '*': { type: 'proxy', target: 'app:fulltrailer' }, 'a*.localhost': { type: 'proxy', target: 'app:fulltrailer' }, '*.*.localhost': { type: 'proxy', target: 'app:fulltrailer' } };
 for (const h of ['whatever.localhost', 'anything.test', 'ax.localhost']) {

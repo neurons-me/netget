@@ -327,16 +327,16 @@ local function declared_route(for_host)
   local map = load_map()
   if not map or type(map.domains) ~= "table" then return nil end
   local exact = usable_route(map.domains[for_host])
-  if exact then return exact end
+  if exact then return exact, for_host end
   -- no exact route: the longest wildcard the operator declared that covers the host
-  local best, best_len
+  local best, best_len, best_key
   for key, route in pairs(map.domains) do
     local suffix = wildcard_suffix(key)
     if suffix and under(for_host, suffix) and usable_route(route) and (not best_len or #suffix > best_len) then
-      best, best_len = route, #suffix
+      best, best_len, best_key = route, #suffix, key
     end
   end
-  return best
+  return best, best_key
 end
 
 -- The roots the installation itself authorizes (domain-map.json `roots`, written by the gateway from its own configured
@@ -431,18 +431,28 @@ local function answer_connection(route)
 end
 
 if not host_is_ip then
-  local route = declared_route(host)
+  local route, route_key = declared_route(host)
   local declared = route and route.target
   if declared then
     answer_connection(route)
     if declared:sub(1, 4) == "app:" then
       local want = declared:sub(5):lower()
+      -- A wildcard route is bound, when the operator declares it, to the identity of the app it names: naming the app
+      -- is not enough, or whichever process registers under that name would receive every name under the wildcard.
+      -- A wildcard `app:` route with no bound identity is not served.
+      local bound = (type(route.identity) == "string" and route.identity ~= "") and route.identity or nil
+      if route_key and route_key:sub(1, 2) == "*." and not bound then
+        return send_no_monad_page("the wildcard route for " .. host .. " has no identity bound to " .. declared ..
+          "; declare it again so it is bound", true)
+      end
       local best, identities, seen_identity = nil, {}, {}
       for _, app in pairs(registry.apps) do
         local meta = app.metadata or {}
         local name = tostring(app.name or ""):lower()
         local short = name:gsub("^monad:", "")
         local named = (name == want) or (short == want) or (tostring(meta.monadName or ""):lower() == want)
+        -- bound route: only the registration that carries the bound identity is the destination
+        if named and bound and identity_of(meta) ~= bound then named = false end
         if named and is_live(app) then
           local ep = endpoint_of(meta)
           if not ep and app.port then ep = "http://" .. (app.host or "127.0.0.1") .. ":" .. tostring(app.port) end

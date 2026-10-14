@@ -225,6 +225,22 @@ try {
     const { readMonadRecord } = await import('monad.ai');
     const record: any = await readMonadRecord(be.monadName);
     assert.ok(record?.identity_hash, "the disposable monad has an identity");
+    // a wildcard to an app is BOUND, when declared, to the identity that app is registered under: an app that carries
+    // none (or is not live) leaves nothing to bind to, and the declaration is refused
+    {
+      const r = await be.send('POST', '/add-domain', { domain: '*.casa.test', type: 'server', target: 'app:demo' }, bearer(ownerToken));
+      assert.equal(r.status, 400);
+      assert.equal(((await r.json()) as any).code, 'WILDCARD_APP_IDENTITY');
+      const gone = await be.send('POST', '/add-domain', { domain: '*.casa.test', type: 'server', target: 'app:nadie' }, bearer(ownerToken));
+      assert.equal(gone.status, 400);
+      assert.equal(((await gone.json()) as any).code, 'WILDCARD_APP_NOT_LIVE');
+      assert.equal((await be.send('GET', '/domains')).status === 200 && !JSON.stringify(await (await be.send('GET', '/domains')).json()).includes('*.casa.test'), true, 'a refused declaration wrote nothing');
+    }
+    // the app now carries an identity: the declaration binds to it, and the projection says so
+    const appsFile = path.join(be.dataDir, 'runtime', 'apps.json');
+    const registry = JSON.parse(fs.readFileSync(appsFile, 'utf8'));
+    registry.apps.a.metadata.identity_hash = 'demo-identity-hash';
+    fs.writeFileSync(appsFile, JSON.stringify(registry));
     assert.equal(
       (await be.send('POST', '/add-domain', { domain: '*.casa.test', type: 'server', target: 'app:demo' }, bearer(ownerToken))).status, 200,
       'an operator may declare a wildcard route (the same gate as any route)');
@@ -236,7 +252,25 @@ try {
     const map = JSON.parse(fs.readFileSync(path.join(be.dataDir, 'runtime', 'domain-map.json'), 'utf8'));
     assert.deepEqual(map.roots, { [be.namespace]: { app: be.monadName, identity: record.identity_hash, source: 'installation' } },
       "the projection authorizes the installation's own root, bound to its monad's identity, and nothing an announcement could add");
-    assert.ok(map.domains['*.casa.test'], 'the wildcard is projected as a route');
+    assert.equal(map.domains['*.casa.test']?.identity, 'demo-identity-hash', 'the wildcard is projected bound to the identity it was declared against');
+    // another process registering as `demo` afterwards does not change what the route is bound to
+    registry.apps.b = { ...registry.apps.a, metadata: { ...registry.apps.a.metadata, identity_hash: 'impostor-identity' }, lastSeenMs: Date.now() + 1000 };
+    fs.writeFileSync(appsFile, JSON.stringify(registry));
+    // re-sending the same destination keeps the identity it was bound to (it must not re-pin to the newcomer)
+    assert.equal((await be.send('POST', '/update-domain', { domain: '*.casa.test', updatedFields: { target: 'app:demo' } }, bearer(ownerToken))).status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(be.dataDir, 'runtime', 'domain-map.json'), 'utf8')).domains['*.casa.test']?.identity, 'demo-identity-hash',
+      'unchanged destination: still bound to the identity it was declared against, not the one that registered later');
+    // binding a NEW wildcard to an app that is live under two identities is refused, not settled by recency
+    {
+      const r = await be.send('POST', '/add-domain', { domain: '*.otra.test', type: 'server', target: 'app:demo' }, bearer(ownerToken));
+      assert.equal(r.status, 400);
+      assert.equal(((await r.json()) as any).code, 'WILDCARD_APP_IDENTITY');
+    }
+    // a wildcard to an address names its own destination
+    assert.equal((await be.send('POST', '/add-domain', { domain: '*.directo.test', type: 'server', target: '127.0.0.1:4555' }, bearer(ownerToken))).status, 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(be.dataDir, 'runtime', 'domain-map.json'), 'utf8')).domains['*.directo.test']?.identity, undefined);
+    assert.equal((await be.send('POST', '/delete-domain', { domain: '*.directo.test' }, bearer(ownerToken))).status, 200);
+    delete registry.apps.b; fs.writeFileSync(appsFile, JSON.stringify(registry));
     assert.equal((await be.send('POST', '/delete-domain', { domain: '*.casa.test' }, bearer(ownerToken))).status, 200);
   }
 

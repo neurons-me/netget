@@ -90,7 +90,19 @@ A root is a name this gateway may hand an address to. Where it comes from, in or
 1. **The operator's wildcard route.** `*.<suffix>` (and only that shape: one leading `*` label, then literal labels) is a
    route like any other, written through the same gate (`/add-domain`: owner session or a capability) and visible in the
    patch bay. It wins over everything that is not an exact route, longest suffix first. A wildcard names a destination;
-   it does not create an owner of anything under it.
+   it does not create an owner of anything under it. **A wildcard is bound to its destination, not to a name:**
+   * to an address (`host:port`): the address is the destination; there is no announcement to bind to.
+   * to an app (`app:<name>`): when the operator declares it, the gateway reads the identity (`identity_hash`) that app
+     is registered under right now and stores it in the route (`identity`, projected into `domain-map.json`). The
+     router serves the route only from a registration that carries that identity. Declaring `*.localhost -> app:netget`
+     therefore does not let a process that registers as `netget`, or that announces `localhost`, receive the traffic: if
+     the bound identity is down the answer is 503, never "whoever is live".
+   * refused, writing nothing: the app is not live (`WILDCARD_APP_NOT_LIVE`), or it is live under none or several
+     identities (`WILDCARD_APP_IDENTITY`). Re-sending the same destination keeps the identity; changing the app re-binds.
+   * a wildcard `app:` route that carries no identity (written by hand, or by a version before this one) is projected as
+     it is and the router refuses it (503 "no identity bound"); it is never served by name.
+   * the trust placed: the identity that is live at the moment the owner declares it. An exact `app:` route is not
+     pinned (it keeps its name-based meaning, with conflicts rejected).
 2. **The installation's own root.** The root this installation is configured with (`getGatewayRootNamespace()`, the one
    `isNamespaceLocalToThisInstallation` recognizes), bound to the `identity_hash` of the monad netget itself started. The
    projection writes `roots[<namespace>] = { app, identity, source: "installation" }` into `domain-map.json`; the Lua

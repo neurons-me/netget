@@ -34,6 +34,13 @@ netget door-connections <domain> --clear
 (`netget` here is the one of this branch; a global `netget` from an older checkout does not have the command.)
 Writing regenerates `domain-map.json`; the gateway reads it per request, no reload.
 
+From the panel (Domains, the cable icon of a door): the same list, one `/ruta = 127.0.0.1:puerto` per line. It travels on
+`POST /update-domain` as `updatedFields: { connections: [...] }`, behind the same operator gate as the door's other
+fields — no new location in the router. The list REPLACES the previous one (`[]` removes them all); a list with one bad
+entry is refused as a whole, `400 { code: 'CONNECTION_REFUSED' }`, and nothing is written; the door's `type`/`target` and
+every other field are untouched by a connections-only update. An anonymous `GET /domains` shows neither `connections` nor
+`target` (allow-list, `domainsProjection.mjs`); the admin session's full record carries them.
+
 ## Rules
 
 Checked when it is declared (`src/runtime/doorConnections.ts`) **and again when a request arrives**
@@ -117,6 +124,8 @@ blocks yet. FullTrailer is not in that mode.
   non-loopback peer: prefix boundaries, query and path preserved, a 3 MB upload, JSON for an API nobody serves (never the
   app's HTML), the server off, refused targets, credentials not forwarded, forged `X-Forwarded-For`, the exposure policy.
 * `tests/domain-connections-store.test.ts` — the store and the projection, on a disposable monad.
+* `tests/door-connections-panel.test.ts` — the panel's route (`/update-domain` with `connections`): declare, refuse as a
+  whole, other fields untouched, projection to `domain-map.json`, removal, 404, nothing without the gate, public view.
 * **The real app, 2026-10-12, with the configuration it would run with** (monad with its default 100 KB limit; FullTrailer's
   real exposure policy; the new gateway files): FullTrailer's built front end, its real `server/index.js` (lockfile
   dependencies), a real monad of the release, a disposable OpenResty with the generator's blocks, a browser, through

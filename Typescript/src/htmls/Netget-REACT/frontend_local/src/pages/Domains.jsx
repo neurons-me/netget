@@ -49,6 +49,7 @@ import {
     OpenInNew as OpenInNewIcon,
     SwapHoriz as SwapHorizIcon,
     LinkOff as LinkOffIcon,
+    Cable as CableIcon,
 } from '@mui/icons-material';
 import { deriveCleakerNodeFromMe, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
 import { useRegisterGuiNode } from 'this.gui';
@@ -134,6 +135,21 @@ async function updateDomainRoute(ctx, { domain, type, target }) {
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
+}
+
+// Declares the connections of a door: path prefixes served by the app's own server on another port (the door's main
+// destination keeps answering everything else). The same route as the other fields of the door, replacing the list;
+// the store's rules answer (reserved prefixes, ports, duplicates) and a list with a bad entry is refused as a whole.
+async function updateDoorConnections(ctx, { domain, connections }) {
+    const res = await gwFetch(ctx, '/update-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, updatedFields: { connections } }),
+    });
+    if (isRefusal(res)) throw new Error(refusalMessage('update-domain'));
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(data.error ?? `${res.status}`);
+    return Array.isArray(data.connections) ? data.connections : [];
 }
 
 // The apps registered with this gateway (live ones), to point a door at by name.
@@ -264,7 +280,7 @@ function destinationChip(status) {
     return { label: 'Estado desconocido', color: 'default', tip: tip || 'No se pudo comprobar.' };
 }
 
-function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onChangeDestination, onDisconnect, canModify = true }) {
+function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onChangeDestination, onConnections, onDisconnect, canModify = true }) {
     const nodeId = `Domains.row.${row.domain}`;
     useRegisterGuiNode(nodeId, 'DomainRow', 'Domains.routesCard', { semanticPath: row.semanticPath });
     // Per-field registration — the row's own semanticPath points at the whole
@@ -349,6 +365,21 @@ function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert
                             data-gui-node-id={`${nodeId}.change`}
                         >
                             <SwapHorizIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Tooltip title={Array.isArray(row.connections) && row.connections.length
+                    ? `Conexiones del API: ${row.connections.map((c) => `${c.prefix} → ${c.target}`).join(', ')}`
+                    : 'Conectar el API de esta app en otro puerto'}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            color={Array.isArray(row.connections) && row.connections.length ? 'primary' : 'default'}
+                            onClick={() => onConnections(row)}
+                            disabled={deleting === row.domain || !canModify}
+                            data-gui-node-id={`${nodeId}.connections`}
+                        >
+                            <CableIcon fontSize="small" />
                         </IconButton>
                     </span>
                 </Tooltip>
@@ -533,6 +564,86 @@ function ChangeDestinationDialog({ row, open, onClose, onSuccess, apps, appsErro
                 <Button variant="contained" onClick={handleSubmit} disabled={saving}
                     startIcon={saving ? <CircularProgress size={14} /> : <SwapHorizIcon />}>
                     {saving ? 'Cambiando…' : 'Cambiar destino'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Door connections ───────────────────────────────────────────────────
+
+// One line per connection: `/api/fuel` -> `127.0.0.1:4000`. A text list, because that is what the record is: the
+// prefix and the loopback port of the app's own server. The rules are the gateway's; this only shapes the list.
+function connectionsToText(connections) {
+    return (Array.isArray(connections) ? connections : []).map((c) => `${c.prefix} = ${c.target}`).join('\n');
+}
+
+function textToConnections(text) {
+    const out = [];
+    for (const raw of String(text).split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        const at = line.indexOf('=');
+        if (at < 1) return { error: `Cada línea es «/ruta = 127.0.0.1:puerto». No se entiende: ${line}` };
+        const prefix = line.slice(0, at).trim();
+        const target = line.slice(at + 1).trim();
+        if (!prefix.startsWith('/') || !target) return { error: `Cada línea es «/ruta = 127.0.0.1:puerto». No se entiende: ${line}` };
+        out.push({ prefix, target });
+    }
+    return { connections: out };
+}
+
+function ConnectionsDialog({ row, open, onClose, onSuccess, ctx }) {
+    useRegisterGuiNode('Domains.connectionsDialog', 'ConnectionsDialog');
+    const [text, setText] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    useEffect(() => { if (row) { setText(connectionsToText(row.connections)); setError(null); } }, [row]);
+
+    const handleSubmit = async () => {
+        const parsed = textToConnections(text);
+        if (parsed.error) { setError(parsed.error); return; }
+        setSaving(true);
+        setError(null);
+        try {
+            const declared = await updateDoorConnections(ctx, { domain: row.domain, connections: parsed.connections });
+            onSuccess(row.domain, declared);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-gui-node-id="Domains.connectionsDialog" data-gui-component="ConnectionsDialog">
+            <DialogTitle>Conexiones de {row?.domain}</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                    La puerta sigue apuntando a <b style={{ fontFamily: 'monospace' }}>{row?.target || '—'}</b>. Estas rutas, en cambio,
+                    las atiende el servidor propio de la app en otro puerto. El namespace no cambia: el puerto es transporte.
+                </Typography>
+                <TextField
+                    label="Una por línea: /ruta = 127.0.0.1:puerto"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    multiline
+                    minRows={3}
+                    placeholder="/api/fuel = 127.0.0.1:4000"
+                    inputProps={{ style: { fontFamily: 'monospace' }, 'data-gui-node-id': 'Domains.connectionsDialog.input' }}
+                />
+                <Typography variant="caption" sx={{ opacity: 0.6 }}>
+                    Por ahora solo servidores locales (127.0.0.1). No pueden ocupar rutas del gateway ni del monad
+                    (/api/v1, /me, /apps…) ni los puertos 80, 443 y 3000. Vacío quita todas las conexiones.
+                </Typography>
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button variant="contained" onClick={handleSubmit} disabled={saving}
+                    startIcon={saving ? <CircularProgress size={14} /> : <CableIcon />}>
+                    {saving ? 'Guardando…' : 'Guardar conexiones'}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -767,6 +878,7 @@ export default function Domains() {
     const [apps, setApps] = useState([]);
     const [appsError, setAppsError] = useState(null);
     const [changeOpen, setChangeOpen] = useState(null);      // row whose destination is being changed
+    const [connectionsOpen, setConnectionsOpen] = useState(null); // row whose API connections are being edited
     const [disconnectOpen, setDisconnectOpen] = useState(null);
     const [notice, setNotice] = useState(null);
 
@@ -939,6 +1051,18 @@ export default function Domains() {
         await reload();
     };
 
+    const handleConnectionsSaved = async (domain, declared) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        const what = declared.length
+            ? `${declared.length} conexión${declared.length !== 1 ? 'es' : ''}: ${declared.map((c) => `${c.prefix} → ${c.target}`).join(', ')}`
+            : 'sin conexiones';
+        setNotice(scopeRef.current === mine
+            ? `${domain}: ${what}. La puerta y su destino no cambiaron.`
+            : `${domain}: ${what} en ${where}.`);
+        await reload();
+    };
+
     const handleDescriptionSaved = async (description) => {
         setDescriptionNotice(`Description saved: "${description}"`);
     };
@@ -1103,6 +1227,7 @@ export default function Domains() {
                                                 onEdit={setEditOpen}
                                                 onProvision={setProvisionOpen}
                                                 onChangeDestination={setChangeOpen}
+                                                onConnections={setConnectionsOpen}
                                                 onDisconnect={setDisconnectOpen}
                                                 canModify={canModify !== false}
                                             />
@@ -1134,6 +1259,13 @@ export default function Domains() {
                 onSuccess={handleDestinationChanged}
                 apps={apps}
                 appsError={appsError}
+                ctx={ctx}
+            />
+            <ConnectionsDialog
+                row={connectionsOpen}
+                open={!!connectionsOpen}
+                onClose={() => setConnectionsOpen(null)}
+                onSuccess={handleConnectionsSaved}
                 ctx={ctx}
             />
             <DisconnectDialog

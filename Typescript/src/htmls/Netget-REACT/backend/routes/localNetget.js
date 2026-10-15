@@ -19,6 +19,7 @@ import {
     getDomainByName,
     registerDomain,
     updateDomain,
+    updateDomainConnections,
     deleteDomain,
     sanitizeOwnerLabel,
 } from "../../../../kernel/domainStore.ts";
@@ -778,15 +779,31 @@ router.post('/update-domain', async (req, res) => {
     if (!(await getDomainByName(body.domain))) {
         return res.status(404).json({ error: 'Domain not found' });
     }
+    // `connections` is the third destination of a door: path prefixes served by the app's own server on another port
+    // (docs/DoorConnections.md). It travels on this route, behind the same operator gate, so the panel needs no new
+    // location in the router; the rules are the store's (checked there, and again per request in the Lua), not this route's.
+    const { connections, ...fields } = f;
+    const touchesFields = Object.values(fields).some((v) => v !== undefined);
     try {
-        await updateDomain(
-            body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
-            f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
-        );
+        if (touchesFields || connections === undefined) {
+            await updateDomain(
+                body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
+                f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
+            );
+        }
     } catch (error) {
         return refusal(res, error) || res.status(500).json({ error: 'update failed' });
     }
-    res.json({ success: true, domain: body.domain });
+    let declared;
+    if (connections !== undefined) {
+        try {
+            declared = await updateDomainConnections(body.domain, connections);
+        } catch (error) {
+            // refused as a whole, nothing written: say which entry and why
+            return res.status(400).json({ error: error instanceof Error ? error.message : String(error), code: 'CONNECTION_REFUSED' });
+        }
+    }
+    res.json({ success: true, domain: body.domain, ...(declared !== undefined ? { connections: declared } : {}) });
 });
 
 // What each door is doing now: does its destination answer, is it applied to the router, is TLS configured, can it be

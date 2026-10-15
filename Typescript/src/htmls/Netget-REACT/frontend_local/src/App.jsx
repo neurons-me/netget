@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
-import { LauncherPopoverProvider } from 'this.gui';
-import { SeedSessionProvider, Namespace, MonadNamespaceCard, Cleaker, Me } from 'this.gui/react';
+import { LauncherPopoverProvider, MonadNamespaceCard } from 'this.gui';
+import { SeedSessionProvider, Namespace, Cleaker, Me } from 'this.gui/react';
 import { SpecBoundary } from 'this.gui/devtools';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';

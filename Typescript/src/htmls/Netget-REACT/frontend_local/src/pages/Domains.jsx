@@ -149,7 +149,12 @@ async function updateDoorConnections(ctx, { domain, connections }) {
     if (isRefusal(res)) throw new Error(refusalMessage('update-domain'));
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
-    return Array.isArray(data.connections) ? data.connections : [];
+    // A gateway that does not carry connections answers success and writes nothing (it ignores the field): without the
+    // list in the answer there is no proof that anything was declared, and saying "saved" would be false.
+    if (!Array.isArray(data.connections)) {
+        throw new Error('Este gateway todavía no acepta conexiones (su backend es anterior a esta función): no se guardó nada.');
+    }
+    return data.connections;
 }
 
 // The apps registered with this gateway (live ones), to point a door at by name.

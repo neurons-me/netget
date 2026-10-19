@@ -581,6 +581,54 @@ program
     }
   });
 
+// Door connections: the operator's declaration that a path prefix of a door belongs to a service of the app that is not
+// its monad (FullTrailer's own server at /api/fuel). The app may say what it needs; publishing it is this command.
+// Nothing here starts or supervises the service, and nothing reads a registration: see runtime/doorConnections.ts.
+program
+  .command('door-connections <domain>')
+  .description('List or declare the connections of a door: path prefixes served by an app\'s own server (127.0.0.1:<port>) instead of its monad. Writes the domain record and regenerates domain-map.json; the gateway reads it per request (no reload).')
+  .option('--add <prefix=target...>', 'Add or replace a connection, e.g. --add /api/fuel=127.0.0.1:4000 (repeatable)', (value: string, previous: string[] = []) => [...previous, value])
+  .option('--remove <prefix...>', 'Remove the connection with this prefix (repeatable)', (value: string, previous: string[] = []) => [...previous, value])
+  .option('--clear', 'Remove every connection of the door')
+  .option('--json', 'Print a single JSON line instead of colored text')
+  .action(async (domain: string, opts: { add?: string[]; remove?: string[]; clear?: boolean; json?: boolean }) => {
+    try {
+      const { getDomainByName, updateDomainConnections } = await import('./kernel/domainStore.js');
+      const record = await getDomainByName(domain);
+      if (!record) throw new Error(`The domain ${domain} is not registered.`);
+      let connections = [...(record.connections ?? [])];
+      const changes = (opts.add?.length ?? 0) + (opts.remove?.length ?? 0) + (opts.clear ? 1 : 0);
+      if (changes > 0) {
+        if (opts.clear) connections = [];
+        for (const prefix of opts.remove ?? []) connections = connections.filter((c) => c.prefix !== prefix);
+        for (const pair of opts.add ?? []) {
+          const at = pair.indexOf('=');
+          if (at <= 0) throw new Error(`--add expects <prefix>=<target>, got "${pair}"`);
+          const prefix = pair.slice(0, at).trim();
+          connections = connections.filter((c) => c.prefix !== prefix);
+          connections.push({ prefix, target: pair.slice(at + 1).trim() });
+        }
+        connections = await updateDomainConnections(domain, connections);
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, domain, type: record.type, target: record.target, connections }));
+        return;
+      }
+      console.log(chalk.cyan(`${domain}  (${record.type ?? '-'} -> ${record.target ?? '-'})`));
+      if (connections.length === 0) console.log(chalk.gray('  no connections: every path goes to the door\'s destination'));
+      for (const c of connections) console.log(`  ${c.prefix}  ->  ${c.target}`);
+      if (changes > 0) console.log(chalk.green('✔ Declared. domain-map.json regenerated; the gateway reads it on the next request.'));
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: false, message }));
+        process.exit(1);
+      }
+      console.error(chalk.red(`door-connections failed: ${message}`));
+      process.exit(1);
+    }
+  });
+
 program
   .command('app-frontend-mode <name> [mode]')
   .description('Switch a registered app between dev (live proxy through /apps/<name>) and dist (its own built dist/ served directly) — the same toggle frontend-mode gives netget\'s own panel, generalized to any app.')
@@ -683,6 +731,25 @@ program
   });
 
 
+// Detects and stores this host's public/local addresses (modules/utils/networkIdentity.ts). xConfig.json only.
+program
+  .command('network-refresh')
+  .description("Detect this host's public and local addresses and store them in xConfig.json (bounded; keeps the last known public address if the check fails; does not touch nginx).")
+  .option('--json', 'Print a single JSON line')
+  .action(async (opts: { json?: boolean }) => {
+    const { ensureNetworkIdentity, describePublicAddress } = await import('./modules/utils/networkIdentity.ts');
+    const net = await ensureNetworkIdentity();
+    const said = describePublicAddress({ publicIP: net.publicIP, publicIPDetection: net.publicIPDetection });
+    if (opts.json) {
+      console.log(JSON.stringify({ ok: net.publicIPDetection.state !== 'failed', changed: net.changed, publicIP: net.publicIP, localIP: net.localIP, publicIPDetection: net.publicIPDetection }));
+      return;
+    }
+    console.log(`public address: ${said.text}`);
+    console.log(`local address:  ${net.localIP || chalk.gray('not found')}`);
+    console.log(chalk.gray('Stored in xConfig.json. Nothing else was changed (nginx is regenerated only by gateway-adopt --apply-nginx).'));
+    if (net.publicIPDetection.state === 'failed') process.exitCode = 1;
+  });
+
 // Runs the gateway inside an existing monad instead of as a separate backend:
 // records the monad's module/env and where nginx sends the gateway's API. It
 // never restarts the monad and never touches nginx unless --apply-nginx is given.
@@ -706,6 +773,13 @@ program
       } else if (typeof opts.frontend === 'string') {
         frontendDir = opts.frontend;
       }
+      // Record the host's addresses before anything is rendered from xConfig. Bounded and non-fatal: a third party that
+      // does not answer is a note here, never a reason for the adoption to fail or wait.
+      try {
+        const { ensureNetworkIdentity, describePublicAddress } = await import('./modules/utils/networkIdentity.ts');
+        const net = await ensureNetworkIdentity();
+        if (!opts.json) console.log(chalk.gray(`  public address: ${describePublicAddress({ publicIP: net.publicIP, publicIPDetection: net.publicIPDetection }).text}`));
+      } catch { /* recorded nothing; carry on */ }
       const result = await adoptMonadAsGateway({
         monad,
         frontendDir,

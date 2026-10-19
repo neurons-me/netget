@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { saveXConfig } from '../config/xConfig.ts';
 import type { XStateData } from '../xState.ts';
 import { getLocalIP } from '../../utils/ipUtils.ts';
+import { describePublicAddress } from '../../utils/networkIdentity.ts';
 
 type MainServerNameAction = 'edit' | 'clear' | 'back';
 
@@ -42,12 +43,11 @@ function getExposure(x: XStateData): {
 } {
     const localIP = normalizeIp(x.localIP) || getLocalIP() || '';
     const publicIP = normalizeIp(x.publicIP);
-    // A server is directly publicly reachable if it has a public IP that is
-    // not itself a private/loopback/link-local address. On cloud VMs (GCP,
-    // AWS, etc.) the local IP is typically a private NAT-internal address
-    // (e.g. 10.x.x.x) while the public IP is a separate externally-routable
-    // address with 1:1 NAT — they are never equal, but the server is still
-    // directly reachable on its public IP.
+    // A public address has been OBSERVED for this host when xConfig holds one that is not a private/loopback/link-local
+    // address. On cloud VMs (GCP, AWS, etc.) the local IP is a private NAT-internal address (e.g. 10.x.x.x) while the
+    // public one is a separate address with 1:1 NAT -- they are never equal, and that is normal. This says a real
+    // domain's DNS A record has an address to point to; it does NOT say the server answers from the internet
+    // (firewall, security group, nothing listening are all invisible here).
     const directPublic = !!publicIP && !isPrivateIPv4(publicIP);
     const applies = directPublic;
 
@@ -56,7 +56,7 @@ function getExposure(x: XStateData): {
         publicIP,
         directPublic,
         applies,
-        label: applies ? 'public domain applies' : 'local/NAT mode - public domain does not apply yet',
+        label: applies ? 'public address observed - a public domain can point here (reachability is not checked)' : 'no public address observed - local/NAT mode, public domain does not apply yet',
         help: applies
             ? 'Use a real domain whose DNS A record points to this server public IP.'
             : 'Use Domains & Certificates for real domains later. Here, leave it empty or use a local label only.',
@@ -82,7 +82,7 @@ function printHeader(x: XStateData, message?: string): void {
     console.log(chalk.bold('📍 .Local Main Server > Settings > Public domain'));
     console.log(`Current value: ${currentName ? chalk.green(currentName) : chalk.yellow('not set')}`);
     console.log(`Network mode: ${exposure.applies ? chalk.green(exposure.label) : chalk.yellow(exposure.label)}`);
-    console.log(`Local IP: ${exposure.localIP || chalk.gray('not detected')}  Public IP: ${exposure.publicIP || chalk.gray('not detected')}`);
+    console.log(`Local IP: ${exposure.localIP || chalk.gray('not detected')}  Public IP: ${describePublicAddress(x as any).text}`);
     console.log(chalk.gray(exposure.help));
 
     if (!exposure.applies) {

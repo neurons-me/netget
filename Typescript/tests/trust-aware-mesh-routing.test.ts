@@ -1,34 +1,95 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Verifies the trust-aware mesh reduction wiring:
-//   - surface_proxy.lua ranks candidates by trust tier before recency, and
-//     exposes the winning identity_hash via ngx.var.surface_proxy_identity
-//   - every mesh-routed server block (bare hostname, NRP handle, and
-//     non-main-server public domains) declares that var and forwards it as
-//     the X-NetGet-Identity response header
+// What this file verifies, against the CURRENT selection contract (surface_proxy.lua, header comment; commit 89c5d9f):
+//   - a registration's trust tier (owner > admin > peer > guest) is NOT a selector. It used to rank candidates before
+//     recency; two identities claiming one host are now a CONFLICT that is answered, never resolved by trust or by
+//     recency, so a more trusted registration cannot take a host another identity declared;
+//   - a route the operator DECLARED for the host decides, whatever the trust of a rival claimant;
+//   - one identity registered more than once is still one identity: it serves, and its identity_hash is exposed as
+//     surface_proxy_identity (the winning identity the response header forwards);
+//   - every mesh-routed server block (bare hostname, NRP handle, non-main-server public domains) declares that var and
+//     forwards it as the X-NetGet-Identity response header (second half of this file).
+// The behavioral part runs the handler in resty; where resty is not installed it is skipped, the config part is not.
 
-const surfaceProxyPath = fileURLToPath(
-    new URL('../src/modules/NetGetX/OpenResty/lua/handlers/surface_proxy.lua', import.meta.url)
-);
-const lua = fs.readFileSync(surfaceProxyPath, 'utf8');
+const resty = ['/usr/local/openresty/bin/resty', '/opt/homebrew/bin/resty', '/usr/local/bin/resty'].find((p) => fs.existsSync(p));
+const harness = fileURLToPath(new URL('./lua/surface_proxy_harness.lua', import.meta.url));
+const handler = fileURLToPath(new URL('../src/modules/NetGetX/OpenResty/lua/handlers/surface_proxy.lua', import.meta.url));
+const ROOT = 'suis-macbook-air.local';
+const HOST = `shared.${ROOT}`;
+const FRESH = 1_999_000;
 
-assert.match(lua, /local TRUST_RANK = \{ owner = 4, admin = 3, peer = 2, guest = 1 \}/);
-assert.match(lua, /trust = app\.trust/);
-assert.match(lua, /identity = meta\.identity_hash or meta\.identityHash/);
+type Trust = 'owner' | 'admin' | 'peer' | 'guest';
+const registration = (name: string, identity: string, port: number, trust: Trust, seen = FRESH) => ({
+    name: `monad:${name}`, host: '127.0.0.1', port, ttlMs: 12000, lastSeenMs: seen, trust,
+    tags: ['127.0.0.1', 'local', 'monad', ROOT, `surface:${name}`],
+    metadata: {
+        monadName: name, namespace: `${name}.${ROOT}`, identity: `${name}.${ROOT}`, identity_hash: identity,
+        endpoint: `http://127.0.0.1:${port}`, directEndpoint: `http://127.0.0.1:${port}`,
+        claimed_namespaces: [`${name}.${ROOT}`, HOST],
+    },
+});
 
-// Reduction must compare trust rank before it ever compares lastSeen.
-const trustRankIndex = lua.indexOf('local bestRank = TRUST_RANK[best.trust]');
-const lastSeenCompareIndex = lua.indexOf('c.lastSeen > best.lastSeen');
-assert.ok(trustRankIndex !== -1, 'reduction must rank by TRUST_RANK');
-assert.ok(lastSeenCompareIndex !== -1, 'reduction must still use lastSeen as a tiebreaker');
-assert.ok(trustRankIndex < lastSeenCompareIndex, 'trust rank must be established before the lastSeen tiebreaker');
+function decide(apps: any[], map?: Record<string, any>) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trust-sel-'));
+    try {
+        fs.mkdirSync(path.join(dir, 'runtime'), { recursive: true });
+        fs.writeFileSync(path.join(dir, 'runtime', 'apps.json'), JSON.stringify({ apps: Object.fromEntries(apps.map((a, i) => [`id${i}`, a])) }));
+        if (map) fs.writeFileSync(path.join(dir, 'runtime', 'domain-map.json'), JSON.stringify({ version: 1, domains: map }));
+        const r = spawnSync(resty!, [harness, handler, dir, HOST, 'application/json'], { env: { ...process.env, NETGET_DATA_DIR: dir }, encoding: 'utf8' });
+        assert.equal(r.status, 0, r.stderr);
+        return JSON.parse(r.stdout.trim().split('\n').pop() as string) as { exit?: number; target: string; identity: string; reason?: string };
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+}
+const served = (r: { exit?: number; target: string }) => r.exit === undefined && r.target !== '';
 
-assert.match(lua, /ngx\.var\.surface_proxy_identity = best\.identity or ""/);
-assert.match(lua, /ambiguous claim for host/);
+if (!resty) {
+    console.log('trust-aware-mesh-routing: behavioral part skipped (no resty on this machine)');
+} else {
+    const tiers: Trust[] = ['owner', 'admin', 'peer', 'guest'];
+
+    // 1. two identities declare the host: a conflict whatever the tiers, in either order -- the higher tier does not win
+    for (const high of tiers) {
+        for (const low of tiers) {
+            if (high === low) continue;
+            const a = registration('alpha', 'alpha-identity', 4101, high);
+            const b = registration('beta', 'beta-identity', 4102, low, FRESH + 500); // and the more recent
+            for (const apps of [[a, b], [b, a]]) {
+                const r = decide(apps);
+                assert.ok(!served(r) && r.exit === 503, `${high} vs ${low}: a conflict is answered, not served (${JSON.stringify(r)})`);
+                assert.ok(/conflict/.test(r.reason ?? ''), `${high} vs ${low}: says conflict (${r.reason})`);
+            }
+        }
+    }
+
+    // 2. the declared route decides, even when the rival claimant has the higher tier
+    const declared = { [HOST]: { type: 'proxy', target: 'app:alpha', protocol: 'http', ssl: { enabled: false } } };
+    const weakDeclared = registration('alpha', 'alpha-identity', 4101, 'guest');
+    const strongRival = registration('beta', 'beta-identity', 4102, 'owner', FRESH + 500);
+    for (const apps of [[weakDeclared, strongRival], [strongRival, weakDeclared]]) {
+        const r = decide(apps, declared);
+        assert.ok(served(r) && r.identity === 'alpha-identity' && r.target === 'http://127.0.0.1:4101', `declared guest beats an owner claimant: ${JSON.stringify(r)}`);
+    }
+    // and a declared target that is down is "not available": the stronger claimant does not inherit the host
+    const down = decide([registration('alpha', 'alpha-identity', 4101, 'guest', 1_000_000), strongRival], declared);
+    assert.ok(!served(down) && down.exit === 503, 'declared + down = not available, never the owner claimant');
+
+    // 3. one identity registered twice (two ports, two tiers, two ages) is one identity: it serves, and its identity is exposed
+    const older = registration('alpha', 'alpha-identity', 4101, 'peer', FRESH - 4000);
+    const newer = registration('alpha', 'alpha-identity', 4111, 'owner', FRESH);
+    for (const apps of [[older, newer], [newer, older]]) {
+        const r = decide(apps);
+        assert.ok(served(r), `one identity is not a conflict: ${JSON.stringify(r)}`);
+        assert.equal(r.identity, 'alpha-identity', 'the winning identity is what X-NetGet-Identity forwards');
+        assert.equal(r.target, 'http://127.0.0.1:4111', 'the most recent registration of THAT identity serves');
+    }
+}
 
 // --- Generated config: mesh blocks declare + forward the identity var ---
 
@@ -68,8 +129,8 @@ const conf = getNetgetAppConfContent();
 const varCount = (conf.match(/set \$surface_proxy_identity "";/g) || []).length;
 const headerCount = (conf.match(/add_header X-NetGet-Identity \$surface_proxy_identity always;/g) || []).length;
 
-// Bare hostname block + NRP handle block + this one public (non-main) domain block = 3.
-assert.equal(varCount, 3, `expected 3 mesh blocks to declare surface_proxy_identity, found ${varCount}`);
-assert.equal(headerCount, 3, `expected 3 mesh blocks to forward X-NetGet-Identity, found ${headerCount}`);
+// Bare hostname block + NRP handle block + <name>.localhost (named spaces) + this one public (non-main) domain block = 4.
+assert.equal(varCount, 4, `expected 4 mesh blocks to declare surface_proxy_identity, found ${varCount}`);
+assert.equal(headerCount, 4, `expected 4 mesh blocks to forward X-NetGet-Identity, found ${headerCount}`);
 
 console.log('trust-aware-mesh-routing.test.ts passed');

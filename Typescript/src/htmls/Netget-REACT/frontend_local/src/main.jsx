@@ -5,6 +5,7 @@ import { Theme } from 'this.gui';
 import 'this.gui/style.css';
 import './styles.css';
 import App from './App.jsx';
+import ComingSoonGate from './components/ComingSoonGate.jsx';
 
 // Tab title reflects whichever hostname actually loaded this page
 // (127.0.0.1, localhost, local.netget, ...) instead of a fixed
@@ -28,12 +29,15 @@ document.title = window.location.hostname;
 // whole time, silently. CustomThemeProvider's only other export
 // (useThemeToggle) had zero consumers anywhere in this app — removed
 // outright rather than left half-wired.
+// The public sites show a "Coming Soon" curtain until the right code is entered (session/comingSoon.js); elsewhere it is transparent.
+const GatedApp = (props) => <ComingSoonGate><App {...props} /></ComingSoonGate>;
+
 const spec = {
   type: StrictMode,
   children: {
     type: Theme,
     props: { 'data-gui-component': 'Theme' },
-    children: { type: App, props: { 'data-gui-component': 'App' } },
+    children: { type: GatedApp, props: { 'data-gui-component': 'App' } },
   },
 };
 

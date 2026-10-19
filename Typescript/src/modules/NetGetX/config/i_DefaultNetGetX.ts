@@ -6,7 +6,7 @@ import { loadOrCreateXConfig, saveXConfig } from './xConfig.ts';
 import type { XConfig } from './xConfig.ts';
 import { initializeState } from '../xState.ts';
 import type { XStateData } from '../xState.ts';
-import { getLocalIP, getPublicIP } from '../../utils/ipUtils.ts';
+import { ensureNetworkIdentity } from '../../utils/networkIdentity.ts';
 import { pathExists } from '../../utils/pathUtils.ts';
 import { initializeDirectories, getDirectoryPaths, getFilesExistence } from '../../utils/GETDirs.ts';
 import type { DirectoryPaths } from '../../utils/GETDirs.ts';
@@ -231,19 +231,15 @@ async function i_DefaultNetGetX(): Promise<XStateData | XConfig | {}> {
         }
 
         try {
-            const publicIP: string | null = await getPublicIP();  // Properly await the asynchronous call
-            const localIP: string | null = getLocalIP();
-            if (publicIP && publicIP !== xConfig.publicIP) {
-                console.log("PublicIP has changed from: " + xConfig.publicIP + " new Detected: " + publicIP);
-                await saveXConfig({ publicIP: publicIP });
-                xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+            // The shared detector: bounded, keeps the last known address when the check fails, touches nothing but xConfig.
+            const net = await ensureNetworkIdentity();
+            if (net.publicIP !== net.previousPublicIP) {
+                console.log("PublicIP has changed from: " + (net.previousPublicIP || '(none)') + " new Detected: " + (net.publicIP || '(none)'));
             }
-
-            if (localIP && localIP !== xConfig.localIP) {
-                console.log("LocalIP has changed from: " + xConfig.localIP + " new Detected: " + localIP);
-                await saveXConfig({ localIP: localIP });
-                xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
+            if (net.publicIPDetection.state === 'failed') {
+                console.log(chalk.yellow(`Public IP not refreshed: ${net.publicIPDetection.error}${net.publicIP ? ` (keeping ${net.publicIP})` : ''}`));
             }
+            xConfig = await loadOrCreateXConfig(); // Reload to ensure all config updates are reflected
         } catch (ipError: any) {
             console.log(chalk.yellow(`Warning: IP detection/configuration failed: ${ipError.message}`));
         }

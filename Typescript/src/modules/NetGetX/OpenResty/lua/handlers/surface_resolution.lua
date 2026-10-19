@@ -4,8 +4,13 @@
 -- WelcomeNetget.jsx fix for why conflating them was actively misleading):
 --
 --   entrypoints — doors into THIS netget's own resolver. Never monad-
---   resolved; localhost/127.0.0.1/local.netget always exist, the public
---   main server only if one is configured.
+--   resolved. localhost and 127.0.0.1 are listed only to a peer that is ON
+--   this machine: for anyone else they name THEIR OWN machine, not this
+--   server (a visitor on the LAN included), so presenting them as a way into
+--   this netget would send them to the wrong place. The public main server
+--   is listed only if one is configured. local.netget is NOT listed: that
+--   alias was retired from the admin block (only localhost/127.0.0.1 answer
+--   there), so listing it advertised a name that does not resolve.
 --
 --   surfaces — real registered domains, each one a monad-resolved app.
 --
@@ -50,13 +55,21 @@ local function is_control_entrypoint(host)
   return false
 end
 
+-- Is the peer a process on THIS machine? Loopback only: a peer on the LAN reaches this server by an address of its
+-- own, and `localhost` on its side is its own machine.
+local function is_loopback_peer()
+  local ip = ngx.var.remote_addr or ""
+  if ip == "::1" or ip == "unix:" then return true end
+  return ip:match("^127%.%d+%.%d+%.%d+$") ~= nil
+end
+
 local function list_entrypoints()
   set_json()
-  local entrypoints = {
-    { id = "localhost", host = "localhost", kind = "loopback", status = "local_only" },
-    { id = "127.0.0.1", host = "127.0.0.1", kind = "loopback", status = "local_only" },
-    { id = "local.netget", host = "local.netget", kind = "lan", status = "local_only" },
-  }
+  local entrypoints = {}
+  if is_loopback_peer() then
+    table.insert(entrypoints, { id = "localhost", host = "localhost", kind = "loopback", status = "local_only" })
+    table.insert(entrypoints, { id = "127.0.0.1", host = "127.0.0.1", kind = "loopback", status = "local_only" })
+  end
 
   -- _G.MAIN_SERVER_NAME is set once per worker in the main nginx.conf's
   -- init_worker_by_lua_block (see setNginxConfigFile.ts) and shared across
@@ -72,6 +85,9 @@ local function list_entrypoints()
     })
   end
 
+  -- An empty Lua table encodes as {} (an object); the answer's contract is a list, and a client that reads a non-list
+  -- as "did not answer" would call a legitimately empty list unavailable.
+  if #entrypoints == 0 then entrypoints = cjson.empty_array end
   ngx.say(cjson.encode({ success = true, entrypoints = entrypoints }))
 end
 

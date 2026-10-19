@@ -28,6 +28,15 @@ import { execFileSync } from 'node:child_process';
 import ME from 'this.me';
 import cleaker from 'cleaker';
 
+// A live test of the machine's REAL gateway: it reads and writes ~/.get (grants, audit log, domain metadata, domain map)
+// and talks to :3000 and local.netget. It is not part of `npm test` for that reason, and a sweep that runs every
+// *.test.ts must not run it by accident. Opt in on purpose: NETGET_LIVE_GATEWAY_TEST=1. The isolated check of the same
+// capability model, against the real standalone entry on disposable data, is tests/standalone-backend-gate.test.ts.
+if (process.env.NETGET_LIVE_GATEWAY_TEST !== '1') {
+    console.log('gateway-capability-model: SKIPPED (live test of the real gateway; NETGET_LIVE_GATEWAY_TEST=1 to run it on purpose)');
+    process.exit(0);
+}
+
 const GATEWAY_ORIGIN = 'http://local.netget';
 const BACKEND_ORIGIN = 'http://127.0.0.1:3000';
 const CAPABILITY = 'gateway:write:domain-metadata';

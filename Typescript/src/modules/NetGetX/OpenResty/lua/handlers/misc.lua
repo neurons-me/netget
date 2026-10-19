@@ -36,6 +36,21 @@ local function looks_like_ipv4(value)
   return type(value) == "string" and value:match("^%d+%.%d+%.%d+%.%d+$") ~= nil
 end
 
+-- RFC1918 / loopback / link-local: who is on this machine or its own LAN. The NIC's private address is a detail of the
+-- infrastructure; a peer from the internet does not get it.
+local function is_private_ipv4(ip)
+  if type(ip) ~= "string" then return false end
+  local a, b = ip:match("^(%d+)%.(%d+)%.%d+%.%d+$")
+  a, b = tonumber(a), tonumber(b)
+  if not a then return false end
+  return a == 10 or a == 127 or (a == 192 and b == 168) or (a == 172 and b >= 16 and b <= 31) or (a == 169 and b == 254)
+end
+
+local function is_local_peer()
+  local ip = ngx.var.remote_addr or ""
+  return ip == "::1" or ip == "unix:" or is_private_ipv4(ip)
+end
+
 local function ip_info()
   set_json()
   -- xConfig.json is the same file the Node-side config module
@@ -47,6 +62,7 @@ local function ip_info()
   -- whether OpenResty (this handler) or the Node backend answers it.
   local publicIP = ""
   local localIP = ""
+  local detection = nil
   local f = io.open(netgetDir .. "/xConfig.json", "r")
   if f then
     local raw = f:read("*a")
@@ -55,14 +71,23 @@ local function ip_info()
     if ok and type(parsed) == "table" then
       if looks_like_ipv4(parsed.publicIP) then publicIP = parsed.publicIP end
       if looks_like_ipv4(parsed.localIP) then localIP = parsed.localIP end
+      -- when/how publicIP was last checked (written by modules/utils/networkIdentity.ts). Only these fields leave.
+      local d = parsed.publicIPDetection
+      if type(d) == "table" and (d.state == "detected" or d.state == "pending" or d.state == "failed") then
+        detection = { state = d.state, observedAt = d.observedAt, checkedAt = d.checkedAt, source = d.source }
+      end
     end
   end
-  -- Fall back to what this connection itself arrived on if xConfig had
-  -- nothing usable -- still real, just less stable than the stored value.
+  -- Fall back to what this connection itself arrived on if xConfig had nothing usable -- still real, just less stable
+  -- than the stored value.
   if localIP == "" and looks_like_ipv4(ngx.var.server_addr) then
     localIP = ngx.var.server_addr
   end
-  ngx.say(cjson.encode({ success = true, publicIP = publicIP, localIP = localIP }))
+  -- Read only, and the private address is for local peers only: it is omitted (not blanked) for anyone else.
+  local out = { success = true, publicIP = publicIP }
+  if detection then out.publicIPDetection = detection end
+  if is_local_peer() and localIP ~= "" then out.localIP = localIP end
+  ngx.say(cjson.encode(out))
 end
 
 local function port_info()

@@ -4,12 +4,21 @@ import os from 'os';
 import { spawnSync } from 'child_process';
 import { getNetgetDataDir } from '../utils/netgetPaths.js';
 import { isReservedLocalDomain } from '../modules/NetGetX/Domains/reservedDomains.ts';
+import { checkDoorConnections, type DoorConnection } from './doorConnections.js';
+import { registeredMonadPorts } from './doorConnectionPorts.js';
+import { checkRouteTarget } from './routeTargets.js';
+import { installationRoots, isValidDomainPattern, appNameOfTarget, type AuthorizedRoot } from './authorizedRoots.js';
 
 export interface DomainRoute {
     type: 'proxy' | 'server' | 'static';
     target?: string;
     protocol?: 'http' | 'https';
     root?: string;
+    /** Door connections (runtime/doorConnections.ts), re-checked here; surface_proxy.lua checks them again. */
+    connections?: DoorConnection[];
+    /** The identity the operator bound this wildcard's app to when declaring it (kernel/domainStore.ts). The router
+     *  treats a wildcard `app:` route that does not carry it as unserved. */
+    identity?: string;
     ssl: {
         enabled: boolean;
         cert?: string;
@@ -22,6 +31,12 @@ export interface DomainMap {
     generatedAt: string;
     node: { hostname: string };
     domains: Record<string, DomainRoute>;
+    /**
+     * The roots the router may hand names to, and the identity authorized for each (runtime/authorizedRoots.ts). A monad
+     * that announces a root is not in here; absent or empty means nothing is authorized, and an address under a root
+     * gets the neutral shell. An operator's wildcard route is not here: it is a domain like any other.
+     */
+    roots?: Record<string, AuthorizedRoot>;
 }
 
 export function getDomainMapPath(): string {
@@ -52,6 +67,11 @@ export async function generateDomainMap(): Promise<string> {
         const key = row.domain.toLowerCase();
         if (isReservedLocalDomain(key)) continue;
         if (!row.type) continue;
+        // `*` is valid only as `*.<name>`: anything else is not a route (a pattern the router could read two ways).
+        if (!isValidDomainPattern(key)) {
+            console.warn(`[domain-map] ${key}: not projected (a wildcard is only valid as *.<name>)`);
+            continue;
+        }
 
         const type: DomainRoute['type'] =
             row.type === 'static' ? 'static'
@@ -65,6 +85,19 @@ export async function generateDomainMap(): Promise<string> {
 
         const route: DomainRoute = { type, ssl };
 
+        // The projection is the last gate before the router: what the store refuses on the way in is refused here too
+        // (a record edited by hand, written by an older version). A route that fails is not projected, so the router
+        // never sees a destination the gateway itself would not have accepted.
+        {
+            const registeredPorts = registeredMonadPorts();
+            const wanted = type === 'static' ? row.target : row.target ?? '';
+            const checked = checkRouteTarget(type, wanted, { registeredPorts });
+            if (checked.ok === false && !(row.type === 'main_server')) {
+                console.warn(`[domain-map] ${key}: not projected (${checked.code}: ${checked.reason})`);
+                continue;
+            }
+        }
+
         if (type === 'static') {
             if (!row.target) continue;
             route.root = row.target ?? undefined;
@@ -77,6 +110,18 @@ export async function generateDomainMap(): Promise<string> {
             route.protocol = 'http';
         }
 
+        // A static folder has nothing to carve out of; a dynamic route may carry connections. A list that fails any
+        // rule is not projected at all (a partial list would silently change which path goes where).
+        if (type !== 'static' && Array.isArray(row.connections) && row.connections.length > 0) {
+            const checked = checkDoorConnections(row.connections, registeredMonadPorts());
+            if (checked.ok) route.connections = checked.connections;
+        }
+
+        // A wildcard route to an app is served only from the identity it was bound to at declaration. A record with no
+        // identity (written by hand, or by a version that did not bind) is projected as such and the router refuses it,
+        // never serving "whoever is registered under that name".
+        if (key.startsWith('*.') && row.identity && appNameOfTarget(row.target)) route.identity = row.identity;
+
         domains[key] = route;
     }
 
@@ -85,6 +130,7 @@ export async function generateDomainMap(): Promise<string> {
         generatedAt: new Date().toISOString(),
         node: { hostname: os.hostname() },
         domains,
+        roots: await installationRoots(),
     };
 
     const outPath = getDomainMapPath();

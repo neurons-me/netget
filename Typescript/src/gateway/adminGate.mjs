@@ -37,6 +37,11 @@ export const PUBLIC_ROUTES = new Set([
   'GET /openresty-status',
   'GET /frontend-mode',
   'GET /apps/:name/frontend-mode',
+  // Forwarded as they are to the monad's own /explain and /inspect, which answer anyone under the monad's disclosure
+  // rules. On the monad-mounted gateway the monad answers them itself (MONAD_OWN_PATHS); the standalone backend, which
+  // has no monad in front, answers by forwarding.
+  'POST /explain',
+  'POST /inspect',
 ]);
 
 // Routes that verify their own request and must stay reachable without a session.
@@ -45,6 +50,8 @@ export const OWN_AUTH_ROUTES = [
   /^POST \/admin-session\//,
   /^POST \/gateway-admin\//,
   /^GET \/logs$/,
+  // The install screen of a fresh machine: each of these checks its own caller (openRestyInstall.js requireAuth).
+  /^(GET|POST) \/openresty\/install/,
 ];
 
 export const WRITE_SCOPE = 'gateway:write';

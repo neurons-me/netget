@@ -182,26 +182,18 @@ export function getNetgetAppConfContent(layout: OpenRestyLayout = detectOpenRest
     ? '\n    if ($scheme = http) { return 301 https://$host$request_uri; }\n'
     : '';
 
-  // The admin block (below) answers for BOTH real identity-facing hostnames
-  // (local.cleaker, local.host) and loopback-only admin/API aliases
-  // (local.netget, localhost, 127.0.0.1, the LAN .netget alias) that must
-  // keep answering plain http — see forceHttpsRedirect's own comment for
-  // why. A single `if ($scheme = http)` can't tell those apart by itself,
-  // so this map combines scheme+host into one flag `if` can branch on
-  // (nginx does not allow nested `if` blocks) — selective instead of
-  // blanket, on purpose.
-  const adminHttpsRedirectMap = certsPresent
-    ? `
-map $scheme:$host $netget_force_https {
-    default 0;
-    "http:local.cleaker" 1;
-    "http:local.host" 1;
-}
-`
-    : '';
-  const adminForceHttpsRedirect = certsPresent
-    ? '\n    if ($netget_force_https) { return 301 https://$host$request_uri; }\n'
-    : '';
+  // The admin block (below) used to also answer for two real identity-facing
+  // hostnames (local.cleaker, local.host) that needed https forced even over
+  // plain http — see forceHttpsRedirect's own comment. Retired (2026-10-06):
+  // local.netget/local.host/local.cleaker are no longer in this block's
+  // server_name at all (the recurring door-decides-content confusion this
+  // session's own incident surfaced — two aliases of one static bundle
+  // silently diverging in theme/role/session state, each hostname its own
+  // browser origin with its own isolated localStorage). Everything left in
+  // this block (the LAN .netget alias, localhost, 127.0.0.1) is loopback-only
+  // admin/API surface that deliberately still answers plain http, so the
+  // selective https-forcing map this comment used to describe has nothing
+  // left to select for and was removed rather than kept as dead code.
 
   const proxyHeaders = `
         proxy_http_version 1.1;
@@ -226,6 +218,63 @@ map $scheme:$host $netget_force_https {
             deny all;
         }`;
 
+  // Gate for a POST-only gateway control action (restart/stop a process) --
+  // used instead of operatorOnly for /openresty-restart, /openresty-stop,
+  // /dev-server-start, /dev-server-stop. operatorOnly's own limit_except
+  // cannot be reused here: confirmed live (2026-10-03, isolated with a
+  // minimal standalone nginx config varying one directive at a time) that
+  // `limit_except <methods> { allow ...; deny all; }` breaks content_by_lua_
+  // file/content_by_lua_block/a plain `return` as the location's content
+  // handler for any method OUTSIDE the listed ones, even when the peer IS
+  // allowed -- nginx falls through to its default (static-file) content
+  // handler instead, which 404s. proxy_pass is unaffected (confirmed in the
+  // same isolation), which is why none of the /domains* locations below hit
+  // this. The real, practical effect before this fix: the INTENDED method
+  // (POST, from loopback) never reached the Lua handler at all here --
+  // restart/stop were broken for everyone, not just insecure for GET/HEAD.
+  //
+  // This gate: OPTIONS answers the CORS preflight and nothing else; any
+  // method that is not POST or OPTIONS is rejected with 405 before any IP or
+  // identity check runs, so GET/HEAD can never reach the action (closes the
+  // actual vulnerability -- confirmed live the same session: a bare GET to
+  // these locations from loopback, with no other credential, executed the
+  // action); a bare (non-limit_except) allow/deny -- confirmed safe for
+  // content_by_lua_file in the same isolation -- then restricts the
+  // remaining POST path to this machine; middleware/me_sig.lua (the same
+  // Ed25519 X-Me-Proof verification /domains/metadata already uses, loaded
+  // via loadfile()() for the same ngx.exit()-across-a-C-call-boundary reason
+  // documented at that location) verifies the caller's identity and exposes
+  // ngx.ctx.me_is_owner/me_scopes; the handler itself (openresty.lua/
+  // dev_server.lua) makes the actual capability decision via
+  // lib/operator_access.lua's has_capability() -- loopback alone is
+  // necessary (this gate) but not sufficient (the handler's own check),
+  // mirroring the daemon's own capability-separation model (see
+  // GatewayCapabilityModel.md) even though there is no daemon in this path
+  // to defer to -- these handlers shell out directly, so the decision has to
+  // live here instead.
+  const controlActionGate = `
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
+        if ($request_method != POST) { return 405; }
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        # Unlike /domains/metadata below, nothing here proxies away to the
+        # daemon -- openresty.lua/dev_server.lua read ngx.ctx.me_is_owner/
+        # me_scopes directly in the same request's content phase, so there's
+        # no need to round-trip them through nginx variables the way a
+        # proxy_set_header handoff would require.
+        access_by_lua_block {
+            local me_sig_chunk = loadfile("${layout.luaDir}/middleware/me_sig.lua")
+            me_sig_chunk()
+        }`;
+
   // Shared troubleshooting page for proxy_pass failures where the target was picked
   // from a live-looking registry entry but the connection itself failed — either
   // surface_proxy.lua's mesh reduction (apps.json) or monad_proxy.lua's /monads/:name
@@ -238,7 +287,71 @@ map $scheme:$host $netget_force_https {
   // _G.render_gateway_status is set once per worker in nginx.conf's
   // init_worker_by_lua_block and is available here because OpenResty shares one Lua VM
   // per worker across every included server block.
-  const meshGatewayErrorLocation = `
+  // Door connections (src/runtime/doorConnections.ts, lua/lib/door_connections.lua): the operator declared that a path
+  // prefix of a door belongs to a service of the app that is not a monad (FullTrailer's own server at /api/fuel).
+  // surface_proxy.lua (the host door) and monad_proxy.lua (/apps/<name>/) decide, then ngx.exec to this location with
+  // the upstream in $door_connection_target. It is a location of its own, not the monad's, for four reasons:
+  //   * a failure (the service is off) is JSON, never the gateway's HTML status page and never the app's index.html:
+  //     an API call must not receive a page;
+  //   * the request goes out with what a public client may send to an app's own server and NOTHING of the gateway's:
+  //     the monad's internal token, the identity/scopes headers that the gateway trusts from itself, the signing
+  //     proof for the gateway, the gateway's cookies and bearer. The service sees the real client address as
+  //     X-Forwarded-For (replaced, not appended: a forged one is not passed on), so it can tell a public request
+  //     from a local one even though nginx reaches it over loopback;
+  //   * the path is the one the client used (minus the /apps/<name> mount, which monad_proxy.lua strips);
+  //   * no WebSocket upgrade is offered.
+  // The two variables are declared at server level (a snippet appended wherever @mesh_gateway_error exists, so every
+  // server block that can exec here has them).
+  const doorConnectionLocations = `
+    set $door_connection_target "";
+    set $door_connection_prefix "";
+
+    location @door_connection {
+        internal;
+        proxy_pass $door_connection_target;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Monad-Internal-Token "";
+        proxy_set_header X-NetGet-Internal "";
+        proxy_set_header X-NetGet-Identity "";
+        proxy_set_header X-NetGet-Scopes "";
+        proxy_set_header X-NetGet-Surface "";
+        proxy_set_header X-NetGet-Monad "";
+        proxy_set_header X-NetGet-App-Kind "";
+        proxy_set_header X-Me-Proof "";
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_connect_timeout 3s;
+        proxy_next_upstream off;
+        proxy_intercept_errors off;
+        error_page 502 503 504 = @door_connection_error;
+        add_header X-NetGet-Connection $door_connection_prefix always;
+    }
+
+    location @door_connection_error {
+        internal;
+        default_type 'application/json; charset=utf-8';
+        content_by_lua_block {
+            local cjson = require "cjson.safe"
+            ngx.status = 502
+            ngx.header["Content-Type"] = "application/json; charset=utf-8"
+            ngx.header["Cache-Control"] = "no-store"
+            ngx.say(cjson.encode({
+                ok = false,
+                error = "connection_unavailable",
+                prefix = ngx.var.door_connection_prefix,
+                message = "The service behind this path is not answering.",
+            }))
+            return ngx.exit(ngx.OK)
+        }
+    }`;
+
+  const meshGatewayErrorLocation = `${doorConnectionLocations}
     location @mesh_gateway_error {
         internal;
         default_type 'text/html; charset=utf-8';
@@ -255,6 +368,48 @@ map $scheme:$host $netget_force_https {
             end
         }
     }`;
+  // Entry point for the failures nginx itself produces. A location that proxies to the gateway API (/gateway-identity,
+  // /setup/*, /admin-session/*, /domains, ...) answers 502/503/504 with nginx's bare page (it names "openresty" and
+  // nothing else) when nothing is behind it. For a BROWSER NAVIGATION (Accept: text/html) the page that says what is
+  // missing already exists: the front end, whose first screen reads the layers behind this door and says which one is
+  // off. So that is what a navigation gets, with the status it had (502 stays 502: monitors and curl still see the
+  // failure). Anything that is not a navigation (the front end's own fetches, curl, health checks) keeps the plain
+  // error it always had, which is also what the front end reads to tell "off" from "answered with an error".
+  //
+  // Only where this server serves the front end itself (so its assets come from disk, not through the proxy that is
+  // down), and never in dev-frontend mode (there the front end is behind a proxy too). A location with its own
+  // error_page (the mesh paths: @mesh_gateway_error) keeps it: a location's error_page replaces the inherited one.
+  // $door_entry marks "this server has @door_entry" for Lua (monad_proxy.lua); $door_status carries the status of a
+  // response Lua answers itself into @door_entry (an internal redirect forgets ngx.status).
+  const doorEntryLocation = isDevFrontend ? '' : `
+    location @door_entry {
+        internal;
+        default_type 'text/html; charset=utf-8';
+        content_by_lua_block {
+            local status = tonumber(ngx.var.door_status)
+            if not status or status < 400 then status = ngx.status end
+            if status < 400 then status = 502 end
+            local accept = ngx.var.http_accept or ""
+            if not accept:find("text/html", 1, true) then
+                return ngx.exit(status)
+            end
+            local file = io.open("${distRoot}/index.html", "rb")
+            if not file then return ngx.exit(status) end
+            local body = file:read("*a")
+            file:close()
+            ngx.status = status
+            ngx.header["Content-Type"] = "text/html; charset=utf-8"
+            ngx.header["Cache-Control"] = "no-store"
+            ngx.print(body)
+            return ngx.exit(ngx.OK)
+        }
+    }`;
+  const doorEntryServerDirectives = isDevFrontend ? '' : `
+    set $door_entry "1";
+    set $door_status "";
+    error_page 502 503 504 @door_entry;
+`;
+
   const meshProxyErrorHandling = `
         proxy_intercept_errors on;
         error_page 502 503 504 = @mesh_gateway_error;`;
@@ -343,7 +498,7 @@ ${proxyHeaders}
   // surface_proxy.lua with the WS upgrade headers already in ${proxyHeaders}
   // (confirmed: surface_proxy.lua never calls ngx.req.set_uri(), so nginx's
   // own path-preserving proxy_pass behavior already forwards /nrp verbatim
-  // there). The admin block (local.netget/local.host/local.cleaker) is
+  // there). The admin block (localhost/127.0.0.1/the LAN .netget alias) is
   // different — its own "location /" serves the static SPA, not a monad
   // proxy — so /nrp there previously had nowhere to go but a 404/index.html
   // fallback, silently failing every WebSocket upgrade attempt. This routes
@@ -493,8 +648,11 @@ ${proxyHeaders}
         expires 365d;
     }
 
-    # Serve static assets (CSS, JS, images)
-    location ~* \\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    # Serve static assets (CSS, JS, images).
+    # NOT under /apps/: a regex location wins over a later regex location by file order, so without the lookahead
+    # /apps/<name>/assets/app.js was answered from this root (404) and never reached the app's monad. An app served
+    # by its monad under /apps/<name>/ keeps its own files.
+    location ~* ^(?!/apps/).+\\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         root ${distRoot};
         expires 1h;
         add_header Cache-Control "public, max-age=3600";
@@ -571,19 +729,36 @@ ${proxyHeaders}
 ` : '';
 
   const mainServerLocations = `
-${rootLocation}
+${doorEntryServerDirectives}${rootLocation}
 ${isDevFrontend ? netgetPanelErrorLocation : ''}
 
-    # Networks API
+    # Networks API -- networks.lua itself owns authorization (is_local_request()
+    # for reads, middleware/me_sig.lua + has_capability() for the POST/PUT/
+    # DELETE mutations), NOT limit_except: confirmed live 2026-10-03 (same
+    # audit as the catalog/apps-registry fixes) that limit_except breaks
+    # content_by_lua_file for any method outside its own GET/HEAD/OPTIONS
+    # list even when the peer is allowed -- the exact bug fixed on
+    # /openresty-restart etc. This location also found with ZERO handler-side
+    # auth at all (unlike openresty.lua/dev_server.lua, which at least had
+    # is_local_request()) -- networks.lua relied entirely on the broken
+    # limit_except. $NETGET_LUA_DIR lets networks.lua loadfile() me_sig.lua
+    # itself (Lua can't read the TS-side layout.luaDir the generator used for
+    # /domains/metadata's own inline access_by_lua_block); see that file's
+    # own comment for why this must be a fresh loadfile()() per request, not
+    # require() (require() would cache and skip verification after the
+    # first call in a worker). try_files below still shadows this handler
+    # entirely for now (a separate, already-flagged bug) -- protecting the
+    # handler FIRST, before that routing bug is fixed, is deliberate: fixing
+    # the routing first would have made an unauthorized handler reachable.
     location /networks {
-${operatorOnly}
+        set $NETGET_LUA_DIR "${layout.luaDir}";
         if ($request_method = OPTIONS) { return 204; }
         content_by_lua_file lua/handlers/networks.lua;
         try_files $uri $uri/ /index.html;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
@@ -705,17 +880,36 @@ ${viteAssetLocation}
         add_header 'Access-Control-Allow-Headers' 'Content-Type' always;
     }
 
-    # Logs
+    # Logs -- read access to real server/nginx logs (remote_addr, full
+    # request line INCLUDING query string, referer, user-agent). Found live
+    # 2026-10-03: this was gated only by operator_access.is_loopback()
+    # (logs.lua's own verify_cookie(), a stale name for the same check --
+    # see that file's own comment), and this location's own CORS headers
+    # reflect any Origin with credentials -- meaning a page on ANY origin
+    # could both trigger a read (the same browser-mediated loopback request
+    # everything else in this audit pass closes) AND actually read the
+    # response back, cross-origin. "Requires loopback" is not "safe" when
+    # loopback is exactly what a browser on this machine already satisfies,
+    # and read-only is not low-stakes when the content is request logs.
+    # $NETGET_LUA_DIR lets logs.lua loadfile() middleware/me_sig.lua itself.
     location /logs {
-        if ($request_method = OPTIONS) { return 204; }
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Access-Control-Allow-Credentials' 'true' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
+            add_header 'Access-Control-Max-Age' 86400 always;
+            return 204;
+        }
         # Same /domains-vs-page collision (see that location's comment) —
         # /logs is also both a React Router page and a real API route.
         if ($http_sec_fetch_mode = "navigate") { rewrite ^ /index.html last; }
+        set $NETGET_LUA_DIR "${layout.luaDir}";
         content_by_lua_file lua/handlers/logs.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
-        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
@@ -750,28 +944,26 @@ ${proxyHeaders}
     }
 
     location = /openresty-restart {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action restart;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /openresty-stop {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $openresty_action stop;
         content_by_lua_file lua/handlers/openresty.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
@@ -793,34 +985,34 @@ ${operatorOnly}
     }
 
     location = /dev-server-start {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $dev_server_action start;
         content_by_lua_file lua/handlers/dev_server.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /dev-server-stop {
-${operatorOnly}
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $NETGET_CLI_BIN "${netgetCliBin}";
         set $dev_server_action stop;
         content_by_lua_file lua/handlers/dev_server.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
-    # Local app registry
+    # Local app registry. A program (fetch, curl: no text/html in Accept) gets the registry as JSON, as before. A
+    # browser navigating here gets the panel (the SPA answers /apps with the apps registered on this host).
     location = /apps {
         if ($request_method = OPTIONS) { return 204; }
+        if ($http_accept ~* "text/html") { rewrite ^ /index.html last; }
         set $apps_action list;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
@@ -852,14 +1044,25 @@ ${operatorOnly}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+    # restart-all's own fresh-probe fix (apps.lua's probe_monad_surface())
+    # answers "is something genuinely speaking the monad protocol on this
+    # port right now" -- it does NOT answer "is the caller allowed to kill
+    # it" or "does netget actually administer this process." Identity and
+    # permission are different questions (the same distinction the
+    # capability model already draws everywhere else in this pass) --
+    # confirmed live 2026-10-04 that this location still had neither: any
+    # loopback-reachable caller could trigger a real sweep over whatever is
+    # currently registered. $NETGET_LUA_DIR lets apps.lua loadfile()
+    # me_sig.lua itself, same as the catalog fix.
     location = /apps/restart-all {
+        set $NETGET_LUA_DIR "${layout.luaDir}";
         if ($request_method = OPTIONS) { return 204; }
         set $apps_action restart_all;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
@@ -875,36 +1078,50 @@ ${operatorOnly}
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
+    # upsert/delete/spawn are the catalog's real mutation surface -- spawn in
+    # particular runs the catalog entry's own 'cmd' via io.popen (see
+    # apps.lua), so writing an entry and then spawning it is, end to end, an
+    # arbitrary-shell-command primitive. Confirmed live 2026-10-03 on
+    # disposable infra: a simulated cross-origin request chain (Origin:
+    # https://evil.example, no credentials beyond being on this machine)
+    # upserted a catalog entry and spawned it, and the shell command
+    # genuinely ran -- is_local_request() alone (apps.lua's own loopback
+    # check, same shape as operator_access.is_loopback()) doesn't
+    # distinguish a real operator from a browser on this machine that a
+    # malicious page tricked into sending the request. controlActionGate
+    # (same gate /openresty-restart etc. use) closes that: 405 for anything
+    # but POST/OPTIONS, loopback-only, then a real X-Me-Proof. apps.lua's
+    # own has_capability() checks make the actual capability decision.
     location = /apps/catalog/upsert {
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $apps_action catalog_upsert;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /apps/catalog/delete {
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $apps_action catalog_delete;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
     location = /apps/catalog/spawn {
-        if ($request_method = OPTIONS) { return 204; }
+${controlActionGate}
         set $apps_action catalog_spawn;
         content_by_lua_file lua/handlers/apps.lua;
         add_header 'Access-Control-Allow-Origin' $http_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'POST, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, X-Me-Proof' always;
         add_header 'Access-Control-Max-Age' 86400 always;
     }
 
@@ -913,6 +1130,7 @@ ${appMeshLocations}
 ${nrpLocation}
 ${appFrontendDistLocations}
 ${meshGatewayErrorLocation}
+${doorEntryLocation}
 
     # Which namespace this netget's own monad is designated as -- proxied to
     # Express (getGatewayRootNamespace() is a plain TS function, not Lua-
@@ -1493,6 +1711,48 @@ ${meshGatewayErrorLocation}
 }
 `;
 
+  // Block 3: named spaces under localhost -- <name>.localhost (docs/NamedSpaces.md).
+  // An address is not an existence and not a claim. surface_proxy.lua decides: (1) a route the operator DECLARED, else
+  // (2) the monad that IS the nearest enclosing root attends the address with its full context (the Host is passed on
+  // unchanged), else (3) a neutral "no content available". Never the admin block (an exact name, below), never the root's
+  // own surface in place of the address. Loopback peers only: a name under .localhost means "on this machine". Port 80
+  // only and no https redirect: the machine's certificate does not carry *.localhost, so a redirect would end in a name
+  // mismatch; issuing one that does is a separate, explicit step.
+  const localhostNamedSpaceBlock = `
+# ─── Named spaces under localhost ──────────────────────────────────────────
+# <name>.localhost → a declared route, else the monad that IS the root of the address, else "no content available".
+# Loopback peers only. Visiting creates nothing.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name *.localhost;
+    client_max_body_size 500M;
+    allow 127.0.0.1;
+    allow ::1;
+    deny all;
+
+    set $NETGET_DATA_DIR ${xConfig};
+    set $NETGET_CLI_BIN "${netgetCliBin}";
+    access_log ${layout.logDir}/netget_access.log netget_access;
+    error_log  ${layout.logDir}/netget_error.log warn;
+${vendorLocations}
+${namespaceAssetLocations}
+
+    location / {
+        if ($request_method = OPTIONS) { return 204; }
+        set $surface_proxy_target "";
+        ${meshIdentityVar}
+        rewrite_by_lua_file lua/handlers/surface_proxy.lua;
+        proxy_pass $surface_proxy_target;
+${proxyHeaders}
+        add_header Vary "Accept" always;
+        add_header Cache-Control $netget_default_cache_control always;
+        ${meshIdentityHeader}${meshProxyErrorHandling}
+    }
+${meshGatewayErrorLocation}
+}
+`;
+
   return `
 # netget_app.conf (generated)
 # -----------------------------------------------------------
@@ -1500,12 +1760,14 @@ ${meshGatewayErrorLocation}
 # NRP namespace tree:
 #   ${machineHostnameLower}              → monad root (surface_proxy.lua → registered monad)
 #   {handle}.${machineHostnameLower}     → handle namespace surface (surface_proxy.lua → registered monad)
-#   ${machineHostnameLower.replace(/\.local$/, '')}.netget  → admin/control plane (LAN access)
-#   local.netget / localhost / 127.0.0.1 → admin/control plane (loopback alias)
-#   local.host                           → canonical local .me kernel surface, same admin block
-#   local.cleaker                        → legacy alias for local.host (kept for compatibility)
-#   local.host/@{handle}                 → identity-handle resolution — see localNetget.js's handle middleware
-#   local.cleaker/@{handle}              → same, via the legacy alias
+#   <name>.localhost                     → named space: declared route, else the root's monad, else no content (loopback only)
+#   localhost / 127.0.0.1                → admin/control plane (loopback alias)
+#   (local.netget/local.host/local.cleaker/${machineHostnameLower.replace(/\.local$/, '')}.netget
+#    retired 2026-10-06 — the three local.* names were each their own browser
+#    origin serving the identical static bundle, silently diverging in
+#    theme/role/session state door to door; the LAN .netget alias never
+#    actually resolved on this machine, confirmed live, dead in practice.
+#    localhost/127.0.0.1 are the only loopback admin entries left.)
 
 lua_shared_dict gateway_nonces  1m;
 
@@ -1520,16 +1782,22 @@ log_format netget_access '$remote_addr - - [$time_local] "$request" $status $bod
         ""      "no-store";
     }
 
-${adminHttpsRedirectMap}
 ${namespaceSurfaceBlock}
 ${nrpHandleBlock}
+${localhostNamedSpaceBlock}
 ${publicDomainBlocks}
 
 server {
 ${listenLines}
-    server_name local.netget local.host local.cleaker ${machineHostnameLower.replace(/\.local$/, '')}.netget localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
+    # The LAN ${machineHostnameLower.replace(/\.local$/, '')}.netget alias retired alongside
+    # local.netget/local.host/local.cleaker (2026-10-06): confirmed live it
+    # never actually resolved on this machine (no /etc/hosts entry, not an
+    # mDNS .local name, .netget is not a real TLD) -- dead in practice, not
+    # just redundant. localhost/127.0.0.1 are the only loopback admin
+    # entries left; neither needs any resolution mechanism to work.
+    server_name localhost 127.0.0.1${extraServerNames ? ' ' + extraServerNames : ''};
     client_max_body_size 500M;
-${sslDirectives}${adminForceHttpsRedirect}
+${sslDirectives}
     set $NETGET_DATA_DIR ${xConfig};
     set $NETGET_CLI_BIN "${netgetCliBin}";
     set $netget_logs_path ${layout.logDir};

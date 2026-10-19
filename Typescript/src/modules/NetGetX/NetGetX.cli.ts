@@ -3,6 +3,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import open from 'open';
 import { loadOrCreateXConfig } from './config/xConfig.ts';
+import { describePublicAddress } from '../utils/networkIdentity.ts';
 import type { XStateData } from './xState.ts';
 import netGetXSettingsMenu from './NetGetX_Settings.cli.ts';
 import domainsMenu from './Domains/domains.cli.ts';
@@ -61,9 +62,10 @@ function isPrivateIPv4(ip: string): boolean {
 }
 
 function publicDomainApplies(x: XStateData): boolean {
-    // See mainServer.cli.ts getExposure(): a server is directly publicly
-    // reachable if its public IP is itself a non-private address, even when
-    // the local IP differs (cloud VMs behind 1:1 NAT, e.g. GCP/AWS).
+    // A public address having been OBSERVED (and not being a private/loopback/link-local one) is what makes a real
+    // domain's DNS A record meaningful for this server -- on cloud VMs behind 1:1 NAT (GCP/AWS) the local address
+    // differs from it and that is normal. It is not a reachability check: nothing here proves that anything
+    // answers on that address from the internet.
     const publicIP = String(x?.publicIP || '').trim();
     return !!publicIP && !isPrivateIPv4(publicIP);
 }
@@ -115,9 +117,11 @@ function printMainServerHeader(x: XStateData, service: OpenRestyServiceStatus, m
     const proto = service.httpListening ? 'http' : 'https';
     const online = isNetGetOnline(service);
 
-    const publicIPDisplay = x?.publicIP
-        ? chalk.green(online ? termLink(x.publicIP, `${proto}://${x.publicIP}`) : x.publicIP)
-        : chalk.gray('Not Set');
+    // `online` below is "OpenResty is listening on this machine", not "reachable from the internet".
+    const addr = describePublicAddress(x as any);
+    const publicIPDisplay = addr.value
+        ? (addr.state === 'failed' ? chalk.yellow : chalk.green)(online ? `${termLink(addr.value, `${proto}://${addr.value}`)}${addr.text.slice(addr.value.length)}` : addr.text)
+        : chalk.gray(addr.text);
 
     const localIPDisplay = x?.localIP
         ? chalk.green(online ? termLink(x.localIP, `${proto}://${x.localIP}`) : x.localIP)

@@ -128,7 +128,10 @@ export async function loadGatewayRootNamespaceCache(): Promise<void> {
  * from any other monad on the machine, so reusing the same namespace
  * *string* isn't
  * a collision — nothing else routes traffic to it by that name. */
-const UNCONFIGURED_DEFAULT_NAMESPACE = 'local.cleaker';
+// 2026-10-07: was 'local.cleaker'. The local entry is `localhost` (the other names were retired from the
+// admin server block), and a handle under it is `<handle>.localhost`. A monad that already has claims under
+// another root must have them re-issued first (`monads reroot-claims`), or its handles are free to take.
+const UNCONFIGURED_DEFAULT_NAMESPACE = 'localhost';
 
 export function getGatewayRootNamespace(): string {
   const explicit = String(process.env.NETGET_MONAD_NAMESPACE || '').trim();

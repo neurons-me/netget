@@ -1,19 +1,31 @@
 -- surface_proxy.lua
 -- Mesh-aware reverse proxy: routes hostname → best available monad.
 --
--- Algorithm (synthesis by reduction):
---   1. Read apps.json (live monad mesh registry)
---   2. Extract rootspace from request host
---      jabellae.suis-macbook-air.local → rootspace = suis-macbook-air.local
---      suis-macbook-air.local          → rootspace = suis-macbook-air.local
---      34.28.109.244 (IP)              → fallback: any live monad on this machine
---   3. Collect ALL live monads that claim that rootspace
---   4. Reduce to the single best candidate by recency (most recently seen wins)
---   5. Route to its endpoint — the monad handles semantic resolution internally
+-- Selection, strongest first (the registry says WHERE a monad is and whether it is alive; it does not decide which
+-- host it serves unless nothing else does):
+--   1. A DECLARED route for this host in runtime/domain-map.json (the domain store: panel / `netget routing`): the exact
+--      name first, else the longest wildcard `*.<suffix>` the operator declared.
+--      `app:<name>` is resolved by app name against the registry, live by TTL, exactly as the main routing table does.
+--      A declared target that is not available is "not available": it never falls back to another monad.
+--   2. Monads that DECLARE the host as their own (canonical namespace/identity, publicHost, domain, aliases, hosts,
+--      domains, claimed_namespaces). One identity: it serves (most recent registration of that identity). More than
+--      one distinct identity and no declared route: a CONFLICT is answered, not resolved by recency or trust.
+--   3. Nobody declares the host (a name under a root): only the monad AUTHORIZED for the nearest enclosing root may
+--      answer for it, and it receives the request as it came (the Host is not rewritten to the root's own): it resolves
+--      the address with its full context. A root is authorized by the operator (a wildcard route `*.<root>`, in 1) or by
+--      the installation (domain-map.json `roots`: the gateway's own configured root, bound to the identity of the monad
+--      it started). What a monad ANNOUNCES -- its namespace, its aliases -- is capability: it never makes it the
+--      destination of a root, and a newer monad announcing the same root does not replace the authorized identity. The
+--      authorized monad being down is "not available", never someone else. Never the root's own surface in place of the
+--      address, and never the admin block (that is an exact name).
+--   4. Nobody is authorized for the address at all: a neutral "no content available" (404). It says nothing about
+--      whether the name is claimed or exists, and visiting creates nothing.
+--   A declared route may carry CONNECTIONS (lib/door_connections.lua): path prefixes the operator sent to a service of the
+--   app that is not its monad (FullTrailer's own server at /api/fuel). They are checked before the destination answers;
+--   a matching one is answered by that service or by a JSON error, never by the monad or the app's HTML.
+--   Tags and the machine's name are advertisements, never selectors: sharing a root tag does not let one app serve
+--   another app's host. An IP request still goes to any live monad (the address is transport only).
 --
--- This implements the NRP "Total monad" synthesis: the caller never needs to
--- know which monad instance answers. The mesh picks the best one available now.
-
 local cjson = require "cjson.safe"
 
 local function getNetgetDataDir()
@@ -80,12 +92,18 @@ local function table_has_host(values, target)
   return false
 end
 
-local function app_claims_host(app, meta, target)
-  if not target or target == "" then return false end
+-- What a monad SAYS about the names it serves, in two strengths. Both are self-reported (registration is loopback-only,
+-- but nothing cryptographically binds a monad to a host: see CLAUDE.md, gaps #1/#2), so neither is an authority:
+--
+--   declared claim  its own canonical identity/namespace, or the names it lists as its own (publicHost, domain,
+--                   aliases, hosts, domains, claimed_namespaces). This is what can select a monad for a host.
+--   advertisement   the machine's name (host/hostname) and `tags`. Tags are labels (`local`, `monad`, the root name…),
+--                   shared by every monad on the machine. They NEVER select a monad: sharing a root tag does not let one
+--                   app serve another app's host.
+local function declares_host(meta, target)
+  if not target or target == "" or type(meta) ~= "table" then return false end
   if normalize_host(meta.namespace) == target then return true end
   if normalize_host(meta.identity) == target then return true end
-  if normalize_host(meta.host) == target then return true end
-  if normalize_host(meta.hostname) == target then return true end
   if normalize_host(meta.publicHost) == target then return true end
   if normalize_host(meta.public_host) == target then return true end
   if normalize_host(meta.domain) == target then return true end
@@ -94,8 +112,13 @@ local function app_claims_host(app, meta, target)
   if table_has_host(meta.domains, target) then return true end
   if table_has_host(meta.claimedNamespaces, target) then return true end
   if table_has_host(meta.claimed_namespaces, target) then return true end
-  if table_has_host(app.tags, target) then return true end
   return false
+end
+
+-- The monad registers a loopback address; `localhost` as a name would be looked up by nginx's (public) resolver and
+-- not found. The registration is loopback-only, so the name and the literal mean the same machine.
+local function loopback_literal(endpoint)
+  return (tostring(endpoint or ""):gsub("^(https?://)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]([:/]?)", "%1127.0.0.1%2"))
 end
 
 local host = (ngx.var.host or ""):lower()
@@ -199,6 +222,26 @@ local function send_no_monad_page(reason, is_registered)
   return ngx.exit(503)
 end
 
+-- Nobody is root for this address. A neutral shell, not the page of a failure: nothing is wrong with the gateway, and
+-- nothing is asserted about the name (not "unclaimed", not "does not exist"). Visiting it writes nothing anywhere.
+local function send_no_content()
+  ngx.status = 404
+  if wants_html() then
+    ngx.header["Content-Type"] = "text/html; charset=utf-8"
+    local shown = host:gsub("[^%w%.%-]", "")
+    ngx.say("<!DOCTYPE html>\n<html lang=\"es\"><head><meta charset=\"UTF-8\"/>"
+      .. "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>"
+      .. "<title>" .. shown .. "</title></head>"
+      .. "<body style=\"font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#121416;color:#cfe3e1\">"
+      .. "<main style=\"text-align:center;padding:2rem\"><p style=\"font-size:.85rem;opacity:.7;margin:0 0 .5rem\">" .. shown .. "</p>"
+      .. "<h1 style=\"font-size:1.25rem;font-weight:500;margin:0\">Sin contenido disponible para esta dirección.</h1></main></body></html>")
+  else
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = "no_content_available", address = host }))
+  end
+  return ngx.exit(404)
+end
+
 local raw = read_file(appsPath)
 if not raw or raw == "" then
   return send_no_monad_page("no monad registered yet", false)
@@ -216,88 +259,307 @@ local nowMs     = ngx.now() * 1000
 local rootspace = rootspace_of(host)
 local host_is_ip = is_ip(host)
 
--- Trust tiers, materialized once per app at ingest time by apps.lua's
--- report_app()/derive_trust() (checked against gateway-claims.json's
--- owner/admins) and stored as app.trust. Unranked/missing trust (older
--- entries, or apps that predate this field) is treated as guest-level so
--- reduction stays backward compatible.
-local TRUST_RANK = { owner = 4, admin = 3, peer = 2, guest = 1 }
-
--- Collect all live candidates.
--- Matching rules:
---   hostname request → match by namespace == rootspace or namespace == host
---   IP request       → match any live monad (IP is routing only, not identity)
-local candidates = {}
-
-for _, app in pairs(registry.apps) do
+local function is_live(app)
   local ttl      = tonumber(app.ttlMs)     or 45000
   local lastSeen = tonumber(app.lastSeenMs) or 0
+  return lastSeen == 0 or (nowMs - lastSeen) <= ttl
+end
 
-  -- Skip stale entries
-  if lastSeen == 0 or (nowMs - lastSeen) <= ttl then
-    local meta = app.metadata
-    if meta then
-      local ns = (meta.namespace or ""):lower()
-      local ep = meta.directEndpoint or meta.endpoint or meta.controlEndpoint
+local function endpoint_of(meta)
+  local ep = meta and (meta.directEndpoint or meta.endpoint or meta.controlEndpoint)
+  if ep and ep ~= "" then return loopback_literal(ep) end
+  return nil
+end
 
-      if ep and ep ~= "" then
-        local matches
-        if host_is_ip then
-          -- IP-based request: any live monad can answer.
-          -- Hostname is transport only — namespace is resolved by the monad.
-          matches = true
-        else
-          -- Hostname-based request: match by canonical namespace or declared aliases.
-          matches = app_claims_host(app, meta, rootspace) or app_claims_host(app, meta, host)
-        end
+local function identity_of(meta)
+  return meta and (meta.identity_hash or meta.identityHash) or nil
+end
 
-        if matches then
-          table.insert(candidates, {
-            ep = ep,
-            lastSeen = lastSeen,
-            ns = ns,
-            trust = app.trust,
-            identity = meta.identity_hash or meta.identityHash,
-          })
+local function send_conflict_page(identities)
+  ngx.log(ngx.WARN, "surface_proxy: conflict for host '", host, "' — identities ", table.concat(identities, ", "),
+    " all declare it and no declared route (domain-map.json) says which one serves it")
+  return send_no_monad_page("conflict: more than one monad declares " .. host .. " and no route chooses between them", true)
+end
+
+local function route_to(endpoint, identity)
+  ngx.var.surface_proxy_target = (endpoint:match("^(.-)/*$") or endpoint)
+  ngx.var.surface_proxy_identity = identity or ""
+end
+
+-- ── 1. A DECLARED route for this exact host (the patch bay: domain-map.json, projected from the domain store the
+--       panel and `netget routing` write). It is the authority: the monad registry supplies where the target is and
+--       whether it is alive, never which host it serves. A declared target that is not available is "not available",
+--       not a reason to fall back to some other monad.
+-- domain-map.json, read once per request.
+local _map_loaded, _map
+local function load_map()
+  if _map_loaded then return _map end
+  _map_loaded = true
+  local rawMap = read_file(getNetgetDataDir() .. "/runtime/domain-map.json")
+  if not rawMap or rawMap == "" then return nil end
+  local okm, map = pcall(cjson.decode, rawMap)
+  if okm and type(map) == "table" then _map = map end
+  return _map
+end
+
+-- `*.<name>` and nothing else: one leading wildcard label, then plain labels. Anything else is not a route.
+local function wildcard_suffix(key)
+  if type(key) ~= "string" then return nil end
+  local suffix = key:match("^%*%.([%w%-%.]+)$")
+  if not suffix or suffix:find("..", 1, true) or suffix:sub(1, 1) == "." or suffix:sub(-1) == "." then return nil end
+  if suffix:find("*", 1, true) then return nil end
+  return suffix:lower()
+end
+
+-- Is `name` a proper descendant of `suffix` on a label boundary? (`evillocalhost` is not under `localhost`.)
+local function under(name, suffix)
+  return #name > #suffix + 1 and name:sub(-(#suffix + 1)) == "." .. suffix
+end
+
+local function usable_route(route)
+  if type(route) ~= "table" then return nil end
+  if route.type ~= "proxy" and route.type ~= "server" then return nil end
+  if type(route.target) ~= "string" or route.target == "" then return nil end
+  return route
+end
+
+local function declared_route(for_host)
+  local map = load_map()
+  if not map or type(map.domains) ~= "table" then return nil end
+  local exact = usable_route(map.domains[for_host])
+  if exact then return exact, for_host end
+  -- no exact route: the longest wildcard the operator declared that covers the host
+  local best, best_len, best_key
+  for key, route in pairs(map.domains) do
+    local suffix = wildcard_suffix(key)
+    if suffix and under(for_host, suffix) and usable_route(route) and (not best_len or #suffix > best_len) then
+      best, best_len, best_key = route, #suffix, key
+    end
+  end
+  return best, best_key
+end
+
+-- The roots the installation itself authorizes (domain-map.json `roots`, written by the gateway from its own configured
+-- root and the identity of the monad it started): the nearest enclosing one, as { root, app, identity }, or nil.
+local function authorized_root(for_host)
+  local map = load_map()
+  if not map or type(map.roots) ~= "table" then return nil end
+  local best, best_len
+  for root, entry in pairs(map.roots) do
+    local name = tostring(root):lower()
+    if type(entry) == "table" and type(entry.identity) == "string" and entry.identity ~= ""
+       and under(for_host, name) and (not best_len or #name > best_len) then
+      best, best_len = { root = name, app = tostring(entry.app or ""):lower(), identity = entry.identity }, #name
+    end
+  end
+  return best
+end
+
+-- A connection of the door answers a request before the door's main destination does (see lib/door_connections.lua).
+-- It is answered by the connection's service, or by an error: never by the monad and never by the app's HTML, which
+-- would answer an API call with a page. The error is JSON whatever the client accepts.
+local function answer_connection(route)
+  local ok, dc = pcall(require, "lib.door_connections")
+  if not ok then
+    ngx.log(ngx.ERR, "surface_proxy: lib.door_connections is not installed; connections of ", host, " are not applied")
+    if type(route.connections) == "table" and #route.connections > 0 then
+      ngx.req.discard_body()
+    ngx.status = 502
+      ngx.header["Content-Type"] = "application/json; charset=utf-8"
+      ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", message = "door connections are not available on this gateway" }))
+      return ngx.exit(502)
+    end
+    return
+  end
+  local decision = dc.decide(route.connections, ngx.var.uri, registry)
+  if not decision then return end
+  -- Who may use it: the exposure policy of the app this door points at (an `app:<name>` target). A door that points
+  -- at a bare host:port has no app and therefore no policy: judged as loopback-only.
+  local door_app
+  local want = tostring(route.target or ""):match("^app:(.+)$")
+  if want then
+    want = want:lower()
+    for _, app in pairs(registry.apps) do
+      local meta = type(app.metadata) == "table" and app.metadata or {}
+      local name = tostring(app.name or ""):lower()
+      local short = name:gsub("^monad:", "")
+      if (name == want or short == want or tostring(meta.monadName or ""):lower() == want) and is_live(app) then
+        door_app = app
+        break
+      end
+    end
+    if not door_app then
+      ngx.req.discard_body()
+      ngx.status = 503
+      ngx.header["Content-Type"] = "application/json; charset=utf-8"
+      ngx.say(cjson.encode({ ok = false, error = "app_not_available", prefix = decision.prefix,
+        message = "The app behind this door is not live." }))
+      return ngx.exit(503)
+    end
+  end
+  local allowed, denied_status = dc.exposure_allows(door_app or {}, ngx.var.remote_addr)
+  if not allowed then
+    ngx.req.discard_body()
+    ngx.status = denied_status or 403
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = "connection_forbidden", prefix = decision.prefix,
+      message = "This door does not serve that path to this address." }))
+    return ngx.exit(ngx.status)
+  end
+  if decision.error then
+    ngx.log(ngx.WARN, "surface_proxy: connection ", decision.prefix, " of ", host, " not applied: ", decision.error)
+    ngx.req.discard_body()
+    ngx.status = 502
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", prefix = decision.prefix, message = decision.error }))
+    return ngx.exit(502)
+  end
+  -- What the app declared about authorization is a requirement of the operation (lib/door_connections.lua): the gateway
+  -- cannot verify a session on a connection yet, so a destructive operation is refused, not waved through.
+  local auth_ok, auth_why = dc.authorization_allows(door_app or {}, ngx.req.get_method())
+  if not auth_ok then
+    ngx.req.discard_body()
+    ngx.status = 403
+    ngx.header["Content-Type"] = "application/json; charset=utf-8"
+    ngx.say(cjson.encode({ ok = false, error = auth_why, prefix = decision.prefix,
+      message = "This operation requires an authorized session that the gateway cannot verify on a connection yet." }))
+    return ngx.exit(403)
+  end
+  ngx.var.door_connection_target = decision.upstream
+  ngx.var.door_connection_prefix = decision.prefix
+  return ngx.exec("@door_connection")
+end
+
+if not host_is_ip then
+  local route, route_key = declared_route(host)
+  local declared = route and route.target
+  if declared then
+    answer_connection(route)
+    if declared:sub(1, 4) == "app:" then
+      local want = declared:sub(5):lower()
+      -- A wildcard route is bound, when the operator declares it, to the identity of the app it names: naming the app
+      -- is not enough, or whichever process registers under that name would receive every name under the wildcard.
+      -- A wildcard `app:` route with no bound identity is not served.
+      local bound = (type(route.identity) == "string" and route.identity ~= "") and route.identity or nil
+      if route_key and route_key:sub(1, 2) == "*." and not bound then
+        return send_no_monad_page("the wildcard route for " .. host .. " has no identity bound to " .. declared ..
+          "; declare it again so it is bound", true)
+      end
+      local best, identities, seen_identity = nil, {}, {}
+      for _, app in pairs(registry.apps) do
+        local meta = app.metadata or {}
+        local name = tostring(app.name or ""):lower()
+        local short = name:gsub("^monad:", "")
+        local named = (name == want) or (short == want) or (tostring(meta.monadName or ""):lower() == want)
+        -- bound route: only the registration that carries the bound identity is the destination
+        if named and bound and identity_of(meta) ~= bound then named = false end
+        if named and is_live(app) then
+          local ep = endpoint_of(meta)
+          if not ep and app.port then ep = "http://" .. (app.host or "127.0.0.1") .. ":" .. tostring(app.port) end
+          if ep then
+            local id = identity_of(meta) or "(no identity)"
+            if not seen_identity[id] then seen_identity[id] = true; table.insert(identities, id) end
+            if not best or (tonumber(app.lastSeenMs) or 0) > best.lastSeen then
+              best = { ep = ep, lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta) }
+            end
+          end
         end
       end
+      if not best then
+        return send_no_monad_page("declared target " .. declared .. " for " .. host .. " is not available", true)
+      end
+      -- One app name, one identity. Several live identities under the same name is not something recency may settle:
+      -- the destination the operator wrote would silently become whichever registered last.
+      if #identities > 1 then
+        return send_conflict_page(identities)
+      end
+      route_to(best.ep, best.identity)
+      return
+    end
+    -- host:port or http(s)://host:port, used as written (same as the main routing table)
+    local direct = declared:match("^https?://") and declared or ("http://" .. declared)
+    route_to(loopback_literal(direct), "")
+    return
+  end
+end
+
+-- ── 2. No declared route. Select by what monads DECLARE as their own (never by tags).
+local exact = {}
+for _, app in pairs(registry.apps) do
+  local meta = app.metadata
+  if type(meta) == "table" and endpoint_of(meta) then
+    local entry = { ep = endpoint_of(meta), lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta), live = is_live(app), trust = app.trust }
+    if host_is_ip then
+      -- IP request: the address is transport only; any live monad answers and resolves the namespace itself.
+      if entry.live then table.insert(exact, entry) end
+    elseif declares_host(meta, host) then
+      table.insert(exact, entry)
     end
   end
 end
 
-if #candidates == 0 then
-  return send_no_monad_page("no live monad for: " .. host, true)
+local function most_recent(list)
+  local best
+  for _, c in ipairs(list) do
+    if not best or c.lastSeen > best.lastSeen then best = c end
+  end
+  return best
 end
 
--- Reduce: pick the highest-trust candidate first (owner > admin > peer >
--- guest), most-recently-seen as a tiebreaker only within the same trust
--- tier. This replaces pure-recency reduction, which could not distinguish
--- two different monad identities claiming the same hostname string.
-local best = candidates[1]
-local bestRank = TRUST_RANK[best.trust] or TRUST_RANK.guest
-for i = 2, #candidates do
-  local c = candidates[i]
-  local cRank = TRUST_RANK[c.trust] or TRUST_RANK.guest
-  if cRank > bestRank or (cRank == bestRank and c.lastSeen > best.lastSeen) then
-    best = c
-    bestRank = cRank
+if host_is_ip then
+  local best = most_recent(exact)
+  if not best then return send_no_monad_page("no live monad for: " .. host, true) end
+  route_to(best.ep, best.identity)
+  return
+end
+
+if #exact > 0 then
+  -- Someone declares this exact host. Only monads that declare it can serve it.
+  local live, identities, seen = {}, {}, {}
+  for _, c in ipairs(exact) do
+    if c.live then
+      table.insert(live, c)
+      local id = c.identity or "(no identity)"
+      if not seen[id] then seen[id] = true; table.insert(identities, id) end
+    end
+  end
+  if #live == 0 then
+    return send_no_monad_page("the monad that declares " .. host .. " is not live", true)
+  end
+  if #identities > 1 then
+    return send_conflict_page(identities)
+  end
+  local best = most_recent(live)
+  route_to(best.ep, best.identity)
+  return
+end
+
+-- ── 3. Nobody declares this host: it is a name under a root. Only the monad AUTHORIZED for the nearest enclosing root
+--      may attend it, with the request as it came (full context). A registration that merely announces the root is not
+--      that monad: it must be the authorized identity.
+local authorized = (not host_is_ip) and authorized_root(host) or nil
+-- ── 4. Nobody is authorized for this address: the neutral shell (not a claim about the name).
+if not authorized then
+  return send_no_content()
+end
+local live_authorized, registered = {}, false
+for _, app in pairs(registry.apps) do
+  local meta = app.metadata
+  if type(meta) == "table" and endpoint_of(meta) and identity_of(meta) == authorized.identity then
+    local name = tostring(app.name or ""):lower()
+    local short = name:gsub("^monad:", "")
+    local names_it = authorized.app == "" or name == authorized.app or short == authorized.app
+      or tostring(meta.monadName or ""):lower() == authorized.app
+    if names_it then
+      registered = true
+      if is_live(app) then
+        table.insert(live_authorized, { ep = endpoint_of(meta), lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta) })
+      end
+    end
   end
 end
-
--- Ambiguous claim: another live candidate at the same top trust tier
--- claims this host under a different identity. Previously silent —
--- surfacing it here doesn't change routing, just makes it observable.
-for i = 1, #candidates do
-  local c = candidates[i]
-  if c ~= best and (TRUST_RANK[c.trust] or TRUST_RANK.guest) == bestRank
-     and c.identity ~= best.identity then
-    ngx.log(ngx.WARN, "surface_proxy: ambiguous claim for host '", host,
-      "' — identities '", tostring(best.identity), "' and '", tostring(c.identity),
-      "' both claim it at trust tier '", best.trust or "guest", "'")
-    break
-  end
+if #live_authorized == 0 then
+  return send_no_monad_page("the monad authorized for " .. authorized.root .. " is " .. (registered and "not live" or "not available") .. ": " .. host, true)
 end
-
-local target = best.ep:match("^(.-)/*$") or best.ep
-ngx.var.surface_proxy_target = target
-ngx.var.surface_proxy_identity = best.identity or ""
+local best = most_recent(live_authorized)
+route_to(best.ep, best.identity)

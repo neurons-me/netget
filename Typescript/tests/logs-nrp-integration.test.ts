@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { installMonadOriginGuard } from '../src/kernel/testing/monadOriginGuard.ts';
 import { reservePort } from '../src/kernel/testing/reservePort.ts';
+import { meDistUrl } from './_meDist.ts';
 
 // A real, unrelated key -- never registered in anyone's keychain -- used
 // only to produce a signature that must fail verification. Everything
@@ -76,7 +77,7 @@ const { readMonadRecord, deleteMonadProcess } = await import('monad.ai');
 // workspace build directly.
 // @ts-expect-error -- no .d.ts resolution across this relative path.
 const { deriveBranchProofSeed, importEd25519SigningKey, normalizeProofMessage, signEd25519Proof } =
-  await import('../../../../me/Typescript/dist/me.es.js');
+  await import(meDistUrl());
 
 async function claimTestIdentity(origin: string, username: string, secret: string, rootNamespace: string) {
   const namespace = `${username}.${rootNamespace}`;

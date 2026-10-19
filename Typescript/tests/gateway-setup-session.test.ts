@@ -86,7 +86,7 @@ const { deleteMonadProcess } = await import('monad.ai');
 // @ts-expect-error -- no .d.ts resolution across this relative path; the
 // runtime import reaches the local workspace build directly.
 const { deriveBranchProofSeed, importEd25519SigningKey, normalizeProofMessage, signEd25519Proof } =
-  await import('../../../../me/Typescript/dist/me.es.js');
+  await import((await import('./_meDist.ts')).meDistUrl());
 
 const GATEWAY_ID = 'test-ledger-id-abc123';
 

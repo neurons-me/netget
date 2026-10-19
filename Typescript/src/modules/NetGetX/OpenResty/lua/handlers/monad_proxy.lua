@@ -41,6 +41,13 @@ local function read_catalog()
   return type(decoded) == "table" and decoded or {}
 end
 
+local function read_domain_map()
+  local raw = read_file(runtimeDir .. "/domain-map.json")
+  if not raw or raw == "" then return nil end
+  local decoded = cjson.decode(raw)
+  return type(decoded) == "table" and decoded or nil
+end
+
 local function spawn_monad(entry, name)
   local cmd = tostring(entry.cmd or "")
   if cmd == "" then return false end
@@ -193,7 +200,16 @@ if not app then
   end
 
   if not app then
-    ngx.status = entry and ngx.HTTP_SERVICE_UNAVAILABLE or ngx.HTTP_NOT_FOUND
+    local not_there = entry and ngx.HTTP_SERVICE_UNAVAILABLE or ngx.HTTP_NOT_FOUND
+    -- A browser navigation to a monad that is not there lands on the entry point (the front end, which says which
+    -- layer is missing) instead of raw JSON, when this server has one ($door_entry, see setNginxConfigRoutes.ts).
+    -- Everything else (the front end's own fetches, curl) keeps the JSON it always got.
+    local accept = ngx.var.http_accept or ""
+    if ngx.var.door_entry == "1" and accept:find("text/html", 1, true) then
+      ngx.var.door_status = tostring(not_there)
+      return ngx.exec("@door_entry")
+    end
+    ngx.status = not_there
     ngx.header["Content-Type"] = "application/json; charset=utf-8"
     ngx.say(cjson.encode({
       error   = entry and "monad_starting" or "monad_not_found",
@@ -236,6 +252,60 @@ if not target then
 end
 
 ngx.var.monad_proxy_target = target
+
+-- Connections the operator declared on the door that points at this app (`app:<name>` in the domain store): a path
+-- prefix under /apps/<name>/ that belongs to a service of the app which is not the monad (FullTrailer's own server
+-- at /api/fuel). It is answered by that service or by a JSON error, never by the monad and never by the app's
+-- HTML. The service sees the path without the /apps/<name> mount, as the monad does. See lib/door_connections.lua.
+-- Who may use it is already decided: Gate 1 (trust) and Gate 2 (the app's exposure policy) ran above, so a peer the
+-- app's policy does not admit never gets here.
+do
+  local okdc, dc = pcall(require, "lib.door_connections")
+  local door_map = read_domain_map()
+  if okdc and door_map then
+    local conns = dc.for_app(door_map, wanted)
+    if #conns > 0 then
+      local conn_path = ngx.var.monad_proxy_tail
+      if not conn_path or conn_path == "" then conn_path = "/" end
+      local decision = dc.decide(conns, conn_path, read_registry())
+      if decision then
+        ngx.header["Content-Type"] = "application/json; charset=utf-8"
+        if decision.error then
+          ngx.log(ngx.WARN, "monad_proxy: connection ", decision.prefix, " of app ", wanted, " not applied: ", decision.error)
+          ngx.req.discard_body()
+          ngx.status = 502
+          ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", prefix = decision.prefix, message = decision.error }))
+          return ngx.exit(502)
+        end
+        -- What the app declared about authorization is a requirement of the operation (lib/door_connections.lua).
+        local auth_ok, auth_why = dc.authorization_allows(app, ngx.req.get_method())
+        if not auth_ok then
+          ngx.req.discard_body()
+          ngx.status = 403
+          ngx.say(cjson.encode({ ok = false, error = auth_why, prefix = decision.prefix,
+            message = "This operation requires an authorized session that the gateway cannot verify on a connection yet." }))
+          return ngx.exit(403)
+        end
+        ngx.var.door_connection_target = decision.upstream
+        ngx.var.door_connection_prefix = decision.prefix
+        ngx.req.set_uri(conn_path, false)
+        return ngx.exec("@door_connection")
+      end
+    end
+  elseif not okdc and door_map then
+    -- connections are declared but this gateway cannot apply them: say so instead of sending the call to the monad
+    for _, route in pairs(door_map.domains or {}) do
+      if type(route) == "table" and type(route.connections) == "table" and #route.connections > 0
+         and tostring(route.target or ""):lower() == "app:" .. wanted then
+        ngx.req.discard_body()
+        ngx.status = 502
+        ngx.header["Content-Type"] = "application/json; charset=utf-8"
+        ngx.say(cjson.encode({ ok = false, error = "connection_not_applied", message = "door connections are not available on this gateway" }))
+        return ngx.exit(502)
+      end
+    end
+  end
+end
 
 -- Monads resolve which namespace's data to serve from the inbound Host
 -- header (see monad/Typescript's resolveHostNamespace()), not from how

@@ -19,6 +19,8 @@ interface XConfig {
     mainServerKeyPath?: string;
     publicIP?: string;
     localIP?: string;
+    /** When/how publicIP was last checked (see modules/utils/networkIdentity.ts). publicIP itself is the last known value. */
+    publicIPDetection?: { state: 'detected' | 'pending' | 'failed'; observedAt: string | null; checkedAt: string | null; source: string; error?: string } | null;
     getPath?: string;
     static?: string;
     devPath?: string;
@@ -69,6 +71,7 @@ async function loadOrCreateXConfig(): Promise<XConfig> {
                 remoteApiKey: "",           
                 publicIP: "",
                 localIP: "",
+                publicIPDetection: null,
                 getPath: "",
                 static: "",
                 devPath: "",
@@ -114,6 +117,7 @@ async function saveXConfig(updates: ConfigUpdates): Promise<void> {
             mainServerName: "",
             publicIP: "",
             localIP: "",
+            publicIPDetection: null,
             getPath: "",
             static: "",
             devPath: "",

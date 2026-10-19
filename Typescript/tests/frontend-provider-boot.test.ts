@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // Which of the bundle's three jobs a page gets, from where it was loaded and
 // what the monad said about itself (window.__MONAD_NAMESPACE_PROVIDER_BOOT__).
-const { readProviderBoot, isGatewayMonad, frontendRole, hostIsNamespace, namespaceEndpoint, transportOriginFor, bootNamespaceRoot, rootNamespaceOf, GATEWAY_MODULE } =
+const { readProviderBoot, isGatewayMonad, frontendRole, hostIsNamespace, namespaceEndpoint, transportOriginFor, bootNamespaceRoot, rootNamespaceOf, GATEWAY_MODULE, mainServerDoor } =
   await import('../src/htmls/Netget-REACT/frontend_local/src/session/providerBoot.js');
 
 assert.equal(GATEWAY_MODULE, 'netget/gateway');
@@ -85,3 +85,18 @@ assert.equal(bootNamespaceRoot(bothBoot, 'netget.site'), '', 'the combined monad
 assert.equal(bootNamespaceRoot(null), '');
 
 console.log('frontend-provider-boot.test.ts: all assertions passed');
+
+// the gateway's own door: declared namespace; the door's address is "/", a doubled "/netget" is moved to "/"
+const declared = { namespace: 'cleaker.me', mainServerName: 'netget.site' };
+assert.deepEqual(mainServerDoor({ host: 'netget.site', declared, pathname: '/' }), { namespace: 'cleaker.me', canonicalPath: null, isMainServerDoor: true }, '"/" is left exactly where it is');
+assert.deepEqual(mainServerDoor({ host: 'NetGet.Site', declared, pathname: '/netget' }), { namespace: 'cleaker.me', canonicalPath: '/', isMainServerDoor: true }, 'host case does not matter; /netget -> /');
+assert.equal(mainServerDoor({ host: 'netget.site', declared, pathname: '/netget/' }).canonicalPath, '/', 'a trailing slash is the same path');
+assert.equal(mainServerDoor({ host: 'netget.site', declared, pathname: '/domains' }).canonicalPath, null, 'a deep link is left alone');
+assert.equal(mainServerDoor({ host: 'netget.site', declared, pathname: '/netget/x' }).canonicalPath, null, 'only the doubled "/netget" itself is moved');
+assert.equal(mainServerDoor({ host: 'netget.site', declared, pathname: '/domains' }).namespace, 'cleaker.me', 'its namespace is still the declared one');
+// not the declared main server name, or nothing declared: the old behavior (host is the namespace, path untouched)
+assert.deepEqual(mainServerDoor({ host: 'localhost', declared, pathname: '/netget' }), { namespace: 'localhost', canonicalPath: null, isMainServerDoor: false });
+assert.deepEqual(mainServerDoor({ host: 'netget.site', declared: null, pathname: '/' }), { namespace: 'netget.site', canonicalPath: null, isMainServerDoor: false });
+assert.deepEqual(mainServerDoor({ host: 'netget.site', declared: { namespace: 'cleaker.me' }, pathname: '/' }), { namespace: 'netget.site', canonicalPath: null, isMainServerDoor: false }, 'no mainServerName declared');
+assert.deepEqual(mainServerDoor({ host: 'netget.site', declared: { mainServerName: 'netget.site' }, pathname: '/' }), { namespace: 'netget.site', canonicalPath: null, isMainServerDoor: false }, 'no namespace declared');
+console.log('frontend-provider-boot (main server door): ok');

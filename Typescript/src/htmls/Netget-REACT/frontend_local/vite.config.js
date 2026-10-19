@@ -121,6 +121,7 @@ export default defineConfig({
       '/surfaces':         'http://127.0.0.1:3000',
       '/domains':          'http://127.0.0.1:3000',
       '/add-domain':       'http://127.0.0.1:3000',
+      '/update-domain':    'http://127.0.0.1:3000',   // the panel's "Cambiar destino"
       '/delete-domain':    'http://127.0.0.1:3000',
       '/provision-cert':   'http://127.0.0.1:3000',
       '/check-auth':       'http://127.0.0.1:3000',

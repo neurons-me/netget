@@ -23,6 +23,7 @@
  */
 import type { TopologyResolver, ResolveSurfaceInput, SurfaceEndpoint } from 'cleaker';
 import { readReportedApps } from '../runtime/appRegistry.js';
+import { getGatewayRootNamespace } from './netgetMonadProcess.ts';
 
 const TRUST_RANK: Record<string, number> = { owner: 4, admin: 3, peer: 2, guest: 1 };
 
@@ -62,10 +63,21 @@ function appClaimsHost(app: { tags?: string[] }, meta: Record<string, unknown>, 
 // Mirrors surface_proxy.lua's rootspace_of() — strips a single leading
 // handle label off a 3+-label namespace. "jabellae.suis-macbook-air.local"
 // -> "suis-macbook-air.local"; "suis-macbook-air.local" stays as-is.
-export function rootspaceOf(namespace: string): string {
+//
+// One addition the Lua version does not have: a root this gateway DECLARES. A declared root may be a single
+// label (`localhost`), and a handle under it then has only two ("jabellae.localhost"), which the 3-label rule
+// above leaves whole -- so no surface claiming `localhost` was found for it and every flow that resolves a
+// handle's surface (admin sign-in, claiming the gateway) failed with NAMESPACE_SURFACE_NOT_FOUND. It is the
+// same one-label strip, allowed when what remains is a declared root; nothing else is widened (an undeclared
+// two-label name still stays whole, so no surface claiming just "com" can capture "x.com").
+export function rootspaceOf(namespace: string, declaredRoots: readonly string[] = []): string {
     const labels = namespace.split('.').filter(Boolean);
     if (labels.length >= 3) {
         return labels.slice(1).join('.');
+    }
+    if (labels.length === 2) {
+        const rest = labels[1].toLowerCase();
+        if (declaredRoots.some((root) => String(root || '').trim().toLowerCase() === rest)) return rest;
     }
     return namespace;
 }
@@ -85,7 +97,7 @@ export async function resolveSurface(input: ResolveSurfaceInput): Promise<Surfac
     const namespace = String(input?.namespace || '').trim().toLowerCase();
     if (!namespace) return null;
 
-    const rootspace = rootspaceOf(namespace);
+    const rootspace = rootspaceOf(namespace, [getGatewayRootNamespace()]);
     const apps = readReportedApps();
 
     const candidates: Candidate[] = [];

@@ -33,6 +33,10 @@
  * commandHandler.ts) — this module never needs to explicitly persist.
  */
 
+import { parseStoredDoorConnections, checkDoorConnections, serializeDoorConnections, type DoorConnection } from '../runtime/doorConnections.js';
+import { registeredMonadPorts } from '../runtime/doorConnectionPorts.js';
+import { checkRouteTarget } from '../runtime/routeTargets.js';
+import { isValidDomainPattern , appNameOfTarget, identityBoundTo, WildcardBindingError } from '../runtime/authorizedRoots.js';
 import { getNetgetMonadOrigin, getGatewayRootNamespace } from './netgetMonadProcess.js';
 import { writeToMonad, readFromMonad } from './monadHttpClient.js';
 
@@ -52,6 +56,17 @@ export interface DomainRecord {
   owner?: string;
   nginxConfig?: string;
   dnsProvider?: string;
+  /**
+   * Connections the operator declared on this door: a path prefix that belongs to a service of the app which is not
+   * its monad (FullTrailer's own server at `/api/fuel`). Stored as a JSON string (the store writes scalars) and
+   * returned here already parsed and checked; an invalid stored value reads as none. See runtime/doorConnections.ts.
+   */
+  connections?: DoorConnection[];
+  /**
+   * For a wildcard route (`*.<name>`) to `app:<name>`: the identity of the app the OPERATOR bound it to when declaring
+   * it. The router serves the route only from a registration that carries it (surface_proxy.lua).
+   */
+  identity?: string;
   /** Absolute kernel path for this record (`users.<owner>.domains.<key>`,
    * dots in the domain name escaped) — lets a GUI node's `provenance` point
    * Explain/Inspect straight at the real value, computed once here so
@@ -75,7 +90,7 @@ const NETGET_OWNER_FALLBACK = 'netget';
 const DOMAIN_FIELDS = [
   'target', 'type', 'subdomain', 'email', 'sslMode', 'sslCertificate',
   'sslCertificateKey', 'projectPath', 'rootDomain', 'owner', 'nginxConfig',
-  'dnsProvider', 'registered',
+  'dnsProvider', 'registered', 'connections', 'identity',
 ] as const;
 type DomainField = typeof DOMAIN_FIELDS[number];
 
@@ -178,6 +193,8 @@ function toDomainRecord(key: string, owner: string, branch: Partial<Record<Domai
     owner: branch.owner as string | undefined,
     nginxConfig: branch.nginxConfig as string | undefined,
     dnsProvider: branch.dnsProvider as string | undefined,
+    connections: parseStoredDoorConnections(branch.connections, registeredMonadPorts()),
+    identity: (typeof branch.identity === 'string' && branch.identity) ? branch.identity : undefined,
     semanticPath: `users.${sanitizeOwnerLabel(owner)}.domains.${escapeDomainKey(key)}`,
   };
 }
@@ -188,6 +205,52 @@ async function regenerateMap(): Promise<void> {
     await generateDomainMap();
   } catch {
     // non-fatal
+  }
+}
+
+/**
+ * A route is written through several doors (the panel's /add-domain and /update-domain, `netget routing`, setup flows).
+ * The protections on what it may point at live HERE, in the store, so none of them depends on which door was used:
+ * routeTargets.ts says what a static/server/proxy destination may be (a gateway port, a registered app's port and a
+ * link-local address are refused). A record with no type, and the main server's own record, are not routing
+ * destinations and pass unchanged; any other kind must be one the router supports.
+ */
+export class RouteTargetError extends Error {
+  readonly code: string;
+  constructor(code: string, reason: string) {
+    super(reason);
+    this.name = 'RouteTargetError';
+    this.code = code;
+  }
+}
+
+function checkedRoute(type: string | undefined | null, target: string | undefined | null): { type?: string; target?: string } {
+  const kind = String(type ?? '').trim().toLowerCase();
+  // No type at all (registered, not routed yet) and the main server's own record are not routing destinations. Any other
+  // kind must be one the router supports: an unknown type would otherwise be projected as a proxy and skip this check.
+  if (kind === '' || kind === 'main_server') return { type: type ?? undefined, target: target ?? undefined };
+  const checked = checkRouteTarget(kind, target ?? '', { registeredPorts: registeredMonadPorts() });
+  if (checked.ok === false) throw new RouteTargetError(checked.code, checked.reason);
+  return { type: checked.type, target: checked.target };
+}
+
+
+/**
+ * What a wildcard route is bound to. Only a wildcard whose destination is an app has an identity; any other route has
+ * none ('' clears a previous one). The same app, re-declared, keeps the identity it was bound to (changing a destination
+ * is an act; re-sending the same one must not re-pin to whoever happens to be registered now).
+ */
+function wildcardIdentity(key: string, target: string | undefined, current?: { target?: unknown; identity?: unknown }): string | undefined {
+  if (!key.startsWith('*.')) return undefined;
+  const app = appNameOfTarget(target);
+  if (!app) return '';
+  const before = appNameOfTarget(typeof current?.target === 'string' ? current.target : undefined);
+  if (before === app && typeof current?.identity === 'string' && current.identity) return current.identity;
+  try {
+    return identityBoundTo(app);
+  } catch (error) {
+    if (error instanceof WildcardBindingError) throw new RouteTargetError(error.code, error.message);
+    throw error;
   }
 }
 
@@ -205,15 +268,20 @@ export async function registerDomain(
   projectPath?: string,
   owner?: string,
 ): Promise<void> {
+  if (!isValidDomainPattern(domain)) {
+    throw new RouteTargetError('WILDCARD_SHAPE', 'un comodín solo es válido como *.<nombre> (un solo * al inicio, luego etiquetas)');
+  }
   const key = domainKey(domain);
   const existingOwner = await resolveOwnerForKey(key);
   if (existingOwner) throw new Error(`The domain ${domain} already exists.`);
+  ({ type, target } = checkedRoute(type, target));
+  const identity = wildcardIdentity(key, target);
 
   const resolvedOwner = sanitizeOwnerLabel(owner);
   await writeIndexEntry(key, resolvedOwner);
   await writeDefinedFields(resolvedOwner, key, {
     subdomain, email, sslMode, sslCertificate, sslCertificateKey,
-    target, type, projectPath, owner: resolvedOwner, registered: true,
+    target, type, projectPath, owner: resolvedOwner, registered: true, identity,
   });
 
   await regenerateMap();
@@ -252,6 +320,15 @@ export async function updateDomain(
 ): Promise<void> {
   const key = domainKey(domain);
   const currentOwner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  let identity: string | undefined;
+  if (type !== undefined || target !== undefined) {
+    const current = await readRecordBranch(currentOwner, key);
+    ({ type, target } = checkedRoute(
+      type !== undefined ? type : (current?.type as string | undefined),
+      target !== undefined ? target : (current?.target as string | undefined),
+    ));
+    identity = wildcardIdentity(key, target, current);
+  }
   // Reassigning `owner` moves this domain's *newly written* fields to the
   // new owner's namespace and updates the index. Fields not passed in this
   // call that already existed under the old owner are left there (a narrow,
@@ -263,7 +340,7 @@ export async function updateDomain(
 
   await writeDefinedFields(targetOwner, key, {
     subdomain, email, sslMode, sslCertificate, sslCertificateKey,
-    target, type, projectPath, owner: owner !== undefined ? targetOwner : undefined,
+    target, type, projectPath, owner: owner !== undefined ? targetOwner : undefined, identity,
   });
   await regenerateMap();
 }
@@ -271,14 +348,22 @@ export async function updateDomain(
 export async function updateDomainTarget(domain: string, target: string): Promise<void> {
   const key = domainKey(domain);
   const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  const current = await readRecordBranch(owner, key);
+  ({ target } = checkedRoute(current?.type as string | undefined, target) as { target: string });
+  const identity = wildcardIdentity(key, target, current);
   await writeField(owner, key, 'target', target);
+  await writeField(owner, key, 'identity', identity);
   await regenerateMap();
 }
 
 export async function updateDomainType(domain: string, type: string): Promise<void> {
   const key = domainKey(domain);
   const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  const current = await readRecordBranch(owner, key);
+  checkedRoute(type, current?.target as string | undefined);
+  const identity = wildcardIdentity(key, current?.target as string | undefined, current);
   await writeField(owner, key, 'type', type);
+  await writeField(owner, key, 'identity', identity);
   await regenerateMap();
 }
 
@@ -289,9 +374,41 @@ export async function updateDomainRoute(
 ): Promise<void> {
   const key = domainKey(domain);
   const owner = (await resolveOwnerForKey(key)) || NETGET_OWNER_FALLBACK;
+  if (type !== null || target !== null) {
+    const current = await readRecordBranch(owner, key);
+    const checked = checkedRoute(
+      type !== null ? type : (current?.type as string | undefined),
+      target !== null ? target : (current?.target as string | undefined),
+    );
+    if (type !== null) type = checked.type ?? type;
+    if (target !== null) target = checked.target ?? target;
+  }
+  if (type !== null || target !== null) {
+    const current = await readRecordBranch(owner, key);
+    const nextTarget = target !== null ? target : (current?.target as string | undefined);
+    const identity = wildcardIdentity(key, nextTarget, current);
+    if (identity !== undefined) await writeField(owner, key, 'identity', identity);
+  }
   if (type !== null) await writeField(owner, key, 'type', type);
   if (target !== null) await writeField(owner, key, 'target', target);
   await regenerateMap();
+}
+
+/**
+ * Declares the connections of a door (replaces the list). The operator's act: callers are the CLI and the gateway's
+ * authorized admin routes, never an app's own registration. Throws, and writes nothing, when any entry is refused.
+ */
+export async function updateDomainConnections(domain: string, connections: unknown): Promise<DoorConnection[]> {
+  const checked = checkDoorConnections(connections, registeredMonadPorts());
+  if (checked.ok === false) {
+    throw new Error(`connection${checked.index !== undefined ? ` #${checked.index + 1}` : 's'} refused: ${checked.reason}`);
+  }
+  const key = domainKey(domain);
+  const owner = await resolveOwnerForKey(key);
+  if (!owner) throw new Error(`The domain ${domain} is not registered.`);
+  await writeField(owner, key, 'connections', serializeDoorConnections(checked.connections));
+  await regenerateMap();
+  return checked.connections;
 }
 
 export async function getDomainTarget(domain: string): Promise<string | undefined> {

@@ -19,6 +19,7 @@ import {
     getDomainByName,
     registerDomain,
     updateDomain,
+    updateDomainConnections,
     deleteDomain,
     sanitizeOwnerLabel,
 } from "../../../../kernel/domainStore.ts";
@@ -30,6 +31,9 @@ import { resolveAdminSession } from "../../../../modules/NetGetX/Auth/adminSessi
 import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
 import { buildGatewayIdentityResponse, arrivalOf, localIPv4 } from "../../../../modules/NetGetX/Auth/gatewayIdentityResponse.ts";
+import { publicDomainView } from "../../../../gateway/domainsProjection.mjs";
+import net from "net";
+import { describeDomain } from "../../../../runtime/domainStatus.ts";
 
 const NGINX_LOGS_PATH = process.env.NGINX_LOGS_PATH || "/usr/local/openresty/nginx/logs";
 
@@ -581,7 +585,11 @@ router.get('/ip-info', async (req, res) => {
         // forward one of those as if it were a real address.
         const storedPublicIP = String(xConfig.publicIP || '');
         const publicIP = IPV4_PATTERN.test(storedPublicIP) ? storedPublicIP : '';
-        res.json({ success: true, localIP, publicIP });
+        const d = xConfig.publicIPDetection;
+        const publicIPDetection = d && ['detected', 'pending', 'failed'].includes(d.state)
+            ? { state: d.state, observedAt: d.observedAt ?? null, checkedAt: d.checkedAt ?? null, source: d.source }
+            : undefined;
+        res.json({ success: true, localIP, publicIP, ...(publicIPDetection ? { publicIPDetection } : {}) });
     } catch {
         res.status(500).json({ success: false, error: 'Failed to retrieve IP information' });
     }
@@ -684,8 +692,25 @@ router.post('/domains/metadata', (req, res) => {
 // docs/DomainStoreSplitBrain.md. Response shapes here are copied verbatim
 // from domains.lua's, so Domains.jsx needed zero changes for this migration.
 
+// Who may read a domain's full configuration (target, certificate and key paths, contact, graph path): an admin
+// session with a verified bearer (the same credential /logs asks for), never a header a caller could set. Anyone
+// else gets the allow-listed projection (gateway/domainsProjection.mjs). The router is not affected: it reads
+// domain-map.json, which the store regenerates from the full records.
+async function mayReadDomainConfig(req) {
+    const authHeader = String(req.header('Authorization') || '');
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
+    if (!token) return false;
+    try {
+        const session = await resolveAdminSession(token);
+        return !!session && Array.isArray(session.scopes) && session.scopes.includes('gateway:read');
+    } catch {
+        return false;
+    }
+}
+
 router.get('/domains', async (req, res) => {
-    const domains = await getDomains();
+    const rows = await getDomains();
+    const domains = (await mayReadDomainConfig(req)) ? rows : rows.map(publicDomainView);
     res.json({ success: true, domains, count: domains.length });
 });
 
@@ -712,9 +737,21 @@ router.get('/main-server-namespace', async (req, res) => {
 router.get('/domains/:parent/subdomains', async (req, res) => {
     const parent = req.params.parent;
     const domains = await getDomains();
-    const subdomains = domains.filter((d) => d.subdomain === parent && d.domain !== parent);
+    const full = await mayReadDomainConfig(req);
+    const subdomains = domains
+        .filter((d) => d.subdomain === parent && d.domain !== parent)
+        .map((d) => (full ? d : publicDomainView(d)));
     res.json({ subdomains });
 });
+
+// What a route may point at is decided in ONE place (runtime/routeTargets.ts) and enforced by the store, so no door
+// into the store gets a different answer. The routes here only turn a refusal into a 400 that says why and with what code.
+function refusal(res, error) {
+    if (error && error.name === 'RouteTargetError') {
+        return res.status(400).json({ error: error.message, code: error.code });
+    }
+    return null;
+}
 
 router.post('/add-domain', async (req, res) => {
     const body = req.body || {};
@@ -727,8 +764,8 @@ router.post('/add-domain', async (req, res) => {
             body.sslCertificate, body.sslCertificateKey, body.target,
             body.type, body.projectPath, body.owner,
         );
-    } catch {
-        return res.status(409).json({ error: 'Domain already exists' });
+    } catch (error) {
+        return refusal(res, error) || res.status(409).json({ error: 'Domain already exists' });
     }
     res.json({ success: true, domain: body.domain });
 });
@@ -739,11 +776,67 @@ router.post('/update-domain', async (req, res) => {
         return res.status(400).json({ error: 'domain and updatedFields are required' });
     }
     const f = body.updatedFields;
-    await updateDomain(
-        body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
-        f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
-    );
-    res.json({ success: true, domain: body.domain });
+    if (!(await getDomainByName(body.domain))) {
+        return res.status(404).json({ error: 'Domain not found' });
+    }
+    // `connections` is the third destination of a door: path prefixes served by the app's own server on another port
+    // (docs/DoorConnections.md). It travels on this route, behind the same operator gate, so the panel needs no new
+    // location in the router; the rules are the store's (checked there, and again per request in the Lua), not this route's.
+    const { connections, ...fields } = f;
+    const touchesFields = Object.values(fields).some((v) => v !== undefined);
+    try {
+        if (touchesFields || connections === undefined) {
+            await updateDomain(
+                body.domain, f.subdomain, f.email, f.sslMode, f.sslCertificate,
+                f.sslCertificateKey, f.target, f.type, f.projectPath, f.owner,
+            );
+        }
+    } catch (error) {
+        return refusal(res, error) || res.status(500).json({ error: 'update failed' });
+    }
+    let declared;
+    if (connections !== undefined) {
+        try {
+            declared = await updateDomainConnections(body.domain, connections);
+        } catch (error) {
+            // refused as a whole, nothing written: say which entry and why
+            return res.status(400).json({ error: error instanceof Error ? error.message : String(error), code: 'CONNECTION_REFUSED' });
+        }
+    }
+    res.json({ success: true, domain: body.domain, ...(declared !== undefined ? { connections: declared } : {}) });
+});
+
+// What each door is doing now: does its destination answer, is it applied to the router, is TLS configured, can it be
+// opened. Read-only; not a public route (it probes destinations), so it takes the same session as the writes. A state the
+// gateway cannot determine is reported as "unknown", never guessed.
+function probeTcp(host, port, timeoutMs = 800) {
+    return new Promise((resolve) => {
+        const socket = net.connect({ host, port });
+        const done = (ok) => { socket.destroy(); resolve(ok); };
+        socket.setTimeout(timeoutMs, () => done(false));
+        socket.once('connect', () => done(true));
+        socket.once('error', () => done(false));
+    });
+}
+
+function inspectFolder(folder) {
+    try {
+        const stat = fs.statSync(folder);
+        if (!stat.isDirectory()) return { directory: false, index: false };
+        return { directory: true, index: fs.existsSync(path.join(folder, 'index.html')) };
+    } catch {
+        return { directory: false, index: false };
+    }
+}
+
+router.get('/domains/status', async (req, res) => {
+    const rows = await getDomains();
+    const map = readJson(runtimePath('domain-map.json'));
+    const applied = map && map.domains ? new Set(Object.keys(map.domains).map((d) => d.toLowerCase())) : null;
+    const registry = readJson(runtimePath('apps.json'));
+    const apps = Object.values(registry?.apps ?? {});
+    const statuses = await Promise.all(rows.map((row) => describeDomain(row, { applied, apps, probeTcp, inspectFolder })));
+    res.json({ success: true, statuses, count: statuses.length, checkedAt: new Date().toISOString() });
 });
 
 router.post('/delete-domain', async (req, res) => {

@@ -4,8 +4,12 @@
 // Allows adding and deleting entries.
 // Changes bump domain-map.version so Nginx routing hot-reloads.
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { isRefusal, refusalMessage } from '../utils/adminAccess.js';
+import GatewayBar from '../components/GatewayBar/GatewayBar.jsx';
+import {
+    LOCAL_ID, loadGateways, addGateway, removeGateway, selectedGatewayId, selectGateway, sessionFor, saveSession, gatewayRequest, scopeKey } from '../utils/gateways.js';
+import { probeGateway } from '../utils/gatewayProbe.js';
 import {
     Box,
     Button,
@@ -42,6 +46,10 @@ import {
     Lock as LockIcon,
     LockOpen as LockOpenIcon,
     Refresh as RefreshIcon,
+    OpenInNew as OpenInNewIcon,
+    SwapHoriz as SwapHorizIcon,
+    LinkOff as LinkOffIcon,
+    Cable as CableIcon,
 } from '@mui/icons-material';
 import { deriveCleakerNodeFromMe, fetchGatewayHostname, signedRequest } from 'this.gui/cleaker';
 import { useRegisterGuiNode } from 'this.gui';
@@ -65,15 +73,23 @@ async function parseJsonResponse(res) {
     return res.json();
 }
 
-async function fetchDomains() {
-    const res = await fetch('/domains');
+// The full record (target, TLS files) is only for an admin session; without one /domains answers with the public
+// projection (domain, type, subdomain, tls). Every request below goes to the gateway the screen is looking at and carries
+// THAT gateway's session (kept per gateway: utils/gateways.js) -- never another's.
+function gwFetch(ctx, path, init = {}) {
+    const request = gatewayRequest(ctx.gateway, path, init, ctx.token);
+    return fetch(request.url, request.init);
+}
+
+async function fetchDomains(ctx) {
+    const res = await gwFetch(ctx, '/domains', { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const data = await parseJsonResponse(res);
     return Array.isArray(data.domains) ? data.domains : [];
 }
 
-async function addDomain({ domain, target, type, email }) {
-    const res = await fetch('/add-domain', {
+async function addDomain(ctx, { domain, target, type, email }) {
+    const res = await gwFetch(ctx, '/add-domain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, target, type, email }),
@@ -84,8 +100,8 @@ async function addDomain({ domain, target, type, email }) {
     return data;
 }
 
-async function provisionCert({ domain, email }) {
-    const res = await fetch('/provision-cert', {
+async function provisionCert(ctx, { domain, email }) {
+    const res = await gwFetch(ctx, '/provision-cert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, email }),
@@ -96,8 +112,8 @@ async function provisionCert({ domain, email }) {
     return data;
 }
 
-async function deleteDomain(domain) {
-    const res = await fetch('/delete-domain', {
+async function deleteDomain(ctx, domain) {
+    const res = await gwFetch(ctx, '/delete-domain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain }),
@@ -106,6 +122,61 @@ async function deleteDomain(domain) {
     const data = await parseJsonResponse(res);
     if (!res.ok) throw new Error(data.error ?? `${res.status}`);
     return data;
+}
+
+// Changes where a door points. The same record: nothing is created, no identity, no namespace, no data copied.
+async function updateDomainRoute(ctx, { domain, type, target }) {
+    const res = await gwFetch(ctx, '/update-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, updatedFields: { type, target } }),
+    });
+    if (isRefusal(res)) throw new Error(refusalMessage('update-domain'));
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(data.error ?? `${res.status}`);
+    return data;
+}
+
+// Declares the connections of a door: path prefixes served by the app's own server on another port (the door's main
+// destination keeps answering everything else). The same route as the other fields of the door, replacing the list;
+// the store's rules answer (reserved prefixes, ports, duplicates) and a list with a bad entry is refused as a whole.
+async function updateDoorConnections(ctx, { domain, connections }) {
+    const res = await gwFetch(ctx, '/update-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain, updatedFields: { connections } }),
+    });
+    if (isRefusal(res)) throw new Error(refusalMessage('update-domain'));
+    const data = await parseJsonResponse(res);
+    if (!res.ok) throw new Error(data.error ?? `${res.status}`);
+    // A gateway that does not carry connections answers success and writes nothing (it ignores the field): without the
+    // list in the answer there is no proof that anything was declared, and saying "saved" would be false.
+    if (!Array.isArray(data.connections)) {
+        throw new Error('Este gateway todavía no acepta conexiones (su backend es anterior a esta función): no se guardó nada.');
+    }
+    return data.connections;
+}
+
+// The apps registered with this gateway (live ones), to point a door at by name.
+async function fetchApps(ctx) {
+    const res = await gwFetch(ctx, '/apps', { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await parseJsonResponse(res);
+    return (Array.isArray(data.apps) ? data.apps : []).map((app) => ({
+        name: String(app?.metadata?.monadName || String(app?.name || '').replace(/^monad:/, '')),
+        port: app?.port,
+    })).filter((app) => app.name);
+}
+
+// What each door is doing now (destination answers? certificate? applied?). Admin-only on the gateway. When it cannot
+// be had the panel says "unknown": it never invents a state.
+async function fetchStatuses(ctx) {
+    const res = await gwFetch(ctx, '/domains/status', { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await parseJsonResponse(res);
+    const byDomain = {};
+    for (const entry of Array.isArray(data.statuses) ? data.statuses : []) byDomain[entry.domain] = entry;
+    return byDomain;
 }
 
 // Capability-gated — requires an unlocked .me signing session. Whatever the
@@ -133,7 +204,88 @@ async function editDomainMetadata(session, domain, description) {
 // domainStore.ts's toDomainRecord() — already the real, fully-qualified
 // kernel path (users.<owner>.domains.<key>), so Explain works against real
 // data with zero owner/escaping logic duplicated here.
-function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onDelete }) {
+// What a door can point at (mirrors src/runtime/routeTargets.ts, which is the one the gateway enforces).
+const DESTINATION_KINDS = [
+    { kind: 'app', label: 'App registrada', type: 'server', hint: 'Una app registrada en este gateway: hereda su política de exposición y autorización.' },
+    { kind: 'server', label: 'Servicio en un puerto', type: 'server', hint: 'Un servicio HTTP en host:puerto (esta máquina u otra de la red). Por TLS (https://) todavía no.' },
+    { kind: 'static', label: 'Carpeta de archivos', type: 'static', hint: 'Una carpeta absoluta que tenga index.html.' },
+    { kind: 'proxy', label: 'Superficie del monad', type: 'proxy', hint: 'La resuelve el monad de este gateway; sin destino.' },
+];
+
+function destinationOfRow(row) {
+    const type = String(row?.type || 'proxy').toLowerCase();
+    const target = String(row?.target || '');
+    if (type === 'static') return { kind: 'static', app: '', hostport: '', folder: target };
+    if (/^app:/i.test(target)) return { kind: 'app', app: target.slice(4), hostport: '', folder: '' };
+    if (type === 'server' || target) return { kind: 'server', app: '', hostport: target, folder: '' };
+    return { kind: 'proxy', app: '', hostport: '', folder: '' };
+}
+
+// -> { type, target } or { error }. The gateway checks it again: this only says what is missing before asking.
+function destinationFields(dest) {
+    if (dest.kind === 'app') return dest.app ? { type: 'server', target: `app:${dest.app}` } : { error: 'Elige una app.' };
+    if (dest.kind === 'server') return dest.hostport.trim() ? { type: 'server', target: dest.hostport.trim() } : { error: 'Escribe host:puerto.' };
+    if (dest.kind === 'static') return dest.folder.trim() ? { type: 'static', target: dest.folder.trim() } : { error: 'Escribe la ruta absoluta de la carpeta.' };
+    return { type: 'proxy', target: '' };
+}
+
+function DestinationPicker({ value, onChange, apps, appsError }) {
+    const kind = DESTINATION_KINDS.find((k) => k.kind === value.kind) || DESTINATION_KINDS[1];
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }} data-gui-node-id="Domains.destinationPicker">
+            <FormControl fullWidth size="small">
+                <InputLabel>Destino</InputLabel>
+                <Select label="Destino" value={value.kind} onChange={(e) => onChange({ ...value, kind: e.target.value })}>
+                    {DESTINATION_KINDS.map((k) => <MenuItem key={k.kind} value={k.kind}>{k.label}</MenuItem>)}
+                </Select>
+            </FormControl>
+            {value.kind === 'app' && (
+                apps.length > 0 ? (
+                    <FormControl fullWidth size="small">
+                        <InputLabel>App</InputLabel>
+                        <Select label="App" value={value.app} onChange={(e) => onChange({ ...value, app: e.target.value })}>
+                            {apps.map((a) => <MenuItem key={a.name} value={a.name}>{a.name}</MenuItem>)}
+                        </Select>
+                    </FormControl>
+                ) : (
+                    <TextField
+                        label="App"
+                        placeholder="fulltrailer"
+                        value={value.app}
+                        onChange={(e) => onChange({ ...value, app: e.target.value.trim() })}
+                        helperText={appsError
+                            ? `No se pudo leer el registro de apps (${appsError}). Puedes escribir el nombre; el estado dirá si está viva.`
+                            : 'No hay apps vivas registradas ahora. Puedes escribir el nombre; el estado dirá si está viva.'}
+                        size="small"
+                        fullWidth
+                    />
+                )
+            )}
+            {value.kind === 'server' && (
+                <TextField label="Servicio" placeholder="127.0.0.1:4000" value={value.hostport}
+                    onChange={(e) => onChange({ ...value, hostport: e.target.value })} size="small" fullWidth />
+            )}
+            {value.kind === 'static' && (
+                <TextField label="Carpeta" placeholder="/Users/yo/mi-sitio/dist" value={value.folder}
+                    onChange={(e) => onChange({ ...value, folder: e.target.value })} size="small" fullWidth />
+            )}
+            <Typography variant="caption" sx={{ opacity: 0.6 }}>{kind.hint}</Typography>
+        </Box>
+    );
+}
+
+// The chips that say what a door is doing. "Estado desconocido" is a state: it is shown when the gateway could not say.
+function destinationChip(status) {
+    if (!status) return { label: 'Estado desconocido', color: 'default', tip: 'El gateway no pudo decir el estado de esta puerta.' };
+    const state = status.destination?.state;
+    const tip = status.destination?.detail || '';
+    if (state === 'ok') return { label: 'Responde', color: 'success', tip };
+    if (state === 'down') return { label: 'No responde', color: 'error', tip };
+    if (state === 'missing') return { label: 'Falta el destino', color: 'error', tip };
+    return { label: 'Estado desconocido', color: 'default', tip: tip || 'No se pudo comprobar.' };
+}
+
+function DomainRow({ row, status, session, provisioning, deleting, hasPublicCert, onEdit, onProvision, onChangeDestination, onConnections, onDisconnect, canModify = true }) {
     const nodeId = `Domains.row.${row.domain}`;
     useRegisterGuiNode(nodeId, 'DomainRow', 'Domains.routesCard', { semanticPath: row.semanticPath });
     // Per-field registration — the row's own semanticPath points at the whole
@@ -147,6 +299,12 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
     useRegisterGuiNode(targetNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.target` } : undefined);
     useRegisterGuiNode(typeNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.type` } : undefined);
     useRegisterGuiNode(sslNodeId, 'DomainField', nodeId, row.semanticPath ? { semanticPath: `${row.semanticPath}.sslMode` } : undefined);
+
+    const dest = destinationChip(status);
+    const tlsKnown = !!status?.tls;
+    const tlsPending = tlsKnown && status.tls.state === 'pending';
+    const openUrl = status?.open?.url || null;
+    const openWhy = status ? (status.open?.why || 'No se puede abrir todavía') : 'Estado desconocido: no se sabe si abre';
     return (
         <TableRow
             data-gui-node-id={nodeId}
@@ -156,7 +314,8 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
                 {row.domain}
             </TableCell>
             <TableCell data-gui-node-id={targetNodeId} sx={{ fontFamily: 'monospace', opacity: 0.7 }}>
-                {row.target || '—'}
+                {/* the listing is the public projection without a read grant; the status (admin-only) carries it */}
+                {row.target || status?.target || '—'}
             </TableCell>
             <TableCell data-gui-node-id={typeNodeId}>
                 <Chip
@@ -166,14 +325,69 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
                 />
             </TableCell>
             <TableCell data-gui-node-id={sslNodeId}>
-                <Chip
-                    label={row.sslMode || 'none'}
-                    size="small"
-                    variant={row.sslMode && row.sslMode !== 'none' ? 'filled' : 'outlined'}
-                    color={row.sslMode && row.sslMode !== 'none' ? 'success' : 'default'}
-                />
+                <Tooltip title={tlsKnown ? status.tls.detail : (row.sslMode && row.sslMode !== 'none' ? `Modo: ${row.sslMode}` : 'Estado de TLS desconocido')}>
+                    <span>
+                        <Chip
+                            label={tlsKnown ? (tlsPending ? 'TLS pendiente' : 'TLS configurado') : (row.sslMode || 'none')}
+                            size="small"
+                            variant={tlsKnown && !tlsPending ? 'filled' : 'outlined'}
+                            color={tlsKnown ? (tlsPending ? 'warning' : 'success') : 'default'}
+                        />
+                    </span>
+                </Tooltip>
             </TableCell>
-            <TableCell align="right">
+            <TableCell data-gui-node-id={`${nodeId}.state`}>
+                <Tooltip title={dest.tip}>
+                    <span>
+                        <Chip label={dest.label} size="small" color={dest.color} variant={dest.color === 'default' ? 'outlined' : 'filled'} />
+                    </span>
+                </Tooltip>
+                {status && status.applied === false && (
+                    <Tooltip title="El registro existe pero el router no lo ha cargado todavía.">
+                        <span><Chip label="No aplicada" size="small" color="warning" variant="outlined" sx={{ ml: 0.5 }} /></span>
+                    </Tooltip>
+                )}
+            </TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                <Tooltip title={openUrl ? `Abrir ${openUrl}` : openWhy}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            disabled={!openUrl}
+                            onClick={() => window.open(openUrl, '_blank', 'noopener')}
+                            data-gui-node-id={`${nodeId}.open`}
+                        >
+                            <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Tooltip title="Cambiar destino">
+                    <span>
+                        <IconButton
+                            size="small"
+                            onClick={() => onChangeDestination({ ...row, target: row.target || status?.target || '', type: row.type || status?.type })}
+                            disabled={deleting === row.domain || !canModify}
+                            data-gui-node-id={`${nodeId}.change`}
+                        >
+                            <SwapHorizIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
+                <Tooltip title={Array.isArray(row.connections) && row.connections.length
+                    ? `Conexiones del API: ${row.connections.map((c) => `${c.prefix} → ${c.target}`).join(', ')}`
+                    : 'Conectar el API de esta app en otro puerto'}>
+                    <span>
+                        <IconButton
+                            size="small"
+                            color={Array.isArray(row.connections) && row.connections.length ? 'primary' : 'default'}
+                            onClick={() => onConnections(row)}
+                            disabled={deleting === row.domain || !canModify}
+                            data-gui-node-id={`${nodeId}.connections`}
+                        >
+                            <CableIcon fontSize="small" />
+                        </IconButton>
+                    </span>
+                </Tooltip>
                 <Tooltip title={session ? 'Edit description' : 'Unlock .me proof to attempt this'}>
                     <span>
                         <IconButton
@@ -199,17 +413,18 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
                         </IconButton>
                     </span>
                 </Tooltip>
-                <Tooltip title={`Delete ${row.domain}`}>
+                <Tooltip title={`Desconectar ${row.domain} (no borra archivos ni detiene la app)`}>
                     <span>
                         <IconButton
                             size="small"
                             color="error"
-                            onClick={() => onDelete(row.domain)}
-                            disabled={deleting === row.domain}
+                            onClick={() => onDisconnect({ ...row, target: row.target || status?.target || '' })}
+                            disabled={deleting === row.domain || !canModify}
+                            data-gui-node-id={`${nodeId}.disconnect`}
                         >
                             {deleting === row.domain
                                 ? <CircularProgress size={16} />
-                                : <DeleteIcon fontSize="small" />}
+                                : <LinkOffIcon fontSize="small" />}
                         </IconButton>
                     </span>
                 </Tooltip>
@@ -218,11 +433,12 @@ function DomainRow({ row, session, provisioning, deleting, hasPublicCert, onEdit
     );
 }
 
-// ─── Add Domain Dialog ────────────────────────────────────────────────────────
+// ─── Add Domain Dialog ────────────────────────────────────────────────
 
-const EMPTY_FORM = { domain: '', target: '', type: 'proxy', email: '' };
+const EMPTY_DEST = { kind: 'server', app: '', hostport: '', folder: '' };
+const EMPTY_FORM = { domain: '', dest: EMPTY_DEST, email: '' };
 
-function AddDomainDialog({ open, onClose, onSuccess }) {
+function AddDomainDialog({ open, onClose, onSuccess, apps, appsError, ctx }) {
     useRegisterGuiNode('Domains.addDialog', 'AddDomainDialog');
     const [form, setForm] = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
@@ -236,17 +452,18 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
 
     const handleSubmit = async () => {
         if (!form.domain.trim()) {
-            setError('Domain is required.');
+            setError('El dominio es obligatorio.');
             return;
         }
-        if ((form.type === 'server' || form.type === 'static') && !form.target.trim()) {
-            setError('Target is required for server and static routes.');
+        const fields = destinationFields(form.dest);
+        if (fields.error) {
+            setError(fields.error);
             return;
         }
         setSaving(true);
         setError(null);
         try {
-            await addDomain(form);
+            await addDomain(ctx, { domain: form.domain.trim(), type: fields.type, target: fields.target, email: form.email });
             setForm(EMPTY_FORM);
             onSuccess();
             onClose();
@@ -266,57 +483,194 @@ function AddDomainDialog({ open, onClose, onSuccess }) {
             data-gui-node-id="Domains.addDialog"
             data-gui-component="AddDomainDialog"
         >
-            <DialogTitle>Add Domain Route</DialogTitle>
+            <DialogTitle>Conectar una puerta</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
                 <TextField
-                    label="Domain"
+                    label="Dominio"
                     placeholder="api.suis-macbook-air.local"
-                    helperText="The hostname this gateway should route."
+                    helperText="El nombre que este gateway debe enrutar."
                     value={form.domain}
                     onChange={(e) => setForm(f => ({ ...f, domain: e.target.value }))}
                     autoFocus
                     fullWidth
                 />
-                <TextField
-                    label="Target"
-                    placeholder="http://127.0.0.1:3001"
-                    helperText="Optional for monad-resolved semantic surfaces; required for server/static routes."
-                    value={form.target}
-                    onChange={(e) => setForm(f => ({ ...f, target: e.target.value }))}
-                    fullWidth
+                <DestinationPicker
+                    value={form.dest}
+                    onChange={(dest) => setForm(f => ({ ...f, dest }))}
+                    apps={apps}
+                    appsError={appsError}
                 />
                 <TextField
                     label="Let's Encrypt Email"
                     placeholder="admin@example.com"
-                    helperText="Optional now; required later when issuing a public certificate."
+                    helperText="Opcional ahora; hace falta al pedir un certificado público."
                     value={form.email}
                     onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))}
                     fullWidth
                 />
-                <FormControl fullWidth size="small">
-                    <InputLabel>Type</InputLabel>
-                    <Select
-                        label="Type"
-                        value={form.type}
-                        onChange={(e) => setForm(f => ({ ...f, type: e.target.value }))}
-                    >
-                        <MenuItem value="proxy">proxy</MenuItem>
-                        <MenuItem value="static">static</MenuItem>
-                        <MenuItem value="server">server</MenuItem>
-                    </Select>
-                </FormControl>
+                <Alert severity="info" sx={{ py: 0 }}>
+                    Sin certificado, la puerta queda con <b>TLS pendiente</b>: no abre por HTTPS hasta que se aprovisione uno.
+                </Alert>
                 {error && <Alert severity="error">{error}</Alert>}
             </DialogContent>
             <DialogActions>
-                <Button onClick={handleClose}>Cancel</Button>
+                <Button onClick={handleClose}>Cancelar</Button>
                 <Button
                     variant="contained"
                     onClick={handleSubmit}
                     disabled={saving}
                     startIcon={saving ? <CircularProgress size={14} /> : <AddIcon />}
                 >
-                    {saving ? 'Adding…' : 'Add Route'}
+                    {saving ? 'Conectando…' : 'Conectar'}
                 </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Change destination ─────────────────────────────────────────────────
+
+function ChangeDestinationDialog({ row, open, onClose, onSuccess, apps, appsError, ctx }) {
+    useRegisterGuiNode('Domains.changeDialog', 'ChangeDestinationDialog');
+    const [dest, setDest] = useState(EMPTY_DEST);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    useEffect(() => { if (row) { setDest(destinationOfRow(row)); setError(null); } }, [row]);
+
+    const handleSubmit = async () => {
+        const fields = destinationFields(dest);
+        if (fields.error) { setError(fields.error); return; }
+        setSaving(true);
+        setError(null);
+        try {
+            await updateDomainRoute(ctx, { domain: row.domain, type: fields.type, target: fields.target });
+            onSuccess(row.domain);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-gui-node-id="Domains.changeDialog" data-gui-component="ChangeDestinationDialog">
+            <DialogTitle>Cambiar destino de {row?.domain}</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                    Es el mismo registro: no se crea otra identidad ni se copian datos. Ahora apunta a{' '}
+                    <b style={{ fontFamily: 'monospace' }}>{row?.target || '—'}</b>.
+                </Typography>
+                <DestinationPicker value={dest} onChange={setDest} apps={apps} appsError={appsError} />
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button variant="contained" onClick={handleSubmit} disabled={saving}
+                    startIcon={saving ? <CircularProgress size={14} /> : <SwapHorizIcon />}>
+                    {saving ? 'Cambiando…' : 'Cambiar destino'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Door connections ───────────────────────────────────────────────────
+
+// One line per connection: `/api/fuel` -> `127.0.0.1:4000`. A text list, because that is what the record is: the
+// prefix and the loopback port of the app's own server. The rules are the gateway's; this only shapes the list.
+function connectionsToText(connections) {
+    return (Array.isArray(connections) ? connections : []).map((c) => `${c.prefix} = ${c.target}`).join('\n');
+}
+
+function textToConnections(text) {
+    const out = [];
+    for (const raw of String(text).split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        const at = line.indexOf('=');
+        if (at < 1) return { error: `Cada línea es «/ruta = 127.0.0.1:puerto». No se entiende: ${line}` };
+        const prefix = line.slice(0, at).trim();
+        const target = line.slice(at + 1).trim();
+        if (!prefix.startsWith('/') || !target) return { error: `Cada línea es «/ruta = 127.0.0.1:puerto». No se entiende: ${line}` };
+        out.push({ prefix, target });
+    }
+    return { connections: out };
+}
+
+function ConnectionsDialog({ row, open, onClose, onSuccess, ctx }) {
+    useRegisterGuiNode('Domains.connectionsDialog', 'ConnectionsDialog');
+    const [text, setText] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    useEffect(() => { if (row) { setText(connectionsToText(row.connections)); setError(null); } }, [row]);
+
+    const handleSubmit = async () => {
+        const parsed = textToConnections(text);
+        if (parsed.error) { setError(parsed.error); return; }
+        setSaving(true);
+        setError(null);
+        try {
+            const declared = await updateDoorConnections(ctx, { domain: row.domain, connections: parsed.connections });
+            onSuccess(row.domain, declared);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-gui-node-id="Domains.connectionsDialog" data-gui-component="ConnectionsDialog">
+            <DialogTitle>Conexiones de {row?.domain}</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+                <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                    La puerta sigue apuntando a <b style={{ fontFamily: 'monospace' }}>{row?.target || '—'}</b>. Estas rutas, en cambio,
+                    las atiende el servidor propio de la app en otro puerto. El namespace no cambia: el puerto es transporte.
+                </Typography>
+                <TextField
+                    label="Una por línea: /ruta = 127.0.0.1:puerto"
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    multiline
+                    minRows={3}
+                    placeholder="/api/fuel = 127.0.0.1:4000"
+                    inputProps={{ style: { fontFamily: 'monospace' }, 'data-gui-node-id': 'Domains.connectionsDialog.input' }}
+                />
+                <Typography variant="caption" sx={{ opacity: 0.6 }}>
+                    Por ahora solo servidores locales (127.0.0.1). No pueden ocupar rutas del gateway ni del monad
+                    (/api/v1, /me, /apps…) ni los puertos 80, 443 y 3000. Vacío quita todas las conexiones.
+                </Typography>
+                {error && <Alert severity="error">{error}</Alert>}
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button variant="contained" onClick={handleSubmit} disabled={saving}
+                    startIcon={saving ? <CircularProgress size={14} /> : <CableIcon />}>
+                    {saving ? 'Guardando…' : 'Guardar conexiones'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
+// ─── Disconnect ─────────────────────────────────────────────────────────
+
+function DisconnectDialog({ row, open, onClose, onConfirm }) {
+    useRegisterGuiNode('Domains.disconnectDialog', 'DisconnectDialog');
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth data-gui-node-id="Domains.disconnectDialog" data-gui-component="DisconnectDialog">
+            <DialogTitle>Desconectar {row?.domain}</DialogTitle>
+            <DialogContent>
+                <Typography variant="body2">
+                    La puerta deja de existir: el dominio ya no abre. <b>No se borran archivos ni se detiene la app</b> a la que apuntaba
+                    ({row?.target || 'sin destino'}); solo desaparece esta conexión.
+                </Typography>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancelar</Button>
+                <Button color="error" variant="contained" onClick={() => onConfirm(row.domain)} startIcon={<LinkOffIcon />}>Desconectar</Button>
             </DialogActions>
         </Dialog>
     );
@@ -329,7 +683,7 @@ function hasPublicCert(row) {
     return !!mode && mode !== 'none' && mode !== 'off';
 }
 
-function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
+function ProvisionCertDialog({ row, open, onClose, onSuccess, ctx }) {
     useRegisterGuiNode('Domains.provisionDialog', 'ProvisionCertDialog');
     const [email, setEmail] = useState('');
     const [saving, setSaving] = useState(false);
@@ -358,7 +712,7 @@ function ProvisionCertDialog({ row, open, onClose, onSuccess }) {
         setSaving(true);
         setError(null);
         try {
-            await provisionCert({ domain: row.domain, email: trimmedEmail });
+            await provisionCert(ctx, { domain: row.domain, email: trimmedEmail });
             await onSuccess(row.domain);
             onClose();
         } catch (err) {
@@ -508,6 +862,30 @@ export default function Domains() {
     const [deleteError, setDeleteError] = useState(null);
     const [editOpen, setEditOpen] = useState(null);         // row currently being edited
     const [descriptionNotice, setDescriptionNotice] = useState(null);
+    // Which gateway this screen is looking at: this netget, or one added by an explicit address. Its session is its own.
+    const pageOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const store = typeof window !== 'undefined' ? window.localStorage : null;
+    const [gatewayList, setGatewayList] = useState(() => (store ? loadGateways(store, pageOrigin) : []));
+    const [gatewayId, setGatewayId] = useState(() => (store ? selectedGatewayId(store, pageOrigin) : LOCAL_ID));
+    const gateway = gatewayList.find((g) => g.id === gatewayId) || gatewayList[0];
+    const [sessionToken, setSessionToken] = useState(() => (store && gateway ? sessionFor(store, gateway) : null));
+    const [report, setReport] = useState(null);
+    const [probing, setProbing] = useState(false);
+    const ctx = useMemo(() => ({ gateway, token: sessionToken }), [gateway, sessionToken]);
+    // What is on screen belongs to ONE gateway + session. Every asynchronous answer (probe, lists, a write that was already
+    // sent) is applied only if that scope is still the one on screen; a late answer from the gateway that was left must not
+    // be shown as the state of the one that is selected now. An operation already sent keeps its original destination.
+    const scopeRef = useRef(null);
+    scopeRef.current = scopeKey(gateway, sessionToken);
+    const canModify = report ? report.permissions.modify.state === 'yes' : null;   // null: not known yet
+    const [statuses, setStatuses] = useState({});            // domain -> what the gateway says it is doing
+    const [statusError, setStatusError] = useState(null);    // why the states are unknown, when they are
+    const [apps, setApps] = useState([]);
+    const [appsError, setAppsError] = useState(null);
+    const [changeOpen, setChangeOpen] = useState(null);      // row whose destination is being changed
+    const [connectionsOpen, setConnectionsOpen] = useState(null); // row whose API connections are being edited
+    const [disconnectOpen, setDisconnectOpen] = useState(null);
+    const [notice, setNotice] = useState(null);
 
     // The .me session lives in MeLauncher (sidebar bubble) now — this page
     // just reads it. candidateSession.node/hostname are re-derived from the
@@ -558,42 +936,136 @@ export default function Domains() {
 
     const session = verified === true ? candidateSession : null;
 
+    const probe = useCallback(async () => {
+        if (!gateway) return;
+        const mine = scopeKey(gateway, sessionToken);
+        setProbing(true);
+        try {
+            const next = await probeGateway(gateway, { token: sessionToken });
+            if (scopeRef.current === mine) setReport(next);
+        } finally {
+            if (scopeRef.current === mine) setProbing(false);
+        }
+    }, [gateway, sessionToken]);
+
     const load = useCallback(async () => {
+        const mine = scopeKey(ctx.gateway, ctx.token);
+        const current = () => scopeRef.current === mine;
         setLoading(true);
         setError(null);
         try {
-            setDomains(await fetchDomains());
+            const rows = await fetchDomains(ctx);
+            if (current()) setDomains(rows);
         } catch (err) {
-            setError(err.message);
+            if (current()) setError(err.message);
         } finally {
-            setLoading(false);
+            if (current()) setLoading(false);
         }
-    }, []);
+        // States and the apps to choose from are separate reads: when they fail the panel says "unknown", it does not
+        // pretend, and the routes are still listed.
+        try {
+            const next = await fetchStatuses(ctx);
+            if (current()) { setStatuses(next); setStatusError(null); }
+        } catch (err) { if (current()) { setStatuses({}); setStatusError(err.message); } }
+        try {
+            const next = await fetchApps(ctx);
+            if (current()) { setApps(next); setAppsError(null); }
+        } catch (err) { if (current()) { setApps([]); setAppsError(err.message); } }
+    }, [ctx]);
 
+    // A write changes what the gateway reports about itself (door count, whether its configuration is readable): the
+    // summary at the top asks again instead of keeping what it learned before the write.
+    const reload = useCallback(async () => { await load(); probe(); }, [load, probe]);
+
+    // Changing gateway (or its session) asks that gateway again; what was shown for the other is not kept.
+    useEffect(() => { setReport(null); setDomains([]); setStatuses({}); probe(); }, [probe]);
     useEffect(() => { load(); }, [load]);
+    // What a write said about one gateway is not said about another.
+    useEffect(() => { setNotice(null); setCertNotice(null); setDeleteError(null); setDescriptionNotice(null); setDeleting(null); setProvisioning(null); }, [gatewayId]);
 
+    // `list` is passed in because state set a moment ago is not yet what this closure sees.
+    const selectFrom = (list, id) => {
+        const next = list.find((g) => g.id === id) || list[0];
+        if (store) selectGateway(store, next.id);
+        setGatewayId(next.id);
+        setSessionToken(store ? sessionFor(store, next) : null);
+    };
+    const handleSelectGateway = (id) => selectFrom(gatewayList, id);
+    const handleAddGateway = (address, label) => {
+        const result = addGateway(store, address, label, pageOrigin);
+        if (result.ok) {
+            const list = loadGateways(store, pageOrigin);
+            setGatewayList(list);
+            selectFrom(list, result.gateway.id);
+        }
+        return result;
+    };
+    const handleRemoveGateway = (id) => {
+        removeGateway(store, id);
+        const list = loadGateways(store, pageOrigin);
+        setGatewayList(list);
+        selectFrom(list, LOCAL_ID);
+    };
+    const handleSaveSession = (token) => {
+        saveSession(store, gateway, token);
+        setSessionToken(sessionFor(store, gateway));
+    };
+
+    // An operation is sent to the gateway that was selected when it was started. If another one is selected by the time it
+    // answers, the answer is still shown, naming the gateway it belongs to, and nothing else on screen is touched by it.
     const handleDelete = async (domain) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        const here = () => scopeRef.current === mine;
+        setDisconnectOpen(null);
         setDeleting(domain);
         setDeleteError(null);
         try {
-            await deleteDomain(domain);
-            await load();
+            await deleteDomain(ctx, domain);
+            setNotice(here()
+                ? `${domain} desconectado. Sus archivos y la app a la que apuntaba siguen donde estaban.`
+                : `${domain} desconectado en ${where}.`);
+            await reload();
         } catch (err) {
-            setDeleteError(err.message);
+            setDeleteError(here() ? err.message : `No se pudo desconectar ${domain} en ${where}: ${err.message}`);
         } finally {
-            setDeleting(null);
+            if (here()) setDeleting(null);
         }
     };
 
     const handleCertProvisioned = async (domain) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        const here = () => scopeRef.current === mine;
         setProvisioning(domain);
         setCertNotice(null);
         try {
-            await load();
-            setCertNotice(`Certificate updated for ${domain}.`);
+            await reload();
+            setCertNotice(here() ? `Certificate updated for ${domain}.` : `Certificate updated for ${domain} en ${where}.`);
         } finally {
-            setProvisioning(null);
+            if (here()) setProvisioning(null);
         }
+    };
+
+    const handleDestinationChanged = async (domain) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        setNotice(scopeRef.current === mine
+            ? `${domain} apunta a otro destino. Es el mismo registro; no se creó nada nuevo.`
+            : `${domain} apunta a otro destino en ${where}.`);
+        await reload();
+    };
+
+    const handleConnectionsSaved = async (domain, declared) => {
+        const mine = scopeKey(gateway, sessionToken);
+        const where = gateway?.label || 'ese gateway';
+        const what = declared.length
+            ? `${declared.length} conexión${declared.length !== 1 ? 'es' : ''}: ${declared.map((c) => `${c.prefix} → ${c.target}`).join(', ')}`
+            : 'sin conexiones';
+        setNotice(scopeRef.current === mine
+            ? `${domain}: ${what}. La puerta y su destino no cambiaron.`
+            : `${domain}: ${what} en ${where}.`);
+        await reload();
     };
 
     const handleDescriptionSaved = async (description) => {
@@ -604,6 +1076,19 @@ export default function Domains() {
         <>
             <Box sx={{ px: 3, py: 2, maxWidth: 1100, mx: 'auto' }}>
 
+                <GatewayBar
+                    gateways={gatewayList}
+                    selectedId={gateway?.id}
+                    onSelect={handleSelectGateway}
+                    onAdd={handleAddGateway}
+                    onRemove={handleRemoveGateway}
+                    report={report}
+                    probing={probing}
+                    onProbe={reload}
+                    hasSession={Boolean(sessionToken)}
+                    onSaveSession={handleSaveSession}
+                />
+
                 {/* Header */}
                 <Box
                     data-gui-node-id="Domains.header"
@@ -613,7 +1098,7 @@ export default function Domains() {
                     <Box>
                         <Typography variant="h5" fontWeight={700}>Domains</Typography>
                         <Typography variant="body2" sx={{ opacity: 0.5, mt: 0.25 }}>
-                            Registered domain → upstream routes. Changes hot-reload Nginx.
+                            Puertas: dominio → destino (app registrada, servicio en un puerto o carpeta). Los cambios se aplican al router en caliente.
                         </Typography>
                     </Box>
                     <Box
@@ -658,8 +1143,10 @@ export default function Domains() {
                             variant="contained"
                             startIcon={<AddIcon />}
                             onClick={() => setAddOpen(true)}
+                            disabled={canModify === false}
+                            title={canModify === false ? 'Este gateway no autoriza modificar con la sesión actual' : undefined}
                         >
-                            Add Route
+                            Conectar puerta
                         </Button>
                     </Box>
                 </Box>
@@ -667,6 +1154,19 @@ export default function Domains() {
                 {descriptionNotice && (
                     <Alert severity="success" sx={{ mb: 2 }} onClose={() => setDescriptionNotice(null)}>
                         {descriptionNotice}
+                    </Alert>
+                )}
+
+                {notice && (
+                    <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice(null)}>
+                        {notice}
+                    </Alert>
+                )}
+
+                {statusError && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        Estado desconocido: el gateway no devolvió el estado de las puertas ({statusError}). Las rutas se listan,
+                        pero no se sabe si responden ni si su TLS está configurado.
                     </Alert>
                 )}
 
@@ -705,7 +1205,7 @@ export default function Domains() {
                                     No domain routes registered.
                                 </Typography>
                                 <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
-                                    Add first route
+                                    Conectar la primera puerta
                                 </Button>
                             </Box>
                         ) : (
@@ -713,10 +1213,9 @@ export default function Domains() {
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Domain</TableCell>
-                                            <TableCell sx={{ fontFamily: 'monospace', fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target</TableCell>
-                                            <TableCell sx={{ fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Type</TableCell>
-                                            <TableCell sx={{ fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>SSL</TableCell>
+                                            {['Dominio', 'Destino', 'Tipo', 'TLS', 'Estado'].map((h) => (
+                                                <TableCell key={h} sx={{ fontWeight: 700, opacity: 0.55, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{h}</TableCell>
+                                            ))}
                                             <TableCell align="right" />
                                         </TableRow>
                                     </TableHead>
@@ -725,13 +1224,17 @@ export default function Domains() {
                                             <DomainRow
                                                 key={row.domain}
                                                 row={row}
-                                                session={session}
+                                                status={statusError ? undefined : statuses[row.domain]}
+                                                session={gateway?.local ? session : null}
                                                 provisioning={provisioning}
                                                 deleting={deleting}
                                                 hasPublicCert={hasPublicCert}
                                                 onEdit={setEditOpen}
                                                 onProvision={setProvisionOpen}
-                                                onDelete={handleDelete}
+                                                onChangeDestination={setChangeOpen}
+                                                onConnections={setConnectionsOpen}
+                                                onDisconnect={setDisconnectOpen}
+                                                canModify={canModify !== false}
                                             />
                                         ))}
                                     </TableBody>
@@ -749,20 +1252,46 @@ export default function Domains() {
             <AddDomainDialog
                 open={addOpen}
                 onClose={() => setAddOpen(false)}
-                onSuccess={load}
+                onSuccess={reload}
+                apps={apps}
+                appsError={appsError}
+                ctx={ctx}
+            />
+            <ChangeDestinationDialog
+                row={changeOpen}
+                open={!!changeOpen}
+                onClose={() => setChangeOpen(null)}
+                onSuccess={handleDestinationChanged}
+                apps={apps}
+                appsError={appsError}
+                ctx={ctx}
+            />
+            <ConnectionsDialog
+                row={connectionsOpen}
+                open={!!connectionsOpen}
+                onClose={() => setConnectionsOpen(null)}
+                onSuccess={handleConnectionsSaved}
+                ctx={ctx}
+            />
+            <DisconnectDialog
+                row={disconnectOpen}
+                open={!!disconnectOpen}
+                onClose={() => setDisconnectOpen(null)}
+                onConfirm={handleDelete}
             />
             <ProvisionCertDialog
                 row={provisionOpen}
                 open={!!provisionOpen}
                 onClose={() => setProvisionOpen(null)}
                 onSuccess={handleCertProvisioned}
+                ctx={ctx}
             />
             <EditDescriptionDialog
                 row={editOpen}
                 open={!!editOpen}
                 onClose={() => setEditOpen(null)}
                 onSuccess={handleDescriptionSaved}
-                session={session}
+                session={gateway?.local ? session : null}
             />
         </>
     );

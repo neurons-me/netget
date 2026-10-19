@@ -36,7 +36,7 @@ const PREFIX: string = (await import(modulePath)).GATEWAY_PREFIX ?? '';
 const { getGatewayClaimsPath } = await import('../src/modules/NetGetX/Auth/GatewayClaimsManager.ts');
 // @ts-expect-error -- no .d.ts resolution across this relative path (see admin-session-live-keychain.test.ts).
 const { deriveBranchProofSeed, importEd25519SigningKey, normalizeProofMessage, signEd25519Proof } =
-  await import('../../../../me/Typescript/dist/me.es.js');
+  await import((await import('./_meDist.ts')).meDistUrl());
 
 async function post(origin: string, urlPath: string, body: unknown) {
   const res = await fetch(`${origin}${urlPath}`, {
@@ -236,6 +236,39 @@ try {
   assert.equal(anonymousLogs.status, 401); assert.equal((await anonymousLogs.json() as any).error, 'SESSION_TOKEN_REQUIRED');
   const aliceLogs = await send('GET', '/logs?type=server', undefined, bearer(aliceToken));
   assert.equal(aliceLogs.status, 200, 'an admin session with gateway:read reads the logs');
+  // ── GET /domains is public for the NAMES, not for the machine's wiring ──
+  // give one domain a target and certificate paths (the owner's write, as a real admin does), then read it three ways
+  assert.equal((await send('POST', '/update-domain', { domain: 'bob-new-key.test', updatedFields: { target: 'http://127.0.0.1:9100', sslMode: 'manual', sslCertificate: '/etc/letsencrypt/live/bob-new-key.test/fullchain.pem', sslCertificateKey: '/etc/letsencrypt/live/bob-new-key.test/privkey.pem' } }, bearer(aliceToken))).status, 200);
+  const ALLOWED = ['domain', 'subdomain', 'tlsConfigured', 'type'];
+  const rowsOf = async (headers: Record<string, string> = {}) => ((await (await send('GET', '/domains', undefined, headers)).json()) as any).domains as any[];
+  const anonymous = await rowsOf();
+  assert.ok(anonymous.length >= 1);
+  for (const row of anonymous) assert.deepEqual(Object.keys(row).filter((k) => !ALLOWED.includes(k)), [], `an anonymous row carries only allow-listed fields: ${JSON.stringify(row)}`);
+  const anonRow = anonymous.find((r) => r.domain === 'bob-new-key.test');
+  assert.equal(anonRow.tlsConfigured, true, 'the yes/no survives');
+  assert.ok(!JSON.stringify(anonymous).match(/letsencrypt|privkey|fullchain|127\.0\.0\.1|semanticPath|users\.netget/), 'no paths, no targets, no graph paths on an anonymous answer');
+  // a forged identity or a bearer that is not a session changes nothing
+  for (const headers of [forged, { authorization: 'Bearer nobody' }, { ...forged, authorization: 'Bearer nobody' }]) {
+    const rows = await rowsOf(headers);
+    for (const row of rows) assert.deepEqual(Object.keys(row).filter((k) => !ALLOWED.includes(k)), [], 'forged credentials do not widen the answer');
+  }
+  // an admin session with gateway:read sees the full record (what the admin page and the router's source hold)
+  const adminRow = (await rowsOf(bearer(aliceToken))).find((r) => r.domain === 'bob-new-key.test');
+  assert.equal(adminRow.target, '127.0.0.1:9100');
+  assert.equal(adminRow.sslCertificate, '/etc/letsencrypt/live/bob-new-key.test/fullchain.pem');
+  assert.ok(adminRow.semanticPath, 'the full record includes its graph path');
+  assert.equal((await rowsOf(bearer(bobToken2))).find((r) => r.domain === 'bob-new-key.test').target, '127.0.0.1:9100', 'read-only admins read the configuration too');
+  // routing is fed by the store, not by this answer: the map still holds the full record
+  const mapPath = path.join(process.env.NETGET_DATA_DIR || '', 'runtime', 'domain-map.json');
+  assert.ok(fs.existsSync(mapPath), `the router's map exists at ${mapPath}`);
+  {
+    const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+    assert.equal(map.domains?.['bob-new-key.test']?.target ?? map.domains?.['bob-new-key.test']?.root, '127.0.0.1:9100', 'domain-map.json keeps the target the router needs');
+  }
+  // the subdomains listing is projected the same way
+  const subs = await (await send('GET', '/domains/bob-new-key.test/subdomains')).json() as any;
+  for (const row of subs.subdomains) assert.deepEqual(Object.keys(row).filter((k) => !ALLOWED.includes(k)), []);
+
   // public reads stay public
   for (const p of ['/gateway-identity', '/main-server-namespace', '/domains', '/healthcheck']) assert.equal((await send('GET', p)).status, 200, p);
 } finally {

@@ -1,7 +1,7 @@
 {
     "name": "netget",
     "version": "2.7.7",
-    "description": "Rette Adepto.",
+    "description": "Get it from the net. Rette Adepto. — A gateway that listens on ports 80 and 443 and routes each request to the right app, domain or monad (OpenResty/Lua).",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -54,12 +54,12 @@
     "keywords": [
         "netget",
         "gateway",
-        "networking",
-        "dynamic-routing",
-        "service-mesh",
+        "reverse-proxy",
         "api-gateway",
-        "local-development",
-        "modular-network"
+        "openresty",
+        "lua",
+        "local-first",
+        "nrp"
     ],
     "bugs": {
         "url": "https://github.com/neurons-me/netget/issues"
@@ -87,9 +87,13 @@
         "type": "git",
         "url": "git+https://github.com/neurons-me/netget.git"
     },
-    "homepage": "https://www.npmjs.com/package/netget",
+    "homepage": "https://neurons-me.github.io/netget/",
     "docs": "https://neurons-me.github.io/netget",
-    "author": "Sui Gn",
+    "author": {
+        "name": "sui.gn",
+        "url": "https://neurons.me",
+        "email": "dev@neurons.me"
+    },
     "contributors": [
         "pplalo"
     ],

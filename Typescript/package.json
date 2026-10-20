@@ -1,6 +1,6 @@
 {
     "name": "netget",
-    "version": "2.7.7",
+    "version": "2.7.8",
     "description": "Get it from the net. Rette Adepto. — A gateway that listens on ports 80 and 443 and routes each request to the right app, domain or monad (OpenResty/Lua).",
     "type": "module",
     "main": "./dist/index.js",

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import { LauncherPopoverProvider, MonadNamespaceCard } from 'this.gui';
-import { SeedSessionProvider, Namespace, Cleaker, Me } from 'this.gui/react';
+import { SeedSessionProvider, HostSurface, Cleaker, Me } from 'this.gui/react';
 import { SpecBoundary } from 'this.gui/devtools';
 import Home from './pages/Home.jsx';
 import Logs from './pages/Logs.jsx';
@@ -10,7 +10,8 @@ import MediaPage from './pages/Media/MediaPage.jsx';
 import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
-import { readProviderBoot, frontendRole, namespaceEndpoint, mainServerDoor } from './session/providerBoot.js';
+import { readProviderBoot, frontendRole } from './session/providerBoot.js';
+import { resolveEntry, needsDeclaration, netgetDocumentFor } from './session/entryContext.js';
 import DoorRouter from './session/DoorRouter.jsx';
 
 // Home/Domains/Logs are plain components that take no props, so they never
@@ -133,49 +134,13 @@ const NETGET_PAGES = {
   NetgetPrivacy: () => <MediaPage><PrivacyPolicy /></MediaPage>,
 };
 
-// What netget declares on top of the root GUI document (mergeGuiDocument can add parts, never replace a
-// base part's component/route). Same routes the standalone shell served, so links and bookmarks hold.
-// `requires: 'session'` only hides a link until someone has signed in: it authorizes nothing. What
-// Domains and Logs may do is decided by the server per request, as before.
-const NETGET_DOCUMENT = {
-  GUI: {
-    children: {
-      bars: {
-        children: {
-          left: {
-            children: {
-              dashboard: { label: 'Dashboard', to: '/home', icon: 'dashboard', placement: 'end' },
-              domains: { label: 'Domains', to: '/domains', icon: 'language', requires: 'session', placement: 'end' },
-              logs: { label: 'Logs', to: '/logs', icon: 'article', requires: 'session', placement: 'end' },
-              // the monad.ai orb, the same one the Monad surface draws (not a generic chip icon)
-              monad: { label: 'Monad', to: '/monad', icon: 'orb:monad', placement: 'end' },
-            },
-          },
-        },
-      },
-      content: {
-        children: {
-          // `needs`: the layer behind this door the page cannot work without. When it is off the shell shows the
-          // layers panel in its place and dims the sidebar link.
-          dashboard: { label: 'Dashboard', component: 'NetgetDashboard', route: '/home', needs: 'backend', note: 'Gateway status (REST: /gateway-identity, /apps).' },
-          domains: { label: 'Domains', component: 'NetgetDomains', route: '/domains', needs: 'both', note: 'Domain routing CRUD (REST, stored through the monad).' },
-          logs: { label: 'Logs', component: 'NetgetLogs', route: '/logs', needs: 'backend', note: 'Nginx log viewer (REST).' },
-          monad: { label: 'Monad', component: 'NetgetMonad', route: '/monad', needs: 'monad', note: "This netget's own monad: the surface it reports." },
-          // The server answers /apps with this page to a browser and with the registry (JSON) to a program.
-          apps: { label: 'Apps', component: 'NetgetDashboard', route: '/apps', needs: 'backend', note: 'The apps registered on this host (same view as the dashboard).' },
-          terms: { label: 'Terms', component: 'NetgetTerms', route: '/terms-and-conditions' },
-          privacy: { label: 'Privacy', component: 'NetgetPrivacy', route: '/privacy-policy' },
-        },
-      },
-    },
-  },
-};
-
-// The gateway's front end IS the Cleaker shell: one Layout, one session (Cleaker mounts the
-// SeedSessionProvider -- nothing above it may), netget's views declared into its document.
-// The `.me` above it is this page's local runtime; Cleaker is its link to ONE namespace: the host
-// the page was served from, whose monad answers through netget's /apps/<name> transport.
-const GATEWAY_NAMESPACE = typeof window !== 'undefined' ? window.location.hostname : '';
+// ONE entry for every door. The page mounts the Cleaker shell -- one Layout, one session (Cleaker mounts the
+// SeedSessionProvider, nothing above it may) -- and netget's views are declared into its document. The address bar does not
+// pick an app: it contributes CONTEXT. Which namespace this page links to, and where it is reached, is what the monad that
+// served the page said (a namespace's own door) or what the gateway declares (/main-server-namespace); only when neither
+// did, the hostname is a draft of it (see session/entryContext.js for what each context composes).
+const HOST_NAME = typeof window !== 'undefined' ? window.location.hostname : '';
+const PROVIDER_BOOT = readProviderBoot();
 
 // What the gateway says about itself. null when it did not answer (then the address bar's host is the namespace, as
 // before). A bounded wait: the page must not hang on a refused or slow route.
@@ -185,102 +150,70 @@ function readDeclaredMainServer(signal) {
     .catch(() => null);
 }
 
-function GatewayApp() {
-  // undefined = still asking, null = nothing declared, object = the door the page is on
-  const [door, setDoor] = useState(undefined);
+const resolveHere = (declared) => resolveEntry({ host: HOST_NAME, boot: PROVIDER_BOOT, declared, pathname: window.location.pathname });
+
+function EntryApp() {
+  // A namespace door was already told its namespace by the monad: nothing to ask. Any other door asks the gateway which door
+  // it is. undefined = still asking; otherwise the resolved entry.
+  const asks = needsDeclaration({ host: HOST_NAME, boot: PROVIDER_BOOT });
+  const [entry, setEntry] = useState(() => (asks ? undefined : resolveHere(null)));
   useEffect(() => {
+    if (!asks) return undefined;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
     let cancelled = false;
     readDeclaredMainServer(controller.signal).then((declared) => {
       clearTimeout(timer);
       if (cancelled) return;
-      const resolved = mainServerDoor({ host: GATEWAY_NAMESPACE, declared, pathname: window.location.pathname });
-      // Before Cleaker mounts: an old link to "/netget" on this door is "/" (cleaker.me/netget/netget is not a page).
+      const resolved = resolveHere(declared);
+      // Before Cleaker mounts: an old link to "/netget" on the main server's door is "/" (cleaker.me/netget/netget is not a page).
       if (resolved.canonicalPath) {
         window.history.replaceState(window.history.state, '', `${resolved.canonicalPath}${window.location.search}${window.location.hash}`);
       }
-      setDoor(resolved);
+      setEntry(resolved);
     });
     return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
-  }, []);
-  if (door === undefined) return null;
+  }, [asks]);
+  if (entry === undefined) return null;
   const shell = (
     <Cleaker
-      namespace={door.namespace || GATEWAY_NAMESPACE}
-      // The main server's door declares its namespace (the gateway says it); anywhere else it is only the page's own
-      // hostname: a draft of the transport, not a namespace, until the service answers which one it serves.
-      namespaceSource={door.isMainServerDoor ? 'declared' : 'address'}
+      namespace={entry.namespace || HOST_NAME}
+      namespaceSource={entry.namespaceSource}
       transport={netgetMonadTransportOrigin()}
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-      document={NETGET_DOCUMENT}
+      document={netgetDocumentFor(entry.kind)}
       pages={NETGET_PAGES}
-      // Dashboard and URL are not in the rail for now. The main server's own door is netget's app, not the namespace,
-      // so its directory views (Users, Blockchain) are not this app's navigation either. Icons only -- the pages and
-      // their routes still exist.
-      hideBarItems={door.isMainServerDoor ? ['users', 'blockchain', 'url', 'dashboard'] : ['url', 'dashboard']}
-      // Where the position label points inside the namespace. Only what a door DECLARES counts: the main server's door
-      // is the namespace's `netget` node (netget.site/ -> cleaker.me/netget); everywhere else the label is the namespace's
-      // root. A GUI route such as /domains or /logs is where this page navigated, not a node of the namespace.
-      semanticPath={door.isMainServerDoor ? '/netget' : '/'}
+      hideBarItems={entry.hideBarItems}
+      semanticPath={entry.semanticPath}
     />
   );
   return (
     <LauncherPopoverProvider>
       <Me>
-        {door.isMainServerDoor ? <DoorRouter>{shell}</DoorRouter> : shell}
+        {entry.isMainServerDoor ? <DoorRouter>{shell}</DoorRouter> : shell}
       </Me>
     </LauncherPopoverProvider>
   );
 }
 
-// Three distinct jobs, decided by where this page was loaded (see
-// session/providerBoot.js) -- nginx's bare "/" is one static file shared by
-// every admin-block hostname, and a monad hands the same bundle to every
-// namespace it serves, so which one actually loaded the page is branched
-// client-side, the same way main.jsx's document.title already does:
-//   cleaker  → a namespace's own landing (this.gui's CleakerLanding, entire
-//     page, same session as everywhere else). local.cleaker, and any monad
-//     that serves this bundle without mounting the gateway: the namespace is
-//     the one the monad reports (www.cleaker.me is cleaker.me).
-//   host     → local.host: this host's own hardware/activity dashboard
-//     (HostSurface -- CPU/RAM/storage gauges, self-reported, not verified
-//     by the mesh, plus a live request feed), pointed at netget's own
-//     monad. Deliberately not Cleaker (no claim/identity/namespace jargon)
-//     and not netget's admin dashboard. See the naming-migration memory for
-//     the fuller local.host/@user/namespace grammar this is a first step
-//     toward: today this is a fixed view, not yet real path resolution.
-//   gateway  → everything else (local.netget, netget.site, the machine
-//     hostname, ...): netget's own admin dashboard/sidebar.
-const HOST = typeof window !== 'undefined' ? window.location.hostname : '';
-const PROVIDER_BOOT = readProviderBoot();
-const ROLE = frontendRole({ host: HOST, boot: PROVIDER_BOOT });
-// The monad the landing reads its directory from (Users, Blockchain). On
-// local.cleaker that stays netget's own monad through /apps/netget (the
-// CleakerLanding default); on a namespace served by its own monad it is that
-// monad, at the address the page came from.
-const CLEAKER_MONAD_ORIGIN = HOST === 'local.cleaker' || !PROVIDER_BOOT ? undefined : netgetMonadTransportOrigin();
-const CLEAKER_ENDPOINT = HOST === 'local.cleaker'
-  ? 'http://local.cleaker'
-  : namespaceEndpoint(PROVIDER_BOOT, typeof window !== 'undefined' ? window.location : null);
+// One composed entry for every door. The only other surface is local.host: this machine's own hardware/activity dashboard
+// (HostSurface -- CPU/RAM/storage gauges, self-reported, not verified by the mesh, plus a live request feed), pointed at
+// netget's own monad. It is a different surface, not a different composition of this app.
+const ROLE = frontendRole({ host: HOST_NAME, boot: PROVIDER_BOOT });
 
 const App = () => (
-  ROLE === 'gateway' ? (
-    <GatewayApp />
-  ) : (
+  ROLE === 'host' ? (
     <SeedSessionProvider
       transportOrigin={netgetMonadTransportOrigin()}
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
       sessionBackend="cleaker"
     >
       <LauncherPopoverProvider>
-        {ROLE === 'cleaker' ? (
-          <Namespace cleakerEndpoint={CLEAKER_ENDPOINT} netgetMonadOrigin={CLEAKER_MONAD_ORIGIN} />
-        ) : (
-          <HostSurface endpoint={netgetMonadTransportOrigin()} />
-        )}
+        <HostSurface endpoint={netgetMonadTransportOrigin()} />
       </LauncherPopoverProvider>
     </SeedSessionProvider>
+  ) : (
+    <EntryApp />
   )
 );
 

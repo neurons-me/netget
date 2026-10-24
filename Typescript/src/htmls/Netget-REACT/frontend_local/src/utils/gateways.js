@@ -12,6 +12,17 @@ const remoteTokenKey = (origin) => `netget:admin-session-token:${origin}`;
 
 const LOCAL_LABEL = 'Este netget';
 
+// What depends on WHICH gateway is selected and WHICH admin session is stored for it (the sidebar's Domains/Logs, the screens) asks
+// again when either changes: these functions say so. Storage stays injected; this only calls the listeners.
+const listeners = new Set();
+export function onGatewayChange(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+function changed() {
+  for (const listener of [...listeners]) { try { listener(); } catch { /* a listener never breaks a write */ } }
+}
+
 function isPrivateOrLocalHost(host) {
   const h = String(host || '').toLowerCase();
   return h === 'localhost' || h === '::1' || h === '[::1]' || h.endsWith('.localhost') || h.endsWith('.local')
@@ -66,6 +77,7 @@ export function addGateway(storage, address, label, pageOrigin = '') {
   const id = `gw-${checked.host.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   const entry = { id, origin: checked.origin, label: String(label || '').trim() || checked.host };
   storage.setItem(LIST_KEY, JSON.stringify([...list, entry]));
+  changed();
   return { ok: true, gateway: entry };
 }
 
@@ -77,6 +89,7 @@ export function removeGateway(storage, id) {
   storage.setItem(LIST_KEY, JSON.stringify(list.filter((g) => g.id !== id)));
   storage.removeItem(remoteTokenKey(gone.origin)); // its session goes with it
   if (storage.getItem(SELECTED_KEY) === id) storage.removeItem(SELECTED_KEY);
+  changed();
   return { ok: true };
 }
 
@@ -86,6 +99,7 @@ export function selectedGatewayId(storage, pageOrigin = '') {
 }
 export function selectGateway(storage, id) {
   if (id === LOCAL_ID) storage.removeItem(SELECTED_KEY); else storage.setItem(SELECTED_KEY, id);
+  changed();
 }
 
 /** The session for THIS gateway only (null when there is none). */
@@ -98,6 +112,7 @@ export function saveSession(storage, gateway, token) {
   const key = gateway.local ? LOCAL_TOKEN_KEY : remoteTokenKey(gateway.origin);
   const clean = String(token || '').trim();
   if (clean) storage.setItem(key, clean); else storage.removeItem(key);
+  changed();
 }
 
 /** A request to a gateway: its own origin, its own session, never another's. */

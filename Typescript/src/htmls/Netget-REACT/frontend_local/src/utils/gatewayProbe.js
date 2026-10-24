@@ -44,6 +44,22 @@ function classify(result) {
   return { state: 'error', detail: `Respondió ${result.status}.` };
 }
 
+/** What the gateway's capability gate says to the empty POST /add-domain, for a session: asked of the gateway, never guessed. */
+export function classifyModifyStatus(status) {
+  if (status === 0) return { state: 'unknown', basis: 'No se pudo preguntar al gateway (inalcanzable o CORS).' };
+  if (status === 401) return { state: 'no', basis: 'El gateway no acepta esta sesión (401).' };
+  if (status === 403) return { state: 'no', basis: 'La sesión es válida pero sin gateway:write (403): solo lectura.' };
+  if (status === 400) return { state: 'yes', basis: 'El gateway autorizó la sesión y rechazó una petición vacía: no se escribió nada.' };
+  return { state: 'unknown', basis: `El gateway respondió ${status}; no se pudo concluir.` };
+}
+
+/** Whether THIS gateway accepts that admin session for writes: 'yes' | 'no' | 'unknown'. Nothing is written (an empty request). */
+export async function probeModify(gateway, token, { fetchImpl = (typeof fetch !== 'undefined' ? fetch : null), timeoutMs = 6000 } = {}) {
+  const { url, init } = gatewayRequest(gateway, '/add-domain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, token);
+  const cap = await timed(fetchImpl, url, init, timeoutMs);
+  return classifyModifyStatus(cap.status).state;
+}
+
 export async function probeGateway(gateway, { token = null, fetchImpl = (typeof fetch !== 'undefined' ? fetch : null), timeoutMs = 6000, now = () => Date.now() } = {}) {
   const reads = await Promise.all(PUBLIC_READS.map(async (read) => {
     const { url, init } = gatewayRequest(gateway, read.path, { method: 'GET', headers: { Accept: 'application/json' } }, null);
@@ -63,11 +79,7 @@ export async function probeGateway(gateway, { token = null, fetchImpl = (typeof 
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     }, token);
     const cap = await timed(fetchImpl, url, init, timeoutMs);
-    if (cap.status === 0) modify = { state: 'unknown', basis: 'No se pudo preguntar al gateway (inalcanzable o CORS).' };
-    else if (cap.status === 401) modify = { state: 'no', basis: 'El gateway no acepta esta sesión (401).' };
-    else if (cap.status === 403) modify = { state: 'no', basis: 'La sesión es válida pero sin gateway:write (403): solo lectura.' };
-    else if (cap.status === 400) modify = { state: 'yes', basis: 'El gateway autorizó la sesión y rechazó una petición vacía: no se escribió nada.' };
-    else modify = { state: 'unknown', basis: `El gateway respondió ${cap.status}; no se pudo concluir.` };
+    modify = classifyModifyStatus(cap.status);
 
     const list = gatewayRequest(gateway, '/domains', { method: 'GET', headers: { Accept: 'application/json' } }, token);
     const listed = await timed(fetchImpl, list.url, list.init, timeoutMs);

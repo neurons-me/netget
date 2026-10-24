@@ -32,10 +32,15 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useRegisterGuiNode } from 'this.gui';
+import { useGatewayFetch } from '../session/useGatewayFetch.js';
+import { isRefusal } from '../utils/adminAccess.js';
 
 const domains_route = "";   // same origin — nginx proxies to the Express backend
 
 const Logs = () => {
+    // Every request goes to the SELECTED gateway with that gateway's credentials: this netget is asked with the signed proof of the
+    // identity signed in through the selected link; a gateway that was added, with its own admin session.
+    const request = useGatewayFetch();
     useRegisterGuiNode('Logs.header', 'LogsHeader');
     useRegisterGuiNode('Logs.filters', 'LogsFilters');
     useRegisterGuiNode('Logs.logsCard', 'LogsCard');
@@ -65,10 +70,12 @@ const Logs = () => {
                 offset: offset.toString()
             });
 
-            const response = await fetch(`${domains_route}/logs?${params}`);
+            const response = await request(`${domains_route}/logs?${params}`);
 
             if (!response.ok) {
-                throw new Error('Failed to fetch logs');
+                throw new Error(isRefusal(response)
+                    ? 'The selected gateway did not accept this session: logs are read from the machine itself, by an administrator holding the logs-read grant.'
+                    : 'Failed to fetch logs');
             }
 
             const data = await response.json();
@@ -103,7 +110,7 @@ const Logs = () => {
         } finally {
             setLoading(false);
         }
-    }, [page, limit, logType, filterLevel, filterMethod, searchPath]);
+    }, [request, page, limit, logType, filterLevel, filterMethod, searchPath]);
 
     useEffect(() => {
         fetchLogs();

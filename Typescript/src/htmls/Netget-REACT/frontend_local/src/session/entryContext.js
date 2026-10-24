@@ -1,21 +1,23 @@
 // What ONE entry composes, from the context that was resolved. Pure: no React, no window, no network.
 //
-// The page used to pick between two apps by the hostname (providerBoot.js frontendRole: a namespace's own hosts got the
-// bare Namespace landing, every other host got the Cleaker shell with netget's document), so cleaker.me and localhost
-// showed different sidebars for the same bundle. Now every door mounts the same shell. The address contributes CONTEXT
-// (which namespace the monad or the gateway declared, where it is reached); the document is composed from that context:
+// The page used to pick between two apps by the hostname (providerBoot.js frontendRole: a namespace's own hosts got the bare
+// Namespace landing, every other host got the Cleaker shell with netget's document), and later still composed two DIFFERENT documents
+// by door. Now every door mounts the same shell with the SAME document. The address contributes CONTEXT only:
+//
+//   * which namespace the monad or the gateway declared, and where it is reached (resolveEntry),
+//   * how this door presents itself (which rail icons it leaves out, which node its position label points at).
+//
+// What the app OFFERS is declared once, in NETGET_DOCUMENT. What a person can USE is decided by the shell from the SELECTED link and
+// the permissions it grants: Domains and Logs declare `requires: { capability }` (gateway:admin, gateway:logs), resolved for the selected
+// gateway with the session through the selected link (session/gatewayCapabilities.js). So an administrator reaches them from any door
+// that points at a gateway she administers, and nobody does merely by having signed in or by the door they came through. The gateway
+// still authorizes every request.
 //
 //   namespace  a namespace's own door (cleaker.me, www, a handle): the monad handed this page its namespace.
-//   gateway    any other door (netget.site, localhost, whatever nginx serves statically): the gateway's own screens.
+//   gateway    any other door (netget.site, localhost, whatever nginx serves statically).
 //   host       local.host: this machine's own dashboard, a different surface that is not a composition of this app.
-//
-// What each composes:
-//   * Monad: every door. A monad is identified behind it; the shell dims the link when that monad is off.
-//   * Dashboard, Domains, Logs, Apps: the gateway's screens, only where the resolved context is a gateway door. Domains and
-//     Logs also stay `requires: 'session'` (it hides a link until someone signed in: it authorizes nothing). What a
-//     session may do there is decided by the server, per request.
-//   * Terms and Privacy: every door.
 import { frontendRole, rootNamespaceOf, mainServerDoor } from './providerBoot.js';
+import { GATEWAY_ADMIN, GATEWAY_LOGS } from './gatewayCapabilities.js';
 
 export const ENTRY_KINDS = Object.freeze(['namespace', 'gateway', 'host']);
 
@@ -65,28 +67,30 @@ export function needsDeclaration({ host, boot }) {
 }
 
 // ── the document ───────────────────────────────────────────────────────────────────────────────────────────────────
-// Same routes the standalone shell served, so links and bookmarks hold. `needs`: the layer behind this door the page
-// cannot work without; when it is off the shell shows the layers panel in its place and dims the sidebar link.
+// Same routes the standalone shell served, so links and bookmarks hold. `needs`: the layer behind this door the page cannot work without;
+// when it is off the shell shows the layers panel in its place and dims the sidebar link. `requires`: what the selected link must grant
+// before the part is offered (the same declaration on the link and on the page behind its route).
+const ADMIN = { capability: GATEWAY_ADMIN };
+const LOGS = { capability: GATEWAY_LOGS };
+
 const LEFT = {
   dashboard: { label: 'Dashboard', to: '/home', icon: 'dashboard', placement: 'end' },
-  domains: { label: 'Domains', to: '/domains', icon: 'language', requires: 'session', placement: 'end' },
-  logs: { label: 'Logs', to: '/logs', icon: 'article', requires: 'session', placement: 'end' },
+  domains: { label: 'Domains', to: '/domains', icon: 'language', requires: ADMIN, placement: 'end' },
+  logs: { label: 'Logs', to: '/logs', icon: 'article', requires: LOGS, placement: 'end' },
   // the monad.ai orb, the same one the Monad surface draws (not a generic chip icon)
   monad: { label: 'Monad', to: '/monad', icon: 'orb:monad', placement: 'end' },
 };
 
 const CONTENT = {
   dashboard: { label: 'Dashboard', component: 'NetgetDashboard', route: '/home', needs: 'backend', note: 'Gateway status (REST: /gateway-identity, /apps).' },
-  domains: { label: 'Domains', component: 'NetgetDomains', route: '/domains', needs: 'both', note: 'Domain routing CRUD (REST, stored through the monad).' },
-  logs: { label: 'Logs', component: 'NetgetLogs', route: '/logs', needs: 'backend', note: 'Nginx log viewer (REST).' },
+  domains: { label: 'Domains', component: 'NetgetDomains', route: '/domains', needs: 'both', requires: ADMIN, note: 'Domain routing CRUD (REST, stored through the monad).' },
+  logs: { label: 'Logs', component: 'NetgetLogs', route: '/logs', needs: 'backend', requires: LOGS, note: 'Nginx log viewer (REST).' },
   monad: { label: 'Monad', component: 'NetgetMonad', route: '/monad', needs: 'monad', note: "This netget's own monad: the surface it reports." },
   // The server answers /apps with this page to a browser and with the registry (JSON) to a program.
   apps: { label: 'Apps', component: 'NetgetDashboard', route: '/apps', needs: 'backend', note: 'The apps registered on this host (same view as the dashboard).' },
   terms: { label: 'Terms', component: 'NetgetTerms', route: '/terms-and-conditions' },
   privacy: { label: 'Privacy', component: 'NetgetPrivacy', route: '/privacy-policy' },
 };
-
-const pick = (source, ids) => Object.fromEntries(ids.map((id) => [id, source[id]]));
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -96,19 +100,8 @@ function deepFreeze(value) {
   return value;
 }
 
-const compose = (leftIds, contentIds) => deepFreeze({
-  GUI: { children: { bars: { children: { left: { children: pick(LEFT, leftIds) } } }, content: { children: pick(CONTENT, contentIds) } } },
+// One object, created once: the shell memoizes on the document it is given, so a new object per render would recompose (and
+// re-register) forever.
+export const NETGET_DOCUMENT = deepFreeze({
+  GUI: { children: { bars: { children: { left: { children: LEFT } } }, content: { children: CONTENT } } },
 });
-
-// One object per kind, created once: the shell memoizes on the document it is given, so a new object per render would
-// recompose (and re-register) forever.
-const DOCUMENTS = {
-  namespace: compose(['monad'], ['monad', 'terms', 'privacy']),
-  gateway: compose(['dashboard', 'domains', 'logs', 'monad'], ['dashboard', 'domains', 'logs', 'monad', 'apps', 'terms', 'privacy']),
-};
-
-export function netgetDocumentFor(kind) {
-  const doc = DOCUMENTS[kind];
-  if (!doc) throw new Error(`no document for entry kind "${kind}"`);
-  return doc;
-}

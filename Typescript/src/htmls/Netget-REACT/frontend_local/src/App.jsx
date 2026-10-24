@@ -11,7 +11,10 @@ import TermsAndConditions from './components/Neurons/TermsAndConditions.jsx';
 import PrivacyPolicy from './components/Neurons/PrivacyPolicy.jsx';
 import { resolveNetgetSeedFromCredentials, netgetMonadTransportOrigin } from './session/resolveNetgetSeed.js';
 import { readProviderBoot, frontendRole } from './session/providerBoot.js';
-import { resolveEntry, needsDeclaration, netgetDocumentFor } from './session/entryContext.js';
+import { resolveEntry, needsDeclaration, NETGET_DOCUMENT } from './session/entryContext.js';
+import { createGatewayResolvers } from './session/gatewayCapabilities.js';
+import { gatewayDeps, browserStorage } from './session/gatewayCapabilitiesDefaults.js';
+import { useGatewayScope } from './session/useGatewayScope.js';
 import DoorRouter from './session/DoorRouter.jsx';
 
 // Home/Domains/Logs are plain components that take no props, so they never
@@ -150,9 +153,19 @@ function readDeclaredMainServer(signal) {
     .catch(() => null);
 }
 
+// What Domains and Logs ask of the selected gateway (session/gatewayCapabilities.js). One object, created once: the shell reads it when the
+// selected link, the identity or the scope changes.
+const GATEWAY_RESOLVERS = createGatewayResolvers({
+  storage: browserStorage,
+  pageOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+  deps: gatewayDeps,
+});
+
 const resolveHere = (declared) => resolveEntry({ host: HOST_NAME, boot: PROVIDER_BOOT, declared, pathname: window.location.pathname });
 
 function EntryApp() {
+  // Which gateway is selected and which admin session is stored for it: the scope the shell resolves capabilities for.
+  const gatewayScope = useGatewayScope();
   // A namespace door was already told its namespace by the monad: nothing to ask. Any other door asks the gateway which door
   // it is. undefined = still asking; otherwise the resolved entry.
   const asks = needsDeclaration({ host: HOST_NAME, boot: PROVIDER_BOOT });
@@ -181,8 +194,10 @@ function EntryApp() {
       namespaceSource={entry.namespaceSource}
       transport={netgetMonadTransportOrigin()}
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-      document={netgetDocumentFor(entry.kind)}
+      document={NETGET_DOCUMENT}
       pages={NETGET_PAGES}
+      capabilities={GATEWAY_RESOLVERS}
+      capabilityScope={gatewayScope}
       hideBarItems={entry.hideBarItems}
       semanticPath={entry.semanticPath}
     />

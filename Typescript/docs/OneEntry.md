@@ -40,10 +40,29 @@ still composed TWO documents by door, so an administrator could not reach Domain
   `tests/capabilities.test.ts` + `tests/integration/capabilities.browser.test.mjs`: real shell, real Chromium, two links, identity and scope
   changes, late answers).
 * Disposable gateway (its own OpenResty, backend and monad), real Chromium, identities registered and signed in through the real forms
-  (30 conditions): signed in is not administrator (no Domains/Logs); owner without the logs-read grant gets Domains but not Logs; with the grant,
+  (30 conditions on one gateway, plus 11 with two links): signed in is not administrator (no Domains/Logs); owner without the logs-read grant gets Domains but not Logs; with the grant,
   both, and Logs sends `X-Me-Proof` and the gateway answers 200; selecting another gateway (no session for it) takes Logs away and keeps Domains,
   selecting this netget brings it back; **an administrator reaches Domains and Logs from the namespace door**; a different identity through the
   same door is not enabled by her grant; recognized-but-not-administrator is still neither; typing `/domains` does not render it.
+
+* **Two real links of the shell, together, in netget** (real gateway and monad; link A = the root `localhost`, link B = the handle
+  `bz.localhost`, each with its own session; 11 conditions): A (administrator) is offered Domains and Logs; selecting B with nobody signed in
+  through it hides them and asks the gateway nothing; signing in through B keeps them hidden, and the gateway receives the real question,
+  signed by B's identity, and does not recognize it; selecting A again finds its session still open and they return; B again hides them.
+* The recorrido scripts (rig, claims writer, the two journeys) are kept outside `/tmp`, in `~/.get/evidence/one-entry-capabilities-2026-10/`.
+
+## Integration candidate
+
+Order: the GUI first (netget needs its new API), then netget. Nothing below is applied.
+
+| | branch | contents | version to decide |
+|---|---|---|---|
+| this.gui | `feat/declarative-capabilities` (on `main`, fast-forward) | declarative `requires`, `capabilities`/`capabilityScope`, `useGuiCapability`; additive, nothing existing changes | additive: a minor (4.3.0) by the CHANGELOG's own precedent |
+| netget | `feat/one-entry-composition` (on `main`, fast-forward) | one entry, one document, resolvers, Logs credentials, identity row on Domains | a minor (2.8.0), with `this.gui` raised to the GUI version that carries the API (`^4.3.0`) |
+
+* Not in the candidate on purpose: the builder and the component library (they would consume this same contract), minting the admin session
+  from the shell's identity, Logs for a gateway that was added.
+* Reaching cleaker.me needs a new release (netget front end + the GUI dist) and a VM activation: separate go.
 
 ## Known, not changed here
 

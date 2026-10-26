@@ -36,11 +36,11 @@ still composed TWO documents by door, so an administrator could not reach Domain
 
 ## What was verified
 
-* `tests/entry-composition.test.ts`, `tests/gateway-capabilities.test.ts`, `tests/gateway-fetch.test.ts` (and, in the GUI,
+* `tests/entry-composition.test.ts`, `tests/gateway-capabilities.test.ts`, `tests/gateway-fetch.test.ts`, `tests/gateway-standing.test.ts` (and, in the GUI,
   `tests/capabilities.test.ts` + `tests/integration/capabilities.browser.test.mjs`: real shell, real Chromium, two links, identity and scope
   changes, late answers).
 * Disposable gateway (its own OpenResty, backend and monad), real Chromium, identities registered and signed in through the real forms
-  (27 conditions): signed in is not administrator (no Domains/Logs); owner without the logs-read grant gets Domains but not Logs; with the grant,
+  (30 conditions): signed in is not administrator (no Domains/Logs); owner without the logs-read grant gets Domains but not Logs; with the grant,
   both, and Logs sends `X-Me-Proof` and the gateway answers 200; selecting another gateway (no session for it) takes Logs away and keeps Domains,
   selecting this netget brings it back; **an administrator reaches Domains and Logs from the namespace door**; a different identity through the
   same door is not enabled by her grant; recognized-but-not-administrator is still neither; typing `/domains` does not render it.
@@ -49,8 +49,11 @@ still composed TWO documents by door, so an administrator could not reach Domain
 
 * A grant given while a page is open is picked up when the key changes (sign in again, or select another gateway / store a session): the shell
   does not poll.
-* The Domains screen's own "what can I modify" block still reads the admin-session token, not the shell's session (its action buttons are gated
-  by that); only its sidebar entry follows the shell's identity now.
+* The Domains screen's write gate (`/add-domain` & co.) accepts an admin SESSION with `gateway:write` (a bearer token), not the shell's signed
+  proof. So the permission block now says both facts instead of contradicting the "Unlocked" chip: a row **Esta identidad** (what this netget
+  answers to the signed `/check-auth`: owner / administrator / recognized / not recognized; `utils/identityStanding.js`) and, for an
+  administrator with no session stored, what is missing to write. Letting the shell's identity mint that session (the existing
+  `/admin-session` challenge, signed with the identity's keychain key) is the way to remove the extra step; it is not done here.
 * "Conectar la primera puerta" is enabled for a non-administrator on an empty list (the server refuses the write).
 * The `url` item (globe) used to show on cleaker.me; it is hidden now, as it already was on the gateway doors.
 * Logs for a gateway that was added are not offered: nginx's `/logs` accepts only this machine's own signed proof, not a bearer token.

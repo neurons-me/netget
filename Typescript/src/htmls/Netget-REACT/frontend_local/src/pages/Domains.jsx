@@ -10,6 +10,7 @@ import GatewayBar from '../components/GatewayBar/GatewayBar.jsx';
 import {
     LOCAL_ID, loadGateways, addGateway, removeGateway, selectedGatewayId, selectGateway, sessionFor, saveSession, gatewayRequest, scopeKey } from '../utils/gateways.js';
 import { probeGateway } from '../utils/gatewayProbe.js';
+import { identityStanding } from '../utils/identityStanding.js';
 import {
     Box,
     Button,
@@ -923,14 +924,17 @@ export default function Domains() {
     // 'checking' — collapsing these looked identical in the header chip,
     // which got stuck on "Verifying…" forever for a real 401).
     const [verified, setVerified] = useState(null);
+    // What this netget answered to the signed proof (owner / administrator / scopes), kept whole: the permission block says it.
+    const [recognition, setRecognition] = useState(null);
     useEffect(() => {
-        if (!candidateSession) { setVerified(null); return undefined; }
+        if (!candidateSession) { setVerified(null); setRecognition(null); return undefined; }
         let cancelled = false;
         setVerified('checking');
+        setRecognition(null);
         signedRequest(candidateSession.node, candidateSession.hostname, '/check-auth')
             .then((res) => res.json().catch(() => ({})))
-            .then((data) => { if (!cancelled) setVerified(!!data.authenticated); })
-            .catch(() => { if (!cancelled) setVerified(false); });
+            .then((data) => { if (!cancelled) { setVerified(!!data.authenticated); setRecognition(data && data.authenticated ? data : null); } })
+            .catch(() => { if (!cancelled) { setVerified(false); setRecognition(null); } });
         return () => { cancelled = true; };
     }, [candidateSession]);
 
@@ -1087,6 +1091,14 @@ export default function Domains() {
                     onProbe={reload}
                     hasSession={Boolean(sessionToken)}
                     onSaveSession={handleSaveSession}
+                    standing={report ? identityStanding({
+                        gateway,
+                        signedIn: Boolean(candidateSession),
+                        checking: verified === 'checking',
+                        recognition,
+                        hasToken: Boolean(sessionToken),
+                        modify: report.permissions.modify,
+                    }) : null}
                 />
 
                 {/* Header */}

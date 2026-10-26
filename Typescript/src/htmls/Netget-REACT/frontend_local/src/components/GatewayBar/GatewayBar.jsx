@@ -64,7 +64,7 @@ function AddGatewayDialog({ open, onClose, onAdd }) {
 }
 
 export default function GatewayBar({
-    gateways, selectedId, onSelect, onAdd, onRemove, report, probing, onProbe, hasSession, onSaveSession,
+    gateways, selectedId, onSelect, onAdd, onRemove, report, probing, onProbe, hasSession, onSaveSession, standing,
 }) {
     const [addOpen, setAddOpen] = useState(false);
     const [tokenDraft, setTokenDraft] = useState('');
@@ -153,7 +153,13 @@ export default function GatewayBar({
                                 </Box>
                             );
                         })}
-                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.65 }}>{perm.modify.basis}</Typography>
+                        {standing && (
+                            <Box data-gui-node-id="Gateways.identity" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                <Chip size="small" label="Esta identidad" color={standing.color} variant={standing.color === 'default' ? 'outlined' : 'filled'} sx={{ minWidth: 84 }} />
+                                <Typography variant="body2" data-standing={standing.state}>{standing.text}</Typography>
+                            </Box>
+                        )}
+                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.65 }}>{standing ? standing.modifyBasis : perm.modify.basis}</Typography>
                         <Box sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
                             <TextField
                                 size="small"

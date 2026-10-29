@@ -1,12 +1,15 @@
 // gateway-app-attach.test.ts
 //
-// `netget attach`: the reporting side of an APP (src/gateway/attach.ts and the CLI commands on top of it), against a
-// disposable gateway (an OpenResty on high ports with this repo's Lua). gateway-app-kind.test.ts proves what the gateway
-// accepts and refuses; this proves what an app (or the CLI) sends, and that the entry lives and dies as it should:
-//   [1] the report body: name, port and entry are validated before anything is sent; the body is exactly what the gateway reads;
-//   [2] reportApp lists the app; a dead port is a refusal (not an exception) and lists nothing;
-//   [3] attachLoop keeps the entry alive (it is still there after more than one beat) and takes it out when stopped;
-//   [4] the CLI: `attach --once --json` lists, `detach --json` releases, `attach` on a dead port exits non-zero.
+// An app that is ALREADY running lists itself with attachExisting() (src/netget.ts) -- the registration netget() sends,
+// without leasing a port the app already holds -- and `netget attach` / `netget detach` are thin commands on top of it
+// (src/gateway/attach.ts). Against a disposable gateway (an OpenResty on high ports with this repo's Lua);
+// gateway-app-registration.test.ts proves what the gateway keeps, this proves what an app and the CLI send:
+//   [1] the name and port are validated before anything is sent; the name is used exactly (no rewriting);
+//   [2] attachExisting lists the app under `app:<name>` with no lease; netget() itself cannot take that port (the reason
+//       attachExisting exists); a dead port is a refusal that heals on the next beat, and strict mode makes it an error;
+//   [3] the heartbeat renews the entry; stop() releases it at once;
+//   [4] the CLI: `attach --once --json` lists, a long-running `attach` lists and takes itself out on SIGTERM,
+//       `detach` finds an app by NAME (also one that registered through netget() under its lease id), bad input exits non-zero.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -202,71 +205,75 @@ const check = (label: string, cond: boolean, detail?: unknown) => {
 // still alive and had to be killed by hand).
 let catalogSpawnedPidForCleanup: number | null = null;
 
-const { appReportBody, reportApp, releaseApp, attachLoop, validateAppName } = await import(path.join(netgetTsRoot, 'src/gateway/attach.ts'));
-const target = { base: `http://127.0.0.1:${HTTP_PORT}`, hostHeader: 'localhost' };
+const { netget, attachExisting, validateAttachName } = await import(path.join(netgetTsRoot, 'src/netget.ts'));
+const mainServer = `http://localhost:${HTTP_PORT}`;
 const listApps = async () => (await call('GET', '/apps')).json.apps || [];
-const server = await new Promise<http.Server>((resolve) => { const s = http.createServer((q, r) => r.end('app')); s.listen(0, '127.0.0.1', () => resolve(s)); });
+const listen = (port: number): Promise<http.Server> => new Promise((resolve) => { const s = http.createServer((q, r) => r.end('app')); s.listen(port, '127.0.0.1', () => resolve(s)); });
+const server = await listen(0);
 const appPort = (server.address() as any).port;
 const deadPort = await freePort();
 const cli = (args: string[]): Promise<{ code: number | null; out: string }> => new Promise((resolve) => {
   const p = spawn(process.execPath, ['--import', 'tsx', path.join(netgetTsRoot, 'src/netget.cli.ts'), ...args], {
-    env: { ...process.env, NETGET_LOCAL: target.base, NETGET_LOCAL_HOST: 'localhost', NETGET_DATA_DIR: dataDir, HOME: home }, cwd: netgetTsRoot, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, NETGET_LOCAL: mainServer, NETGET_DATA_DIR: dataDir, HOME: home }, cwd: netgetTsRoot, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = ''; p.stdout.on('data', (d) => { out += d; }); p.stderr.on('data', (d) => { out += d; });
   p.on('close', (code) => resolve({ code, out }));
 });
+const rejects = async (fn: () => Promise<unknown>) => { try { await fn(); return false; } catch { return true; } };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 try {
   await startNginx();
 
-  console.log('\n[1] the report body is validated before anything is sent');
+  console.log('\n[1] the name and the port are validated before anything is sent');
   {
-    const body: any = appReportBody({ name: 'FullTrailer', port: 4100, title: 'FullTrailer', monad: 'fulltrailer', entry: 'dist' });
-    check('the id is app:<lowercased name>, the kind is app', body.id === 'app:fulltrailer' && body.name === 'fulltrailer' && body.kind === 'app', JSON.stringify(body));
-    check('title, monad and entry go in metadata, and nothing else does', JSON.stringify(Object.keys(body.metadata).sort()) === JSON.stringify(['entry', 'monad', 'title']), JSON.stringify(body.metadata));
-    for (const [label, fn] of [
-      ['an empty name', () => appReportBody({ name: '', port: 4100 })],
-      ['a path as a name', () => appReportBody({ name: '../etc', port: 4100 })],
-      ['a name with a space', () => appReportBody({ name: 'my app', port: 4100 })],
-      ['port 0', () => appReportBody({ name: 'a', port: 0 })],
-      ['a port past 65535', () => appReportBody({ name: 'a', port: 70000 })],
-      ['a fractional port', () => appReportBody({ name: 'a', port: 80.5 })],
-      ['an unknown entry', () => appReportBody({ name: 'a', port: 80, entry: 'docker' as any })],
+    check('a name with a dot is a good name (polls.studio)', validateAttachName('polls.studio') === null);
+    for (const [label, name, port] of [
+      ['an empty name', '', 4100], ['a path as a name', '../etc', 4100], ['a name with a space', 'my app', 4100],
+      ['an uppercase name (it is not silently rewritten)', 'FullTrailer', 4100], ['port 0', 'a', 0], ['a port past 65535', 'a', 70000], ['a fractional port', 'a', 80.5],
     ] as const) {
-      let threw = false; try { fn(); } catch { threw = true; }
-      check(`${label} throws, nothing is sent`, threw);
+      check(`${label} is refused, nothing is sent`, await rejects(() => attachExisting({ name, port, mainServer })));
     }
-    check('validateAppName agrees with the gateway on a good name', validateAppName('polls.studio') === null);
+    check('a remote netget is refused (apps report to the local netget only)', await rejects(() => attachExisting({ name: 'a', port: 4100, mainServer: 'http://example.com' })));
+    check('nothing reached the registry', (await listApps()).length === 0);
   }
 
-  console.log('\n[2] reportApp lists the app; a dead port is a refusal, not an exception');
+  console.log('\n[2] attachExisting lists an app that already holds its port');
   {
-    const r = await reportApp({ name: 'attach-demo', port: appPort, title: 'Demo', entry: 'static' }, target);
-    check('reportApp -> ok, id app:attach-demo', r.ok && r.id === 'app:attach-demo', JSON.stringify(r));
-    const found = (await listApps()).find((a: any) => a.id === 'app:attach-demo');
-    check('it is in the registry as an app', !!found && found.kind === 'app' && found.port === appPort, JSON.stringify(found));
-    const bad = await reportApp({ name: 'attach-dead', port: deadPort }, target);
-    check('a dead port -> ok false, PORT_NOT_ANSWERING (no throw)', !bad.ok && bad.status === 422 && bad.error === 'PORT_NOT_ANSWERING', JSON.stringify(bad));
-    check('and it lists nothing', !(await listApps()).some((a: any) => a.id === 'app:attach-dead'));
-    const rel = await releaseApp('attach-demo', target);
-    check('releaseApp -> ok', rel.ok, JSON.stringify(rel));
-    check('and the entry is gone', !(await listApps()).some((a: any) => a.id === 'app:attach-demo'));
+    check('netget() cannot take a port somebody already listens on (fixed mode throws): that is why attachExisting exists',
+      await rejects(() => netget({ name: 'taken', port: appPort, mode: 'fixed', mainServer, strict: true })));
+    const session = await attachExisting({ name: 'polls.studio', port: appPort, mainServer, heartbeatMs: 1000, metadata: { title: 'Polls', entry: 'dist' } });
+    check('the session has no lease and keeps the exact name', session.lease === undefined && session.name === 'polls.studio' && session.id === 'app:polls.studio', JSON.stringify([session.name, session.id]));
+    const found = (await listApps()).find((a: any) => a.id === 'app:polls.studio');
+    check('it is listed under app:polls.studio as an app on its port', !!found && found.kind === 'app' && found.name === 'polls.studio' && found.port === appPort, JSON.stringify(found));
+    check('its port status says it is not leased', !!found && found.portStatus === undefined && found.leaseId === undefined, JSON.stringify(found));
+    const leases = path.join(home, '.get', 'runtime', 'ports');
+    check('no port lease was written for it', !fs.existsSync(leases) || !fs.readdirSync(leases).some((f) => f.includes('polls')), fs.existsSync(leases) ? fs.readdirSync(leases).join(',') : '(no dir)');
+    await session.stop();
+    check('stop() releases the entry at once', !(await listApps()).some((a: any) => a.id === 'app:polls.studio'));
+  }
+  {
+    check('strict + a dead port -> an error (the gate says PORT_NOT_ANSWERING)', await rejects(() => attachExisting({ name: 'late', port: deadPort, mainServer, strict: true })));
+    const seen: Array<Error | null> = [];
+    const late = await attachExisting({ name: 'late', port: deadPort, mainServer, heartbeatMs: 1000, onReport: (e: Error | null) => seen.push(e) });
+    check('not strict + a dead port -> resolves, nothing is listed, onReport saw the refusal', seen.length >= 1 && seen[0] instanceof Error && /PORT_NOT_ANSWERING/.test(seen[0]!.message) && !(await listApps()).some((a: any) => a.id === 'app:late'), String(seen[0]));
+    const lateServer = await listen(deadPort);
+    await sleep(1500);
+    check('the app starts later: the next heartbeat lists it, onReport saw it succeed', (await listApps()).some((a: any) => a.id === 'app:late') && seen[seen.length - 1] === null, JSON.stringify(seen.map((e) => (e ? 'err' : 'ok'))));
+    await late.stop(); lateServer.close();
   }
 
-  console.log('\n[3] attachLoop keeps the entry alive and takes it out when stopped');
+  console.log('\n[3] the heartbeat renews the entry; stop() releases it');
   {
-    const stop = new AbortController(); const beats: any[] = [];
-    const done = attachLoop({ name: 'loop-demo', port: appPort }, { target, intervalMs: 250, signal: stop.signal, onBeat: (b: any) => beats.push(b) });
-    await new Promise((r) => setTimeout(r, 900));
-    const seen1 = (await listApps()).find((a: any) => a.id === 'app:loop-demo');
-    check('it is listed while the loop runs', !!seen1);
-    check('it reported more than once', beats.length >= 3 && beats.every((b: any) => b.ok), JSON.stringify(beats.map((b: any) => b.ok)));
-    const first = Number(seen1?.lastSeenMs || 0);
-    await new Promise((r) => setTimeout(r, 600));
+    const beats: Array<Error | null> = [];
+    const live = await attachExisting({ name: 'loop-demo', port: appPort, mainServer, heartbeatMs: 1000, onReport: (e: Error | null) => beats.push(e) });
+    const first = Number((await listApps()).find((a: any) => a.id === 'app:loop-demo')?.lastSeenMs || 0);
+    await sleep(2300);
     const seen2 = (await listApps()).find((a: any) => a.id === 'app:loop-demo');
+    check('it reported more than once, all accepted', beats.length >= 3 && beats.every((b) => b === null), JSON.stringify(beats.map((b) => (b ? 'err' : 'ok'))));
     check('lastSeenMs moves forward (the beat renews the entry)', Number(seen2?.lastSeenMs || 0) > first, `${first} -> ${seen2?.lastSeenMs}`);
-    stop.abort(); await done;
-    check('stopping the loop releases the entry at once', !(await listApps()).some((a: any) => a.id === 'app:loop-demo'));
+    await live.stop();
+    check('stop() released it', !(await listApps()).some((a: any) => a.id === 'app:loop-demo'));
   }
 
   console.log('\n[4] the CLI');
@@ -280,10 +287,40 @@ try {
     const d = await cli(['detach', 'cli-demo', '--json']);
     check('detach --json exits 0', d.code === 0, `${d.code} ${d.out.slice(-200)}`);
     check('and the app is gone', !(await listApps()).some((a: any) => a.id === 'app:cli-demo'));
+    const none = await cli(['detach', 'never-listed', '--json']);
+    check('detach of an app that is not listed exits non-zero', none.code !== 0, `${none.code} ${none.out.slice(-200)}`);
     const bad = await cli(['attach', 'cli-dead', '--port', String(deadPort), '--once', '--json']);
-    check('attach on a dead port exits non-zero', bad.code !== 0, `${bad.code} ${bad.out.slice(-200)}`);
+    check('attach --once on a dead port exits non-zero', bad.code !== 0, `${bad.code} ${bad.out.slice(-200)}`);
     const badName = await cli(['attach', '../x', '--port', String(appPort), '--once', '--json']);
     check('attach with a bad name exits non-zero and sends nothing', badName.code !== 0 && !(await listApps()).some((a: any) => String(a.name).includes('x')), `${badName.code}`);
+  }
+  {
+    // the long-running command: lists, keeps the process up, takes the entry out on SIGTERM (the helper's `stop`)
+    const p = spawn(process.execPath, ['--import', 'tsx', path.join(netgetTsRoot, 'src/netget.cli.ts'), 'attach', 'cli-live', '--port', String(appPort), '--title', 'Live'], {
+      env: { ...process.env, NETGET_LOCAL: mainServer, NETGET_DATA_DIR: dataDir, HOME: home }, cwd: netgetTsRoot, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = ''; p.stdout.on('data', (d) => { out += d; }); p.stderr.on('data', (d) => { out += d; });
+    const closed = new Promise<number | null>((resolve) => p.on('close', resolve));
+    let listed = false;
+    for (let i = 0; i < 40 && !listed; i += 1) { await sleep(250); listed = (await listApps()).some((a: any) => a.id === 'app:cli-live'); }
+    check('attach (no --once) lists the app and keeps running', listed && p.exitCode === null, out.slice(-200));
+    await sleep(3500);
+    check('and it is still listed after more than one heartbeat', (await listApps()).some((a: any) => a.id === 'app:cli-live') && p.exitCode === null);
+    p.kill('SIGTERM');
+    const code = await closed;
+    check('SIGTERM ends it (exit 143) and the entry is taken out', code === 143 && !(await listApps()).some((a: any) => a.id === 'app:cli-live'), `${code} ${out.slice(-200)}`);
+  }
+  {
+    // detach by NAME also finds an app that registered through netget() (listed under its lease id, not app:<name>)
+    const libServer = await listen(0);
+    const lib = await netget({ name: 'lib-by-name', port: 'auto', mainServer, heartbeatMs: 1000 });
+    await libServer.close();
+    const libPortServer = await listen(lib.port);
+    await lib.report();
+    check('a netget() app is listed under its lease id', (await listApps()).some((a: any) => a.id === lib.id && a.name === 'lib-by-name'));
+    const d = await cli(['detach', 'lib-by-name', '--json']);
+    check('detach by name releases it', d.code === 0 && !(await listApps()).some((a: any) => a.id === lib.id), `${d.code} ${d.out.slice(-200)}`);
+    await lib.stop(); libPortServer.close();
   }
 
   server.close();

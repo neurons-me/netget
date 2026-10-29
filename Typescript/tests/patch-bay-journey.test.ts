@@ -203,6 +203,46 @@ try {
   assert.equal(reg.status, 200, `a monad registered as monad:demo is found by app:demo (got ${reg.status}: ${reg.body.slice(0, 120)})`);
   assert.match(reg.body, /SERVICE-1/);
 
+  // 6a. an APP entry (kind "app": what `netget attach` / netget() list) as the target: the domain follows the policy the app
+  //     declared -- an app that declared nothing is open to a loopback visitor and to no other address, a disabled one is 404
+  fs.writeFileSync(path.join(dataDir, 'runtime', 'apps.json'), JSON.stringify({ apps: { 'app:site': {
+    id: 'app:site', name: 'site', kind: 'app', host: '127.0.0.1', port: svc1Port, ttlMs: 600000, lastSeenMs: Date.now(), trust: 'guest', metadata: { title: 'Site' },
+  } } }));
+  assert.equal((await add('app-entry.test', 'server', 'app:site', 'admin')).json?.success, true);
+  const appEntryRes = await until('app-entry.test', (r) => r.status === 200 || r.status === 403 || r.status === 503, 'an app: target that is an APP entry answers');
+  assert.equal(appEntryRes.status, 200, `an app entry with no policy opens for a loopback visitor (got ${appEntryRes.status}: ${appEntryRes.body.slice(0, 120)})`);
+  assert.match(appEntryRes.body, /SERVICE-1/);
+  fs.writeFileSync(path.join(dataDir, 'runtime', 'apps.json'), JSON.stringify({ apps: { 'app:site': {
+    id: 'app:site', name: 'site', kind: 'app', host: '127.0.0.1', port: svc1Port, ttlMs: 600000, lastSeenMs: Date.now(), trust: 'guest', exposure: { enabled: false },
+  } } }));
+  assert.equal((await open('app-entry.test')).status, 404, 'an app entry that declared itself disabled: 404');
+  fs.writeFileSync(path.join(dataDir, 'runtime', 'apps.json'), JSON.stringify({ apps: { m: {
+    name: 'monad:demo', kind: 'monad', host: '127.0.0.1', port: svc1Port, ttlMs: 600000, lastSeenMs: Date.now(), trust: 'peer',
+    metadata: { monadName: 'demo', endpoint: `http://127.0.0.1:${svc1Port}` },
+  } } }));
+
+  // 6a'. neurons.me: its built .GUI app (a single-page app, site.json: type static, spa true) as a folder of files
+  const neuronsDist = process.env.NEURONS_DIST || path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../../../apps/neurons.me/dist');
+  if (fs.existsSync(path.join(neuronsDist, 'index.html'))) {
+    const served = path.join(tmp, 'neurons-dist');
+    fs.cpSync(neuronsDist, served, { recursive: true });
+    const asset = fs.readdirSync(path.join(served, 'assets')).find((f) => f.endsWith('.css')) as string;
+    assert.equal((await add('neurons.me', 'static', served, 'admin')).json?.success, true);
+    const root = await until('neurons.me', (r) => r.status === 200 && /<div id="root"|<script/.test(r.body), 'neurons.me opens its index');
+    assert.match(root.type, /text\/html/);
+    const deep = await open('neurons.me', { pathname: '/some/deep/route' });
+    assert.equal(deep.status, 200, 'a deep route is answered with the app (single-page fallback)');
+    assert.equal(deep.body, root.body, 'and it is the same index.html');
+    const css = await open('neurons.me', { pathname: `/assets/${asset}`, headers: { Accept: '*/*' } });
+    assert.equal(css.status, 200);
+    assert.match(css.type, /text\/css/, 'a real asset keeps its own type (it is not replaced by the index)');
+    assert.equal((await open('neurons.me', { pathname: '/assets/../../etc/passwd' })).body.includes('root:'), false, 'a path out of the folder serves nothing outside it');
+    console.log('  neurons.me (static, SPA): / , a deep route and a real asset behave');
+    assert.equal((await call('POST', '/delete-domain', { domain: 'neurons.me' }, 'admin')).json?.success, true);
+  } else {
+    console.log('  neurons.me dist not built here: that part of the journey is skipped');
+  }
+
   // 6b. what a route may point at: ONE definition, refused with a code and a reason, whichever door writes it
   const refused = async (domain: string, type: string, target: string, code: string) => {
     const r = await add(domain, type, target, 'admin');

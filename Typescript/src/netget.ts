@@ -20,6 +20,8 @@ export interface NetGetAppOptions {
     metadata?: Record<string, unknown>;
     heartbeatMs?: number;
     strict?: boolean;
+    /** Called after every report attempt (the first and each heartbeat): `null` when the gateway took it, the error when not. */
+    onReport?: (error: Error | null) => void;
     kind?: NetGetAppKind;
     status?: NetGetAppStatus;
     health?: NetGetAppHealth;
@@ -78,17 +80,37 @@ export interface NetGetAppRegistration {
     portStatus: string;
 }
 
-export interface NetGetSession {
+interface NetGetSessionBase {
     id: string;
     name: string;
     port: number;
     url: string;
     mode: PortLeaseMode;
-    lease: PortLease;
     endpoint: string;
     registration: NetGetAppRegistration;
     report(): Promise<void>;
     stop(): Promise<void>;
+}
+
+/** What netget() returns: the app asked netget for its port, so the session holds the lease. */
+export interface NetGetSession extends NetGetSessionBase {
+    lease: PortLease;
+}
+
+/** What attachExisting() returns: the app already had its port, so there is no lease. */
+export interface NetGetAttachedSession extends NetGetSessionBase {
+    lease?: undefined;
+}
+
+/**
+ * An app that is ALREADY running on a port of its own (FullTrailer on 4100, a Vite server, a dist behind a static
+ * server) and only wants to be listed. Same registration, same heartbeat and same release as netget(); the difference
+ * is that nothing is leased -- a lease cannot be taken on a port somebody already listens on -- and that the name is
+ * used exactly as given (a name with a dot is not rewritten, because the routes `app:<name>` and the panel use it).
+ */
+export interface NetGetAttachOptions extends Omit<NetGetAppOptions, 'port' | 'mode' | 'name'> {
+    name: string;
+    port: number;
 }
 
 export interface NetGetConfig {
@@ -126,15 +148,24 @@ function resolveMode(options: NetGetAppOptions): PortLeaseMode {
     return 'auto';
 }
 
-function buildRegistration(options: NetGetAppOptions, name: string, lease: PortLease): NetGetAppRegistration {
+interface RegistrationBase {
+    id: string;
+    port: number;
+    ttlMs: number;
+    leaseId?: string;
+    mode: PortLeaseMode;
+    portStatus: string;
+}
+
+function buildRegistration(options: NetGetAppOptions, name: string, base: RegistrationBase): NetGetAppRegistration {
     const protocol = options.protocol || 'http';
     const host = options.host || '127.0.0.1';
-    const port = lease.port;
+    const port = base.port;
     const url = options.url || `${protocol}://${host}:${port}`;
     const now = new Date().toISOString();
 
     return {
-        id: lease.leaseId,
+        id: base.id,
         name,
         kind: options.kind || 'app',
         pid: process.pid,
@@ -153,10 +184,10 @@ function buildRegistration(options: NetGetAppOptions, name: string, lease: PortL
         lifecycle: options.lifecycle,
         startedAt: now,
         updatedAt: now,
-        ttlMs: lease.ttlMs,
-        leaseId: lease.leaseId,
-        mode: lease.mode,
-        portStatus: lease.status,
+        ttlMs: base.ttlMs,
+        leaseId: base.leaseId,
+        mode: base.mode,
+        portStatus: base.portStatus,
     };
 }
 
@@ -172,49 +203,61 @@ async function postJson(endpoint: string, payload: unknown): Promise<void> {
     }
 }
 
-export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSession> {
-    const mainServer = normalizeMainServer(options.mainServer);
-    const endpoint = `${mainServer}/apps/report`;
-    const releaseEndpoint = `${mainServer}/apps/release`;
-    const heartbeatMs = Math.max(options.heartbeatMs || DEFAULT_HEARTBEAT_MS, 1_000);
-    const name = await resolveAppIdentity(options.name);
-    const mode = resolveMode(options);
-    const preferredPort = typeof options.port === 'number'
-        ? options.port
-        : mode === 'fixed'
-            ? inferFixedPort()
-            : undefined;
-    const lease = await allocatePortLease(name, { mode, preferredPort, heartbeatMs });
-    const registration = buildRegistration(options, name, lease);
+interface ReportingParts {
+    registration: NetGetAppRegistration;
+    endpoint: string;
+    releaseEndpoint: string;
+    releaseBody: Record<string, unknown>;
+    heartbeatMs: number;
+    strict?: boolean;
+    onReport?: (error: Error | null) => void;
+    /** Runs before every report; its result says how the port stands (the lease heartbeat, for netget()). */
+    beforeReport?: () => Promise<string | void>;
+    /** Runs when the session ends, after the app is released (gives the lease back, for netget()). */
+    afterStop?: () => Promise<void>;
+}
+
+/** The report / heartbeat / release machinery both netget() and attachExisting() share. */
+async function startReporting(parts: ReportingParts): Promise<{ report(): Promise<void>; stop(): Promise<void> }> {
+    const { registration, endpoint, releaseEndpoint, releaseBody, heartbeatMs, strict } = parts;
     let closed = false;
     let timer: ReturnType<typeof setInterval> | undefined;
     const report = async (): Promise<void> => {
-        const currentLease = await heartbeatPortLease(lease, 'active');
+        const portStatus = await parts.beforeReport?.();
         registration.updatedAt = new Date().toISOString();
         registration.pid = process.pid;
         registration.cwd = process.cwd();
-        registration.portStatus = currentLease.status;
+        if (portStatus) registration.portStatus = portStatus;
         await postJson(endpoint, registration);
+    };
+    const attempt = async (): Promise<void> => {
+        try {
+            await report();
+            parts.onReport?.(null);
+        } catch (error) {
+            parts.onReport?.(error as Error);
+            throw error;
+        }
     };
 
     const release = async (): Promise<void> => {
-        await postJson(releaseEndpoint, { id: registration.id, name, leaseId: lease.leaseId }).catch(() => {});
-        await releasePortLease(lease);
+        await postJson(releaseEndpoint, releaseBody).catch(() => {});
+        await parts.afterStop?.();
     };
 
     try {
-        await report();
+        await attempt();
     } catch (error) {
-        if (options.strict) {
-            await releasePortLease(lease);
+        if (strict) {
+            await parts.afterStop?.();
             throw error;
         }
     }
 
     timer = setInterval(() => {
         if (closed) return;
-        report().catch((error) => {
-            if (options.strict) {
+        attempt().catch((error) => {
+            if (strict) {
                 console.warn(`[netget] heartbeat failed: ${error.message}`);
             }
         });
@@ -239,6 +282,31 @@ export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSess
             void gracefulExit().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
         });
     }
+    return { report, stop };
+}
+
+export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSession> {
+    const mainServer = normalizeMainServer(options.mainServer);
+    const endpoint = `${mainServer}/apps/report`;
+    const releaseEndpoint = `${mainServer}/apps/release`;
+    const heartbeatMs = Math.max(options.heartbeatMs || DEFAULT_HEARTBEAT_MS, 1_000);
+    const name = await resolveAppIdentity(options.name);
+    const mode = resolveMode(options);
+    const preferredPort = typeof options.port === 'number'
+        ? options.port
+        : mode === 'fixed'
+            ? inferFixedPort()
+            : undefined;
+    const lease = await allocatePortLease(name, { mode, preferredPort, heartbeatMs });
+    const registration = buildRegistration(options, name, {
+        id: lease.leaseId, port: lease.port, ttlMs: lease.ttlMs, leaseId: lease.leaseId, mode: lease.mode, portStatus: lease.status,
+    });
+    const { report, stop } = await startReporting({
+        registration, endpoint, releaseEndpoint, heartbeatMs, strict: options.strict, onReport: options.onReport,
+        releaseBody: { id: registration.id, name, leaseId: lease.leaseId },
+        beforeReport: async () => (await heartbeatPortLease(lease, 'active')).status,
+        afterStop: () => releasePortLease(lease),
+    });
 
     return {
         id: registration.id,
@@ -247,6 +315,47 @@ export async function netget(options: NetGetAppOptions = {}): Promise<NetGetSess
         url: registration.url || `${registration.protocol}://${registration.host}:${lease.port}`,
         mode: lease.mode,
         lease,
+        endpoint,
+        registration,
+        report,
+        stop,
+    };
+}
+
+/** The name rule apps.lua applies, so a wrong name fails here with a message and not as a 400 from the gateway. */
+export function validateAttachName(raw: string): string | null {
+    const name = String(raw ?? '');
+    if (!name) return 'An app name is required.';
+    if (name.length > 63) return 'An app name is at most 63 characters.';
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) return 'An app name is lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit.';
+    return null;
+}
+
+/** The id an attached app is listed under: the same `app:<name>` the routes and the panel use. */
+export const attachedAppId = (name: string): string => `app:${name}`;
+
+export async function attachExisting(options: NetGetAttachOptions): Promise<NetGetAttachedSession> {
+    const problem = validateAttachName(options.name);
+    if (problem) throw new Error(problem);
+    if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) throw new Error('A port between 1 and 65535 is required.');
+    const mainServer = normalizeMainServer(options.mainServer);
+    const endpoint = `${mainServer}/apps/report`;
+    const releaseEndpoint = `${mainServer}/apps/release`;
+    const heartbeatMs = Math.max(options.heartbeatMs || DEFAULT_HEARTBEAT_MS, 1_000);
+    const id = attachedAppId(options.name);
+    const registration = buildRegistration(options, options.name, {
+        id, port: options.port, ttlMs: Math.max(heartbeatMs * 4, 12_000), mode: 'fixed', portStatus: 'external',
+    });
+    const { report, stop } = await startReporting({
+        registration, endpoint, releaseEndpoint, heartbeatMs, strict: options.strict, onReport: options.onReport,
+        releaseBody: { id, name: options.name },
+    });
+    return {
+        id,
+        name: options.name,
+        port: options.port,
+        url: registration.url || `${registration.protocol}://${registration.host}:${options.port}`,
+        mode: 'fixed',
         endpoint,
         registration,
         report,

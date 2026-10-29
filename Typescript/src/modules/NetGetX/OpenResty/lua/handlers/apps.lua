@@ -192,16 +192,108 @@ local function clip_text(value, max)
 end
 
 local APP_ENTRY_KINDS = { dist = true, vite = true, server = true, static = true }
+-- What netget() calls `kind` besides "monad". All three are listed the same way (registry kind "app"); the category
+-- only says what the thing is for the people who read the list.
+local APP_CATEGORIES = { app = true, service = true, system = true }
+local APP_STATUSES = { starting = true, running = true, paused = true, stopped = true, error = true }
+local HEALTH_STATES = { unknown = true, healthy = true, degraded = true, unhealthy = true }
+local VISIBILITIES = { loopback = true, lan = true, wan = true }
+local AUTH_MODES = { none = true, session = true, token = true, basic = true, ["oauth-proxy"] = true }
+
+local function bool_or_nil(v) if type(v) == "boolean" then return v end return nil end
+
+-- A path the app says is its built front end: absolute, plain characters, no `..`. Only a SHAPE is checked: whether
+-- the folder exists, and whether it is ever served, is the operator's decision (frontend_mode below), not the app's.
+local function clean_abs_dir(v)
+  if type(v) ~= "string" or #v < 2 or #v > 256 then return nil end
+  if not v:match("^/[%w%._%-/]+$") then return nil end
+  for seg in v:gmatch("[^/]+") do
+    if seg == ".." then return nil end
+  end
+  return v
+end
+
+-- The exposure policy an app declares, reduced to the keys the gateway reads (door_connections.exposure_allows /
+-- authorization_allows, monad_proxy): everything else (publish modes, inbound paths, tls, headers...) is dropped,
+-- because nothing here acts on it and an app's word is not a reason to start.
+local function clean_exposure(x)
+  if type(x) ~= "table" then return nil end
+  local out = { enabled = bool_or_nil(x.enabled) }
+  if type(x.visibility) == "string" and VISIBILITIES[x.visibility] then out.visibility = x.visibility end
+  if type(x.network) == "table" then
+    out.network = {
+      allowLoopback = bool_or_nil(x.network.allowLoopback),
+      allowLan = bool_or_nil(x.network.allowLan),
+      allowWan = bool_or_nil(x.network.allowWan),
+    }
+  end
+  if type(x.auth) == "table" then
+    local roles
+    if type(x.auth.rolesAllowed) == "table" then
+      roles = {}
+      for i, r in ipairs(x.auth.rolesAllowed) do
+        if i > 8 then break end
+        local t = clip_text(r, 40)
+        if t then roles[#roles + 1] = t end
+      end
+    end
+    out.auth = {
+      mode = type(x.auth.mode) == "string" and AUTH_MODES[x.auth.mode] and x.auth.mode or nil,
+      requiredForRead = bool_or_nil(x.auth.requiredForRead),
+      requiredForControl = bool_or_nil(x.auth.requiredForControl),
+      requiredForDestructive = bool_or_nil(x.auth.requiredForDestructive),
+      rolesAllowed = roles,
+    }
+  end
+  return out
+end
+
+local function clean_health(x)
+  if type(x) ~= "table" or type(x.state) ~= "string" or not HEALTH_STATES[x.state] then return nil end
+  return { state = x.state, message = clip_text(x.message, 120), updatedAt = clip_text(x.updatedAt, 40) }
+end
+
+local function clean_ui(x)
+  if type(x) ~= "table" then return nil end
+  local path = clip_text(x.defaultPath, 128)
+  if path and (path:sub(1, 1) ~= "/" or path:find("..", 1, true)) then path = nil end
+  return { hasAdminPanel = bool_or_nil(x.hasAdminPanel), hasUserPanel = bool_or_nil(x.hasUserPanel), defaultPath = path }
+end
+
+-- A claim, shown and nothing more: no code path here starts, stops or pauses an app entry.
+local function clean_lifecycle(x)
+  if type(x) ~= "table" then return nil end
+  local out = {}
+  for _, key in ipairs({ "supportsStart", "supportsStop", "supportsRestart", "supportsPause", "supportsResume", "supportsDelete" }) do
+    out[key] = bool_or_nil(x[key])
+  end
+  return out
+end
+
+local function clean_tags(x)
+  if type(x) ~= "table" then return nil end
+  local out = {}
+  for i, t in ipairs(x) do
+    if i > 16 then break end
+    local c = clip_text(t, 40)
+    if c then out[#out + 1] = c end
+  end
+  return out
+end
 
 -- An APP reports itself as an app: a Vite dev server, a built dist behind a static server, a plain server -- what
--- people open, not the monad that runs for a .me. It is listed under its own name (`app:<name>`), so it never replaces
--- the entry of a monad of the same name.
+-- people open, not the monad that runs for a .me. It reports the way netget() (src/netget.ts) already does, with its
+-- own kind: "app" | "service" | "system".
 --
 -- What it can and cannot do:
---   * it must answer HTTP on a loopback port (liveness); it is NOT probed as a monad;
---   * only a fixed set of fields is kept: whatever else it sends (a directEndpoint, claimed_namespaces, an identity
---     hash) is dropped, its host is always the loopback and its trust is always "guest": an app's own word is not
---     evidence of who it is, and the routing by declaration only reads what MONADS declare;
+--   * it must answer HTTP on a loopback port (liveness); it is NOT probed as a monad. An app that registers before
+--     it listens (netget() leases a port first) is refused with 422 until it does: the heartbeat retries;
+--   * only a fixed set of fields is kept (see the clean_* functions): whatever else it sends (a directEndpoint,
+--     claimed_namespaces, an identity hash, a url) is dropped, its host is always the loopback and its trust is
+--     always "guest": an app's own word is not evidence of who it is, and the routing by declaration only reads what
+--     MONADS declare;
+--   * its id is the one it sent (netget() sends its lease id; `netget attach` sends `app:<name>`), but an id that is
+--     already the entry of a monad is refused: an app cannot take a monad's place by choosing its id;
 --   * nothing here gives netget a process to stop: restart-all only ever acts on entries that answered as a monad.
 local function report_kind_app(req)
   local name = clip_text(tostring(req.name or ""), 64)
@@ -209,9 +301,19 @@ local function report_kind_app(req)
   if name == "" or #name > 63 or not name:match("^[%l%d][%l%d._-]*$") then
     return json(400, { success = false, error = "INVALID_APP_NAME", message = "An app name is lowercase letters, digits, dots, dashes or underscores (at most 63)." })
   end
+  local id = req.id == nil and ("app:" .. name) or req.id
+  if type(id) ~= "string" or #id < 1 or #id > 96 or not id:match("^[%w:._-]+$") then
+    return json(400, { success = false, error = "INVALID_APP_ID", message = "An app id is letters, digits, colon, dot, dash or underscore (at most 96)." })
+  end
   local port = tonumber(req.port)
   if not port or port <= 0 or port > 65535 or port ~= math.floor(port) then
     return json(400, { success = false, error = "A valid port is required." })
+  end
+
+  local registry = scrub_dead_apps(read_registry())
+  local existing = registry.apps[id]
+  if existing and existing.kind ~= "app" then
+    return json(409, { success = false, error = "ID_TAKEN", message = "That id belongs to another kind of entry." })
   end
   if not probe_http_alive(port) then
     return json(422, { success = false, error = "PORT_NOT_ANSWERING", message = "port " .. port .. " did not answer HTTP." })
@@ -219,13 +321,17 @@ local function report_kind_app(req)
 
   local meta = type(req.metadata) == "table" and req.metadata or {}
   local entry_kind = type(meta.entry) == "string" and APP_ENTRY_KINDS[meta.entry] and meta.entry or nil
+  local category = type(req.kind) == "string" and APP_CATEGORIES[req.kind] and req.kind or "app"
   local ttl = tonumber(req.ttlMs) or 12000
   if ttl < 3000 then ttl = 3000 elseif ttl > 60000 then ttl = 60000 end
+  local pid = tonumber(req.pid)
+  if pid and (pid < 1 or pid ~= math.floor(pid)) then pid = nil end
 
   local app = {
-    id = "app:" .. name,
+    id = id,
     name = name,
     kind = "app",
+    category = category,
     host = "127.0.0.1",
     port = port,
     protocol = "http",
@@ -233,20 +339,34 @@ local function report_kind_app(req)
     lastSeenMs = now_ms(),
     localOnly = true,
     trust = "guest",
+    pid = pid,
+    hostname = clip_text(req.hostname, 64),
+    cwd = clip_text(req.cwd, 200),
+    tags = clean_tags(req.tags),
+    status = type(req.status) == "string" and APP_STATUSES[req.status] and req.status or nil,
+    health = clean_health(req.health),
+    ui = clean_ui(req.ui),
+    exposure = clean_exposure(req.exposure),
+    lifecycle = clean_lifecycle(req.lifecycle),
+    startedAt = clip_text(req.startedAt, 40),
     metadata = {
       title = clip_text(meta.title, 80),
+      description = clip_text(meta.description, 160),
+      version = clip_text(meta.version, 40),
       monad = clip_text(meta.monad, 80),
       entry = entry_kind,
+      frontendDistDir = clean_abs_dir(meta.frontendDistDir),
     },
   }
+  -- frontendMode is the operator's switch, set through frontend_mode below and never by the app: keep it across beats.
+  if existing and existing.frontendMode then app.frontendMode = existing.frontendMode end
 
-  local registry = scrub_dead_apps(read_registry())
   registry.apps[app.id] = app
   local ok, err = write_registry(registry)
   if not ok then
     return json(500, { success = false, error = err or "Could not write app registry." })
   end
-  return json(200, { success = true, id = app.id, kind = "app", localOnly = true })
+  return json(200, { success = true, id = app.id, kind = "app", category = category, localOnly = true })
 end
 
 local function report_app()
@@ -267,10 +387,10 @@ local function report_app()
   if not app or type(app) ~= "table" then
     return json(400, { success = false, error = "Invalid JSON body." })
   end
-  if app.kind ~= nil and app.kind ~= "monad" and app.kind ~= "app" then
-    return json(400, { success = false, error = "INVALID_KIND", message = 'kind is "monad" or "app".' })
+  if app.kind ~= nil and app.kind ~= "monad" and not APP_CATEGORIES[app.kind] then
+    return json(400, { success = false, error = "INVALID_KIND", message = 'kind is "monad", "app", "service" or "system".' })
   end
-  if app.kind == "app" then
+  if app.kind ~= nil and app.kind ~= "monad" then
     return report_kind_app(app)
   end
   if not app.id or not app.name then

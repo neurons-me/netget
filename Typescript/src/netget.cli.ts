@@ -630,8 +630,9 @@ program
   });
 
 // An APP is listed in netget as an app, not as a monad: a Vite dev server, a built dist behind a static server, any server
-// that answers HTTP on a loopback port. The entry lives while this command runs (it reports every 3 s, like a monad does);
-// Ctrl-C takes it out. See src/gateway/attach.ts and apps.lua's report_kind_app().
+// that answers HTTP on a loopback port. It is the library's attachExisting() (the registration netget() sends, without
+// leasing a port the app already holds). The entry lives while this command runs (a heartbeat every 3 s, like a monad's);
+// Ctrl-C takes it out. See src/netget.ts and apps.lua's report_kind_app().
 program
   .command('attach <name>')
   .description('List a running app in netget as an app (not a monad). Keeps reporting until stopped; Ctrl-C takes it out.')
@@ -640,43 +641,36 @@ program
   .option('--monad <name>', 'The monad the app keeps its data in, by name (a reference; netget does not verify it)')
   .option('--entry <kind>', 'What the app is: dist, vite, server or static')
   .option('--once', 'Report once and exit (the entry expires after its ttl)')
-  .option('--json', 'Print one JSON line per report instead of colored text')
+  .option('--json', 'Print one JSON line per change instead of colored text')
   .action(async (name: string, opts: { port: string; title?: string; monad?: string; entry?: string; once?: boolean; json?: boolean }) => {
-    const { attachLoop, reportApp, appReportBody } = await import('./gateway/attach.ts');
+    const { attachMetadata, localNetget } = await import('./gateway/attach.ts');
+    const { attachExisting, attachedAppId } = await import('./netget.ts');
     const say = (ok: boolean, payload: Record<string, unknown>, text: string) => {
       if (opts.json) console.log(JSON.stringify({ ok, ...payload }));
       else console.log(ok ? chalk.green(text) : chalk.red(text));
     };
+    const port = Number(opts.port);
+    const id = attachedAppId(name);
+    let lastOk: boolean | null = null;
     try {
-      const port = Number(opts.port);
-      const report = { name, port, title: opts.title, monad: opts.monad, entry: opts.entry as any };
-      appReportBody(report); // validates the name, the port and the entry before anything is sent
-      if (opts.once) {
-        const r = await reportApp(report);
-        say(r.ok, { id: r.id, status: r.status, error: r.error, message: r.message }, r.ok ? `Listed ${r.id} (port ${port}).` : `Not listed: ${r.error || r.status}${r.message ? ` — ${r.message}` : ''}`);
-        if (!r.ok) process.exit(1);
-        return;
-      }
-      const stop = new AbortController();
-      let lastOk: boolean | null = null;
-      const done = attachLoop(report, {
-        signal: stop.signal,
-        onBeat: (r) => {
-          const ok = !(r instanceof Error) && r.ok;
+      const session = await attachExisting({
+        name, port, mainServer: localNetget(), strict: Boolean(opts.once),
+        metadata: attachMetadata(opts),
+        onReport: (error) => {
+          const ok = error === null;
           if (ok === lastOk) return; // say it when it changes, not every 3 s
           lastOk = ok;
-          if (r instanceof Error) say(false, { error: r.message }, `Cannot reach the local netget: ${r.message}`);
-          else say(r.ok, { id: r.id, status: r.status, error: r.error, message: r.message }, r.ok ? `Listed ${r.id} (port ${port}). Ctrl-C to take it out.` : `Not listed: ${r.error || r.status}${r.message ? ` — ${r.message}` : ''}`);
+          if (ok) say(true, { id, port }, `Listed ${id} (port ${port}).${opts.once ? '' : ' Ctrl-C to take it out.'}`);
+          else say(false, { id, error: error!.message }, `Not listed: ${error!.message}`);
         },
       });
-      const end = () => { stop.abort(); };
-      process.once('SIGINT', end);
-      process.once('SIGTERM', end);
-      await done;
-      say(true, { released: `app:${name.toLowerCase()}` }, `Released app:${name.toLowerCase()}.`);
+      if (opts.once) { void session; process.exit(0); }
+      // The library's timer does not hold the process open (an app uses it inside its own server); this command is the
+      // reporter, so it holds itself open. SIGINT / SIGTERM are the library's: it releases the entry and exits.
+      setInterval(() => {}, 1 << 30);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (opts.json) console.log(JSON.stringify({ ok: false, message })); else console.error(chalk.red(message));
+      if (lastOk === null) say(false, { id, message }, message);
       process.exit(1);
     }
   });
@@ -686,11 +680,11 @@ program
   .description('Take an app out of netget now (otherwise its entry expires after a few seconds without a report).')
   .option('--json', 'Print a single JSON line')
   .action(async (name: string, opts: { json?: boolean }) => {
-    const { releaseApp } = await import('./gateway/attach.ts');
+    const { detachByName } = await import('./gateway/attach.ts');
     try {
-      const r = await releaseApp(name);
-      if (opts.json) console.log(JSON.stringify({ ok: r.ok, id: r.id, status: r.status }));
-      else console.log(r.ok ? chalk.green(`Released ${r.id}.`) : chalk.red(`Could not release ${r.id} (HTTP ${r.status}).`));
+      const r = await detachByName(name);
+      if (opts.json) console.log(JSON.stringify({ ok: r.ok, ids: r.ids, status: r.status }));
+      else console.log(r.ok ? chalk.green(`Released ${r.ids.join(', ')}.`) : chalk.red(`Could not release ${name} (${r.status === 404 ? 'no such app is listed' : `HTTP ${r.status}`}).`));
       if (!r.ok) process.exit(1);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

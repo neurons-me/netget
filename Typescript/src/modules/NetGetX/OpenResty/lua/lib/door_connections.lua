@@ -119,7 +119,7 @@ end
 -- therefore the gateway: a connection follows the exposure policy the operator set for the app (the same rules
 -- /apps/<name>/ applies to the monad: enabled, visibility loopback|lan|wan, network.allowLoopback|allowLan|allowWan),
 -- judged on the address that connected to nginx and never on a forwarded header. An app with no policy is judged as
--- `visibility = loopback` (fail closed). A `guest`-trust app has no connections.
+-- `visibility = loopback` (fail closed). A `guest`-trust MONAD has no connections; an app entry (kind "app") follows its policy.
 --   returns true, nil          allowed
 --   returns false, <status>    refused (404 when the app is disabled, otherwise 403)
 local function is_loopback_ip(ip) return ip == "127.0.0.1" or ip == "::1" or ip == "unix:" end
@@ -135,7 +135,10 @@ end
 function M.exposure_allows(app, remote_addr)
   local remote = tostring(remote_addr or "")
   local entry = type(app) == "table" and app or {}
-  if tostring(entry.trust or "") == "guest" then return false, 403 end
+  -- A guest MONAD has no connections (nothing vouches for what it says). An APP entry is always "guest" -- that is what
+  -- it is, not a verdict -- and its policy is the one it declared, read through the same rules below: an app that
+  -- declared nothing is judged `visibility = loopback`.
+  if tostring(entry.trust or "") == "guest" and entry.kind ~= "app" then return false, 403 end
   local exposure = type(entry.exposure) == "table" and entry.exposure or {}
   if exposure.enabled == false then return false, 404 end
   local visibility = tostring(exposure.visibility or "loopback")

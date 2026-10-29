@@ -82,6 +82,14 @@ put("x_wan_denied", allowed({ exposure = { visibility = "wan", network = { allow
 put("x_disabled", allowed({ exposure = { enabled = false } }, "127.0.0.1"))
 put("x_guest", allowed({ trust = "guest", exposure = { visibility = "wan", network = { allowWan = true } } }, "127.0.0.1"))
 put("x_unknown_visibility", allowed({ exposure = { visibility = "everyone" } }, "8.8.8.8"))
+put("x_app_default_loopback", allowed({ kind = "app", trust = "guest" }, "127.0.0.1"))
+put("x_app_default_lan", allowed({ kind = "app", trust = "guest" }, "192.168.1.20"))
+put("x_app_default_wan", allowed({ kind = "app", trust = "guest" }, "8.8.8.8"))
+put("x_app_lan_policy", allowed({ kind = "app", trust = "guest", exposure = { visibility = "lan" } }, "192.168.1.20"))
+put("x_app_lan_policy_wan_peer", allowed({ kind = "app", trust = "guest", exposure = { visibility = "lan" } }, "8.8.8.8"))
+put("x_app_disabled", allowed({ kind = "app", trust = "guest", exposure = { enabled = false } }, "127.0.0.1"))
+put("x_app_loopback_off", allowed({ kind = "app", trust = "guest", exposure = { network = { allowLoopback = false } } }, "127.0.0.1"))
+put("x_monad_guest_wan", allowed({ kind = "monad", trust = "guest", exposure = { visibility = "wan" } }, "127.0.0.1"))
 put("for_app", #dc.for_app(map, "fulltrailer"))
 put("for_app_other", dc.for_app(map, "polls-studio")[1].prefix)
 put("for_app_none", #dc.for_app(map, "nobody"))
@@ -128,6 +136,16 @@ assert.deepEqual(L.x_wan_denied, { ok: false, status: 403 });
 assert.deepEqual(L.x_disabled, { ok: false, status: 404 }, 'a disabled app has no connections');
 assert.deepEqual(L.x_guest, { ok: false, status: 403 }, 'a guest-trust app has no connections, whatever its policy says');
 assert.deepEqual(L.x_unknown_visibility, { ok: false, status: 403 }, 'an unknown visibility fails closed');
+// an APP entry is always "guest" (that is what an app is, not a verdict): it follows the policy it declared, and an app
+// that declared nothing is loopback-only. A guest MONAD still has no connections.
+assert.deepEqual(L.x_app_default_loopback, { ok: true });
+assert.deepEqual(L.x_app_default_lan, { ok: false, status: 403 }, 'an app with no policy is not served to the LAN');
+assert.deepEqual(L.x_app_default_wan, { ok: false, status: 403 });
+assert.deepEqual(L.x_app_lan_policy, { ok: true });
+assert.deepEqual(L.x_app_lan_policy_wan_peer, { ok: false, status: 403 });
+assert.deepEqual(L.x_app_disabled, { ok: false, status: 404 });
+assert.deepEqual(L.x_app_loopback_off, { ok: false, status: 403 });
+assert.deepEqual(L.x_monad_guest_wan, { ok: false, status: 403 }, 'a guest monad has no connections, whatever its policy says');
 assert.equal(L.for_app, 3);
 assert.equal(L.for_app_other, '/api/meta');
 assert.equal(L.for_app_none, 0);

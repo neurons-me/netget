@@ -1,4 +1,4 @@
-export { default, netget, NetGet } from './netget.js';
+export { default, netget, attachExisting, attachedAppId, validateAttachName, NetGet } from './netget.js';
 export type {
   NetGetAppHealth,
   NetGetAppKind,
@@ -7,6 +7,8 @@ export type {
   NetGetAppRegistration,
   NetGetAppStatus,
   NetGetAppUi,
+  NetGetAttachOptions,
+  NetGetAttachedSession,
   NetGetConfig,
   NetGetSession,
 } from './netget.js';

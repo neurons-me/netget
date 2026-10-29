@@ -133,6 +133,21 @@ local function probe_monad_surface(port)
   return { monadId = monadId }
 end
 
+-- Whether something answers HTTP on a loopback port, with any status: the one thing an APP has to show to be listed
+-- (it is not a monad, so it has no surface to probe). It proves liveness, never identity: nothing here is evidence of
+-- who the app is, and an app entry never gets more than "guest" trust or a process netget may stop.
+local function probe_http_alive(port)
+  local p = tonumber(port)
+  if not p or p <= 0 or p > 65535 or p ~= math.floor(p) then return false end
+  local cmd = string.format("curl -s -o /dev/null -w '%%{http_code}' --max-time 2 http://127.0.0.1:%d/ 2>/dev/null", p)
+  local h = io.popen(cmd)
+  if not h then return false end
+  local out = h:read("*a") or ""
+  h:close()
+  local code = tonumber(out)
+  return code ~= nil and code >= 100 and code < 600
+end
+
 -- Read the gateway claims snapshot (written by GatewayClaimsManager).
 -- Returns {} when the file is absent or unparseable — safe fallback to guest.
 local function read_claims()
@@ -168,6 +183,72 @@ local function scrub_dead_apps(registry)
   return registry
 end
 
+-- Text an app is allowed to say about itself: a short single line, no control characters.
+local function clip_text(value, max)
+  if type(value) ~= "string" then return nil end
+  local text = value:gsub("[%c]", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if text == "" then return nil end
+  return text:sub(1, max or 80)
+end
+
+local APP_ENTRY_KINDS = { dist = true, vite = true, server = true, static = true }
+
+-- An APP reports itself as an app: a Vite dev server, a built dist behind a static server, a plain server -- what
+-- people open, not the monad that runs for a .me. It is listed under its own name (`app:<name>`), so it never replaces
+-- the entry of a monad of the same name.
+--
+-- What it can and cannot do:
+--   * it must answer HTTP on a loopback port (liveness); it is NOT probed as a monad;
+--   * only a fixed set of fields is kept: whatever else it sends (a directEndpoint, claimed_namespaces, an identity
+--     hash) is dropped, its host is always the loopback and its trust is always "guest": an app's own word is not
+--     evidence of who it is, and the routing by declaration only reads what MONADS declare;
+--   * nothing here gives netget a process to stop: restart-all only ever acts on entries that answered as a monad.
+local function report_kind_app(req)
+  local name = clip_text(tostring(req.name or ""), 64)
+  name = name and name:lower() or ""
+  if name == "" or #name > 63 or not name:match("^[%l%d][%l%d._-]*$") then
+    return json(400, { success = false, error = "INVALID_APP_NAME", message = "An app name is lowercase letters, digits, dots, dashes or underscores (at most 63)." })
+  end
+  local port = tonumber(req.port)
+  if not port or port <= 0 or port > 65535 or port ~= math.floor(port) then
+    return json(400, { success = false, error = "A valid port is required." })
+  end
+  if not probe_http_alive(port) then
+    return json(422, { success = false, error = "PORT_NOT_ANSWERING", message = "port " .. port .. " did not answer HTTP." })
+  end
+
+  local meta = type(req.metadata) == "table" and req.metadata or {}
+  local entry_kind = type(meta.entry) == "string" and APP_ENTRY_KINDS[meta.entry] and meta.entry or nil
+  local ttl = tonumber(req.ttlMs) or 12000
+  if ttl < 3000 then ttl = 3000 elseif ttl > 60000 then ttl = 60000 end
+
+  local app = {
+    id = "app:" .. name,
+    name = name,
+    kind = "app",
+    host = "127.0.0.1",
+    port = port,
+    protocol = "http",
+    ttlMs = ttl,
+    lastSeenMs = now_ms(),
+    localOnly = true,
+    trust = "guest",
+    metadata = {
+      title = clip_text(meta.title, 80),
+      monad = clip_text(meta.monad, 80),
+      entry = entry_kind,
+    },
+  }
+
+  local registry = scrub_dead_apps(read_registry())
+  registry.apps[app.id] = app
+  local ok, err = write_registry(registry)
+  if not ok then
+    return json(500, { success = false, error = err or "Could not write app registry." })
+  end
+  return json(200, { success = true, id = app.id, kind = "app", localOnly = true })
+end
+
 local function report_app()
   if not is_local_request() then
     return json(403, { success = false, error = "Apps can only report to the local NetGet agent." })
@@ -185,6 +266,12 @@ local function report_app()
   local app = cjson.decode(body)
   if not app or type(app) ~= "table" then
     return json(400, { success = false, error = "Invalid JSON body." })
+  end
+  if app.kind ~= nil and app.kind ~= "monad" and app.kind ~= "app" then
+    return json(400, { success = false, error = "INVALID_KIND", message = 'kind is "monad" or "app".' })
+  end
+  if app.kind == "app" then
+    return report_kind_app(app)
   end
   if not app.id or not app.name then
     return json(400, { success = false, error = "App id and name are required." })
@@ -395,7 +482,9 @@ local function restart_all()
   local restarted, skipped = {}, {}
   for _, app in pairs(registry.apps or {}) do
     local port = tonumber(app.port)
-    if port and port > 0 then
+    -- An app entry is never a target: it is a listing of something people open, not a process netget runs. (When the app
+    -- sits on a monad's port, the monad's own entry is the one evaluated, under the same rules as always.)
+    if app.kind ~= "app" and port and port > 0 then
       -- Re-verify fresh, right before terminating anything -- report_app()
       -- already checked this port once at registration time, but trusting
       -- that stale check here would leave a larger window for the port to

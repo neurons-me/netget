@@ -56,7 +56,8 @@ local function registered_ports(registry)
   local ports = {}
   if type(registry) ~= "table" or type(registry.apps) ~= "table" then return ports end
   for _, app in pairs(registry.apps) do
-    if type(app) == "table" then
+    -- an APP entry is not a monad: its own server is exactly what a connection points at, so only monads are refused
+    if type(app) == "table" and app.kind ~= "app" then
       local p = tonumber(app.port)
       if p then ports[p] = true end
       local meta = type(app.metadata) == "table" and app.metadata or {}

@@ -629,6 +629,76 @@ program
     }
   });
 
+// An APP is listed in netget as an app, not as a monad: a Vite dev server, a built dist behind a static server, any server
+// that answers HTTP on a loopback port. The entry lives while this command runs (it reports every 3 s, like a monad does);
+// Ctrl-C takes it out. See src/gateway/attach.ts and apps.lua's report_kind_app().
+program
+  .command('attach <name>')
+  .description('List a running app in netget as an app (not a monad). Keeps reporting until stopped; Ctrl-C takes it out.')
+  .requiredOption('--port <port>', 'The loopback port the app answers HTTP on')
+  .option('--title <title>', 'A title to show for the app')
+  .option('--monad <name>', 'The monad the app keeps its data in, by name (a reference; netget does not verify it)')
+  .option('--entry <kind>', 'What the app is: dist, vite, server or static')
+  .option('--once', 'Report once and exit (the entry expires after its ttl)')
+  .option('--json', 'Print one JSON line per report instead of colored text')
+  .action(async (name: string, opts: { port: string; title?: string; monad?: string; entry?: string; once?: boolean; json?: boolean }) => {
+    const { attachLoop, reportApp, appReportBody } = await import('./gateway/attach.ts');
+    const say = (ok: boolean, payload: Record<string, unknown>, text: string) => {
+      if (opts.json) console.log(JSON.stringify({ ok, ...payload }));
+      else console.log(ok ? chalk.green(text) : chalk.red(text));
+    };
+    try {
+      const port = Number(opts.port);
+      const report = { name, port, title: opts.title, monad: opts.monad, entry: opts.entry as any };
+      appReportBody(report); // validates the name, the port and the entry before anything is sent
+      if (opts.once) {
+        const r = await reportApp(report);
+        say(r.ok, { id: r.id, status: r.status, error: r.error, message: r.message }, r.ok ? `Listed ${r.id} (port ${port}).` : `Not listed: ${r.error || r.status}${r.message ? ` — ${r.message}` : ''}`);
+        if (!r.ok) process.exit(1);
+        return;
+      }
+      const stop = new AbortController();
+      let lastOk: boolean | null = null;
+      const done = attachLoop(report, {
+        signal: stop.signal,
+        onBeat: (r) => {
+          const ok = !(r instanceof Error) && r.ok;
+          if (ok === lastOk) return; // say it when it changes, not every 3 s
+          lastOk = ok;
+          if (r instanceof Error) say(false, { error: r.message }, `Cannot reach the local netget: ${r.message}`);
+          else say(r.ok, { id: r.id, status: r.status, error: r.error, message: r.message }, r.ok ? `Listed ${r.id} (port ${port}). Ctrl-C to take it out.` : `Not listed: ${r.error || r.status}${r.message ? ` — ${r.message}` : ''}`);
+        },
+      });
+      const end = () => { stop.abort(); };
+      process.once('SIGINT', end);
+      process.once('SIGTERM', end);
+      await done;
+      say(true, { released: `app:${name.toLowerCase()}` }, `Released app:${name.toLowerCase()}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (opts.json) console.log(JSON.stringify({ ok: false, message })); else console.error(chalk.red(message));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('detach <name>')
+  .description('Take an app out of netget now (otherwise its entry expires after a few seconds without a report).')
+  .option('--json', 'Print a single JSON line')
+  .action(async (name: string, opts: { json?: boolean }) => {
+    const { releaseApp } = await import('./gateway/attach.ts');
+    try {
+      const r = await releaseApp(name);
+      if (opts.json) console.log(JSON.stringify({ ok: r.ok, id: r.id, status: r.status }));
+      else console.log(r.ok ? chalk.green(`Released ${r.id}.`) : chalk.red(`Could not release ${r.id} (HTTP ${r.status}).`));
+      if (!r.ok) process.exit(1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (opts.json) console.log(JSON.stringify({ ok: false, message })); else console.error(chalk.red(message));
+      process.exit(1);
+    }
+  });
+
 program
   .command('app-frontend-mode <name> [mode]')
   .description('Switch a registered app between dev (live proxy through /apps/<name>) and dist (its own built dist/ served directly) — the same toggle frontend-mode gives netget\'s own panel, generalized to any app.')

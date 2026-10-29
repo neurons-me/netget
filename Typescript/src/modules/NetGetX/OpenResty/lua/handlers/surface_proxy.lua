@@ -384,8 +384,9 @@ local function answer_connection(route)
       local name = tostring(app.name or ""):lower()
       local short = name:gsub("^monad:", "")
       if (name == want or short == want or tostring(meta.monadName or ""):lower() == want) and is_live(app) then
-        door_app = app
-        break
+        -- an APP entry is what `app:<name>` means; a monad of the same name only answers when no app is live under it
+        if app.kind == "app" then door_app = app; break end
+        if not door_app then door_app = app end
       end
     end
     if not door_app then
@@ -446,11 +447,19 @@ if not host_is_ip then
           "; declare it again so it is bound", true)
       end
       local best, identities, seen_identity = nil, {}, {}
+      -- An APP entry of this name is what the route means; a monad of the same name answers only when no app is live under it.
+      local prefer_app = false
+      if not bound then
+        for _, app in pairs(registry.apps) do
+          if app.kind == "app" and is_live(app) and tostring(app.name or ""):lower() == want then prefer_app = true; break end
+        end
+      end
       for _, app in pairs(registry.apps) do
         local meta = app.metadata or {}
         local name = tostring(app.name or ""):lower()
         local short = name:gsub("^monad:", "")
         local named = (name == want) or (short == want) or (tostring(meta.monadName or ""):lower() == want)
+        if prefer_app and app.kind ~= "app" then named = false end
         -- bound route: only the registration that carries the bound identity is the destination
         if named and bound and identity_of(meta) ~= bound then named = false end
         if named and is_live(app) then
@@ -487,7 +496,8 @@ end
 local exact = {}
 for _, app in pairs(registry.apps) do
   local meta = app.metadata
-  if type(meta) == "table" and endpoint_of(meta) then
+  -- an APP never becomes the monad of a host, whatever its entry says: only monads declare hosts
+  if app.kind ~= "app" and type(meta) == "table" and endpoint_of(meta) then
     local entry = { ep = endpoint_of(meta), lastSeen = tonumber(app.lastSeenMs) or 0, identity = identity_of(meta), live = is_live(app), trust = app.trust }
     if host_is_ip then
       -- IP request: the address is transport only; any live monad answers and resolves the namespace itself.
@@ -545,7 +555,7 @@ end
 local live_authorized, registered = {}, false
 for _, app in pairs(registry.apps) do
   local meta = app.metadata
-  if type(meta) == "table" and endpoint_of(meta) and identity_of(meta) == authorized.identity then
+  if app.kind ~= "app" and type(meta) == "table" and endpoint_of(meta) and identity_of(meta) == authorized.identity then
     local name = tostring(app.name or ""):lower()
     local short = name:gsub("^monad:", "")
     local names_it = authorized.app == "" or name == authorized.app or short == authorized.app

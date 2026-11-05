@@ -1,6 +1,14 @@
 ---
-layout: readme
-title: local.netget
+layout: gui-doc
+title: "local.netget"
+description: "The operator surface for the local NetGet gateway — routing, monads, logs, gateway control."
+image: https://suign.github.io/assets/imgs/netget1.png
+mepath:
+  - text: netget
+    url: https://neurons-me.github.io/netget/
+  - text: docs
+    url: https://neurons-me.github.io/netget/docs/
+crumb: local.netget
 ---
 
 # local.netget
@@ -101,6 +109,6 @@ It connects to the NetGet Express server (default port `3432`) for all API calls
 ## See also
 
 - [Surface Access Points and Routing](https://neurons-me.github.io/NRP/Surface-Access-Points-and-Routing) — full routing map
-- [Architecture](./Architecture) — how NetGet routes requests
+- [Architecture](../Typescript/typedocs/Architecture.html) — how NetGet routes requests
 - [Domain Map](./DomainMap) — routing table internals
 - [Placement](./Placement) — deploying NetGet on a server

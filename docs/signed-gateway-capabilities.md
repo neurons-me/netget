@@ -1,10 +1,14 @@
 ---
-layout: readme
-title: Signed Gateway Capabilities — netget
----
-
-[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)
-
+layout: gui-doc
+title: "Signed Gateway Capabilities — netget"
+description: "Per-request .me proofs for gateway control: identity, proof, and explicit capability."
+image: https://suign.github.io/assets/imgs/netget1.png
+mepath:
+  - text: netget
+    url: https://neurons-me.github.io/netget/
+  - text: docs
+    url: https://neurons-me.github.io/netget/docs/
+crumb: Signed Capabilities
 ---
 
 # Signed Gateway Capabilities
@@ -73,5 +77,3 @@ future work.
   real.
 
 ---
-
-[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)

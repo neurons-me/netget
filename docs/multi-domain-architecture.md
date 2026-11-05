@@ -1,10 +1,14 @@
 ---
-layout: readme
-title: Multi-Domain Architecture — netget
----
-
-[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)
-
+layout: gui-doc
+title: "Multi-Domain Architecture — netget"
+description: "Deploying one codebase to serve multiple domains with shared sources."
+image: https://suign.github.io/assets/imgs/netget1.png
+mepath:
+  - text: netget
+    url: https://neurons-me.github.io/netget/
+  - text: docs
+    url: https://neurons-me.github.io/netget/docs/
+crumb: Multi-Domain
 ---
 
 # Multi-Domain Deployment with Shared Sources using Netget
@@ -100,5 +104,3 @@ You have a survey platform:
 Start thinking in **domains as entry points**, and **sources as reusable building blocks**.
 
 ---
-
-[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)

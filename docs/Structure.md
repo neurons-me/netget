@@ -1,10 +1,14 @@
 ---
-layout: readme
-title: Domain Routing Structure — netget
----
-
-[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)
-
+layout: gui-doc
+title: "Domain Routing Structure — netget"
+description: "How OpenResty, the domain-map, and SSL provisioning fit together in netget."
+image: https://suign.github.io/assets/imgs/netget1.png
+mepath:
+  - text: netget
+    url: https://neurons-me.github.io/netget/
+  - text: docs
+    url: https://neurons-me.github.io/netget/docs/
+crumb: Structure
 ---
 
 # Domain Routing Structure
@@ -21,5 +25,3 @@ Si el Host está registrado → enruta según type (proxy/server/static) con su 
 Si no está registrado → debería caer a una página "Domain not found on netget" con instrucciones de alta (A record o CNAME). Esto es lo que falta.
 
 ---
-
-[← Back to netget Docs](https://neurons-me.github.io/netget/docs/)

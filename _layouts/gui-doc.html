@@ -8,7 +8,7 @@
   Front matter: title, description, image, mepath (list of {text, url} after me://), crumb (the last, current segment),
   scripts (optional list of site paths loaded before landing-gui.js, e.g. /assets/kernel-timeline/kernel-timeline.js).
 {% endcomment %}
-{% comment %} Ported from neurons-me/.me _layouts/gui-doc.html; shares /.me/assets (landing-gui.js, me-syntax). Favicon: the neurons brain, as on every neurons-me page. {% endcomment %}
+{% comment %} netget: shared /.me/assets for landing-gui / me-syntax / hiero (same host). me-theme.css stays relative_url (/netget/assets from remote theme). {% endcomment %}
 <html lang="{{ page.lang | default: site.lang | default: 'en' }}">
 <head>
   <meta charset="utf-8">
@@ -27,14 +27,18 @@
   {% if social_image %}
   <meta property="og:image" content="{{ social_image }}" />
   <meta property="og:image:secure_url" content="{{ social_image }}" />
+  {% if page.image_width %}<meta property="og:image:width" content="{{ page.image_width }}" />{% endif %}
+  {% if page.image_height %}<meta property="og:image:height" content="{{ page.image_height }}" />{% endif %}
+  {% if page.image_alt %}<meta property="og:image:alt" content="{{ page.image_alt | escape }}" />{% endif %}
   {% endif %}
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="{{ page_title }}" />
   <meta name="twitter:description" content="{{ page_description }}" />
   {% if social_image %}
   <meta name="twitter:image" content="{{ social_image }}" />
+  {% if page.image_alt %}<meta name="twitter:image:alt" content="{{ page.image_alt | escape }}" />{% endif %}
   {% endif %}
-  {% assign favicon_url = "https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" %}
+  {% assign favicon_url = site.me_theme.favicon | default: "https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png" %}
   <link rel="icon" type="image/png" href="{{ favicon_url }}">
   <link rel="apple-touch-icon" href="{{ favicon_url }}">
   <!-- Same page-scoped theme keys as /.me/docs/ (neurons.me, dark by default), so the choice carries across the docs. -->
@@ -55,6 +59,8 @@
     html:not(.gui-on) .doc-cards img{display:block;width:100%;height:120px;object-fit:cover;margin:0}
     html:not(.gui-on) .doc-cards .card-kind{padding:10px 14px 0;font-size:.7rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.75}
     html:not(.gui-on) .doc-cards .card-title{padding:4px 14px 0;font-weight:700}
+    html:not(.gui-on) .doc-axiom{margin-top:2.2em;padding:.4em 0 .4em .8em;border-left:3px solid currentColor;font-size:1.4rem}
+    html:not(.gui-on) .doc-axiom-test{font-size:.85rem;opacity:.8}
     html:not(.gui-on) .doc-cards .card-desc{padding:4px 14px 14px;font-size:.88rem;opacity:.8}
   </style>
   <!-- Static (no-JS) page: the theme stylesheet; landing-gui.js switches it off once .GUI has rendered. -->
@@ -65,7 +71,8 @@
   <!-- Pinned dependencies (jsDelivr, exact versions, Subresource Integrity), same as /.me/docs/ and /.me/Demos/. -->
   <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/this.gui@4.2.0/dist/this.gui.umd.js" integrity="sha384-tAyskhiyJweQ9xXPVOSEJ0OQDE+lFsqRJvGRb8LVoqLbdNxYmJEhW21+fxcAYG0d" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/this.gui@4.3.0/dist/this.gui.umd.js" integrity="sha384-wZSWqOgarpDah0hINi5E+RSp2g3vUY0dacuRgUDextlT833ovzKYSzsBDCTMYSWV" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="/.me/assets/hiero.css">
 </head>
 <body>
 <div id="root"></div>
@@ -87,9 +94,15 @@
   </header>
   <main class="markdown-body doc">
     {{ content }}
+    {% if page.related %}{% comment %} front matter related: a list of docs pages ("Operators.html") or site paths; shown as cards with JS, as a list without {% endcomment %}
+    <h2 id="see-also">See also</h2>
+    <ul>{% for r in page.related %}{% if r contains "/" %}{% assign rk = r %}{% else %}{% assign rk = "/.me/docs/" | append: r %}{% endif %}{% assign rc = site.data.doc_cards[rk] %}
+      <li><a href="{{ rc.href | default: r }}">{{ rc.title | default: r }}</a>{% if rc.desc %}: {{ rc.desc }}{% endif %}</li>{% endfor %}
+    </ul>{% endif %}
   </main>
 </div>
+<script type="application/json" id="doc-card-index">{% if site.data.doc_cards %}{{ site.data.doc_cards | jsonify }}{% else %}{}{% endif %}</script>
 {% for s in page.scripts %}<script src="{{ s | relative_url }}"></script>
-{% endfor %}<script src="/.me/assets/landing-gui/landing-gui.js?v=17" onerror="document.documentElement.classList.remove('gui-boot')"></script>
+{% endfor %}<script src="/.me/assets/landing-gui/landing-gui.js?v=35" onerror="document.documentElement.classList.remove('gui-boot')"></script>
 </body>
 </html>

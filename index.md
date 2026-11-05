@@ -6,14 +6,12 @@ description: A Gateway To the Web. Listens on ports 80 and 443 and routes every 
 image: https://suign.github.io/assets/imgs/netget1.png
 ---
 
-<div class="me-landing-hero" markdown="0">
-<div class="me-hero-wrap" style="text-align:center;max-width:560px;margin:0 auto 8px;">
+<div class="netget-hero" markdown="0" style="text-align:center;max-width:560px;margin:0 auto 16px;">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://res.cloudinary.com/dkwnxf6gm/image/upload/v1780604418/netget_gmdvxy-removebg-preview_eibfyi.png" />
     <img src="https://suign.github.io/assets/imgs/netget1.png" alt="netget" width="280" />
   </picture>
   <p style="margin-top:8px;opacity:.8;">Listens on <strong>ports 80 and 443</strong> and routes every incoming request to the right place — a static folder, a port, or any HTTP service.</p>
-</div>
 </div>
 
 <div class="me-demo-cards" markdown="0">

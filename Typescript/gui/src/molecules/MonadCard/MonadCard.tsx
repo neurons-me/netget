@@ -10,8 +10,8 @@ import ExposureChip, { ExposureLevel } from '../../atoms/ExposureChip/ExposureCh
 export interface MonadCardProps {
   /** Monad name (registered module name) */
   name: string;
-  /** Port the monad is running on */
-  port: number;
+  /** Port the monad is running on. Absent on the anonymous view of /apps (only an admin session sees ports). */
+  port?: number;
   /** Trust level relative to gateway owner — from .me kernel */
   trust: TrustLevel;
   /** Network reach — from monad registration */
@@ -57,9 +57,11 @@ export default function MonadCard({
         <Typography variant="subtitle1" fontWeight={700} noWrap sx={{ mr: 1 }}>
           {name}
         </Typography>
-        <Typography variant="caption" sx={{ opacity: 0.6, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-          :{port}
-        </Typography>
+        {port ? (
+          <Typography variant="caption" sx={{ opacity: 0.6, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+            :{port}
+          </Typography>
+        ) : null}
       </Box>
 
       {/* Badges: trust + exposure */}

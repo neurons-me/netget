@@ -32,6 +32,7 @@ import { upsertReportedApp } from "../../../../runtime/appRegistry.ts";
 import { getNetgetDataDir } from "../../../../utils/netgetPaths.js";
 import { buildGatewayIdentityResponse, arrivalOf, localIPv4 } from "../../../../modules/NetGetX/Auth/gatewayIdentityResponse.ts";
 import { publicDomainView } from "../../../../gateway/domainsProjection.mjs";
+import { publicAppView } from "../../../../gateway/appsProjection.mjs";
 import net from "net";
 import { describeDomain } from "../../../../runtime/domainStatus.ts";
 
@@ -410,8 +411,10 @@ router.get("/gateway-identity", (req, res) => {
 });
 
 // ─── Live monad mesh ─────────────────────────────────────────────────────────
-// Reads apps.json and scrubs stale entries (mirrors scrub_dead_apps in apps.lua).
-router.get("/apps", (req, res) => {
+// Reads apps.json and scrubs stale entries (mirrors scrub_dead_apps in apps.lua). Public route: anyone gets the
+// allow-listed view (gateway/appsProjection.mjs: names, kind, trust, liveness); the full entries (ports, pid, working
+// directory, exposure policy) only an admin session with gateway:read, as /domains. Every door gives the same answer.
+router.get("/apps", async (req, res) => {
     const registry = readJson(runtimePath('apps.json'));
 
     if (!registry) {
@@ -425,9 +428,10 @@ router.get("/apps", (req, res) => {
         return lastSeen > 0 && (nowMs - lastSeen) <= ttl;
     });
 
+    const apps = (await mayReadGatewayConfig(req)) ? liveApps : liveApps.map(publicAppView);
     return res.json({
-        apps: liveApps,
-        count: liveApps.length,
+        apps,
+        count: apps.length,
         updatedAt: registry.updatedAt ?? null,
     });
 });
@@ -692,11 +696,12 @@ router.post('/domains/metadata', (req, res) => {
 // docs/DomainStoreSplitBrain.md. Response shapes here are copied verbatim
 // from domains.lua's, so Domains.jsx needed zero changes for this migration.
 
-// Who may read a domain's full configuration (target, certificate and key paths, contact, graph path): an admin
+// Who may read the gateway's full configuration -- a domain's target, certificate and key paths, contact, graph path;
+// an app's port, process and policy (GET /apps): an admin
 // session with a verified bearer (the same credential /logs asks for), never a header a caller could set. Anyone
-// else gets the allow-listed projection (gateway/domainsProjection.mjs). The router is not affected: it reads
+// else gets the allow-listed projection (gateway/domainsProjection.mjs, gateway/appsProjection.mjs). The router is not affected: it reads
 // domain-map.json, which the store regenerates from the full records.
-async function mayReadDomainConfig(req) {
+async function mayReadGatewayConfig(req) {
     const authHeader = String(req.header('Authorization') || '');
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
     if (!token) return false;
@@ -710,7 +715,7 @@ async function mayReadDomainConfig(req) {
 
 router.get('/domains', async (req, res) => {
     const rows = await getDomains();
-    const domains = (await mayReadDomainConfig(req)) ? rows : rows.map(publicDomainView);
+    const domains = (await mayReadGatewayConfig(req)) ? rows : rows.map(publicDomainView);
     res.json({ success: true, domains, count: domains.length });
 });
 
@@ -737,7 +742,7 @@ router.get('/main-server-namespace', async (req, res) => {
 router.get('/domains/:parent/subdomains', async (req, res) => {
     const parent = req.params.parent;
     const domains = await getDomains();
-    const full = await mayReadDomainConfig(req);
+    const full = await mayReadGatewayConfig(req);
     const subdomains = domains
         .filter((d) => d.subdomain === parent && d.domain !== parent)
         .map((d) => (full ? d : publicDomainView(d)));

@@ -42,6 +42,45 @@ default `http://127.0.0.1:5173`). Running it does **not** make this visible at `
 itself — the mode has to be switched too; otherwise nginx keeps serving whichever build
 `local-dist`/`package-dist` currently point at.
 
+### `this.gui`: source in dev, dist in the build (deliberate)
+
+- **`npm run dev` compiles `this.gui` from GUI's source** (`packages/GUI/Typescript`), through
+  [`thisGuiSource.js`](thisGuiSource.js): `this.gui` and every subpath it exports resolve to source files, and GUI's own
+  private `@/...` paths resolve only for files inside GUI. A GUI edit shows here live (HMR), with no GUI build and no
+  publish. `THIS_GUI=dist npm run dev` serves GUI's built `dist/` instead, to compare.
+- **`npm run build` still uses `this.gui`'s package, i.e. GUI's built `dist/`.** What a release contains is decided by
+  that dist, not by GUI's source. **A passing build here does not show that recent GUI changes are in it**: rebuild GUI
+  first (`npm run build` in `packages/GUI/Typescript`), then build here.
+- **One copy each of React, React Router, MUI and Emotion**, this app's own: `dedupe` and the aliases in
+  [`vite.config.js`](vite.config.js) pin them; in dev, `@mui/system` and `@emotion/cache` are pinned too.
+- **`NETGET_BACKEND`** points the dev server's API proxy elsewhere (default: the real backend, `http://127.0.0.1:3000`).
+  Before anything in the browser can write, make sure it is not the real one.
+
+**Check:** `npm run check:gui-source` ([`scripts/check-gui-source.mjs`](scripts/check-gui-source.mjs)) starts the dev
+server in source mode and then in dist mode, with the API proxy on a dead port and every request outside the dev server
+aborted by the browser, so nothing reaches a real service. Through two doors of the shell (`127.0.0.1`, and
+`local.cleaker` mapped to `127.0.0.1` inside that browser only), it checks:
+- where `this.gui` came from;
+- one copy of each shared dependency;
+- that every route loads directly (the same as a reload);
+- client-side navigation and Back;
+- in source mode, that a GUI source edit reaches the open page.
+
+It needs Playwright with Chromium, taken from `packages/GUI/Typescript`. For a netget checkout outside `all.this`, set
+`ALL_THIS` to the `all.this` directory (the dev server reads it too). It exits 1 on any `FAIL`. `KNOWN` lines are the
+gaps below.
+
+**Known gaps** (reported as `KNOWN` by the check):
+- **React Router:** GUI declares `react-router-dom` 7, this app installs 6, and GUI resolves to this app's 6. One copy
+  avoids two router contexts, but it does not make the two APIs compatible. Every route above loads in both modes, and
+  navigation and Back pass in source mode (in dist mode, only where the dist being served has the links). Anything of
+  GUI's that uses a router API that exists only in 7 would break here.
+- **`/domains` and `/logs` are not covered by the check.** Loaded directly on the dev server, they go to the API proxy
+  (the same paths), not to the app; through nginx they serve the app. Their links appear only while the backend
+  answers, and the check runs with none.
+- **Dist mode bundles a second `@mui/system`** (GUI's dist imports it from GUI's own install) **and more than one
+  `@emotion/cache`**. Only dev pins them; the build was left as it was.
+
 ## Static (production-shaped) closure
 
 ```bash

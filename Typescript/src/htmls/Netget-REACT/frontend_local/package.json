@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:gui-source": "node scripts/check-gui-source.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

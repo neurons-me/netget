@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { thisGuiSourceAliases } from './thisGuiSource.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,8 +19,28 @@ function emotionDir(name) {
   return fs.existsSync(own) ? own : hoisted;
 }
 
-export default defineConfig({
-  plugins: [react()],
+// Where the dev server proxies the API (netget's Express backend). Default: the real one on :3000.
+// NETGET_BACKEND points it elsewhere (a disposable backend, or a dead port for checks that must not write).
+const BACKEND = process.env.NETGET_BACKEND || 'http://127.0.0.1:3000';
+
+// all.this/ (this file is at all.this/modules/netget/Typescript/src/htmls/Netget-REACT/frontend_local/).
+// ALL_THIS overrides it for a checkout of netget outside all.this (a worktree elsewhere).
+const ALL_THIS = process.env.ALL_THIS ? path.resolve(process.env.ALL_THIS) : path.resolve(__dirname, '../../../../../../../');
+
+// The @mui/system this app's @mui/material resolves (nested under it, or hoisted next to it).
+function muiSystemDir() {
+  const nested = path.resolve(__dirname, 'node_modules/@mui/material/node_modules/@mui/system');
+  return fs.existsSync(nested) ? nested : path.resolve(__dirname, 'node_modules/@mui/system');
+}
+
+export default defineConfig(({ command }) => {
+  // `vite` (serve) compiles this.gui from its source (thisGuiSource.js); `vite build` keeps its package (dist).
+  const guiSource = command === 'serve' && process.env.THIS_GUI !== 'dist' ? thisGuiSourceAliases(ALL_THIS) : null;
+  if (guiSource) console.log(`[this.gui] source: ${guiSource.guiRoot} (${guiSource.version}); THIS_GUI=dist serves the build`);
+  return {
+  plugins: [react(), ...(guiSource ? [guiSource.plugin] : [])],
+
+  ...(guiSource ? { define: { __GUI_VERSION__: JSON.stringify(guiSource.version) } } : {}),
 
   resolve: {
     // Force single copies of shared deps regardless of where the symlinked source resolves them.
@@ -30,6 +51,7 @@ export default defineConfig({
     // property 'basename' of ... useContext(...) as it is null" at runtime.
     dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-router', 'react-router-dom', 'this.gui', '@mui/material', '@emotion/react', '@emotion/styled'],
     alias: [
+      ...(guiSource ? guiSource.aliases : []),
       { find: 'netget.gui/compounds', replacement: path.join(NETGET_GUI, 'compounds/index.ts') },
       { find: 'netget.gui/molecules', replacement: path.join(NETGET_GUI, 'molecules/index.ts') },
       { find: 'netget.gui/atoms',     replacement: path.join(NETGET_GUI, 'atoms/index.ts') },
@@ -49,6 +71,10 @@ export default defineConfig({
       // exact same file, and therefore the exact same ThemeContext.
       { find: '@mui/material', replacement: path.resolve(__dirname, 'node_modules/@mui/material') },
       { find: '@mui/icons-material', replacement: path.resolve(__dirname, 'node_modules/@mui/icons-material') },
+      // GUI's source imports @mui/system directly: the copy this app's @mui/material uses, not GUI's own.
+      ...(guiSource ? [{ find: /^@mui\/system(?=\/|$)/, replacement: muiSystemDir() }] : []),
+      // and one @emotion/cache: @mui/styled-engine reached this app's copy while @emotion/react reached the hoisted one.
+      ...(guiSource ? [{ find: /^@emotion\/cache$/, replacement: emotionDir('cache') }] : []),
       // One copy of Emotion for everyone. This app declares it (so a clean
       // `npm install` here has it); on a machine where an older install hoisted
       // it to netget/Typescript's node_modules instead, that copy is used.
@@ -98,36 +124,38 @@ export default defineConfig({
       // outside the allowed root, not a missing-file 404). Allowing the
       // whole monorepo root once here covers this.gui's dist AND any
       // other cross-package dev import the same way.
-      allow: [path.resolve(__dirname, '../../../../../../../')],
+      // all.this (this.gui and its sources), and netget's own Typescript/ (this app, netget.gui, hoisted deps): the same
+      // directory when netget is checked out inside all.this, two when it is not.
+      allow: [ALL_THIS, path.resolve(__dirname, '../../../../')],
     },
     proxy: {
-      '/gateway-identity':      'http://127.0.0.1:3000',
-      '/setup':                 'http://127.0.0.1:3000',
-      '/main-server-namespace': 'http://127.0.0.1:3000',
-      '/apps':             'http://127.0.0.1:3000',
-      '/logs':             'http://127.0.0.1:3000',
-      '/ip-info':          'http://127.0.0.1:3000',
-      '/port-info':        'http://127.0.0.1:3000',
-      '/healthcheck':      'http://127.0.0.1:3000',
-      '/openresty-status':  'http://127.0.0.1:3000',
-      '/openresty-restart': 'http://127.0.0.1:3000',
-      '/openresty-stop':    'http://127.0.0.1:3000',
-      '/frontend-mode':     'http://127.0.0.1:3000',
+      '/gateway-identity':      BACKEND,
+      '/setup':                 BACKEND,
+      '/main-server-namespace': BACKEND,
+      '/apps':             BACKEND,
+      '/logs':             BACKEND,
+      '/ip-info':          BACKEND,
+      '/port-info':        BACKEND,
+      '/healthcheck':      BACKEND,
+      '/openresty-status':  BACKEND,
+      '/openresty-restart': BACKEND,
+      '/openresty-stop':    BACKEND,
+      '/frontend-mode':     BACKEND,
       // Domains.jsx + WelcomeNetget.jsx — added late (this allowlist wasn't
       // updated when those pages/fetches were added), so these fell through
       // to Vite's own SPA fallback (index.html, not JSON) whenever this dev
       // server was hit directly instead of through netget's real gateway.
-      '/entrypoints':      'http://127.0.0.1:3000',
-      '/surfaces':         'http://127.0.0.1:3000',
-      '/domains':          'http://127.0.0.1:3000',
-      '/add-domain':       'http://127.0.0.1:3000',
-      '/update-domain':    'http://127.0.0.1:3000',   // the panel's "Cambiar destino"
-      '/delete-domain':    'http://127.0.0.1:3000',
-      '/provision-cert':   'http://127.0.0.1:3000',
-      '/check-auth':       'http://127.0.0.1:3000',
-      '/explain':          'http://127.0.0.1:3000',
-      '/inspect':          'http://127.0.0.1:3000',
-      '/cleaker':          'http://127.0.0.1:3000',
+      '/entrypoints':      BACKEND,
+      '/surfaces':         BACKEND,
+      '/domains':          BACKEND,
+      '/add-domain':       BACKEND,
+      '/update-domain':    BACKEND,   // the panel's "Cambiar destino"
+      '/delete-domain':    BACKEND,
+      '/provision-cert':   BACKEND,
+      '/check-auth':       BACKEND,
+      '/explain':          BACKEND,
+      '/inspect':          BACKEND,
+      '/cleaker':          BACKEND,
       // Real NRP-style addresses (typed straight into the browser's URL
       // bar, e.g. local.netget/@someuser/profile) need this so the backend
       // resolves them instead of falling through to the SPA shell — but a
@@ -143,11 +171,12 @@ export default defineConfig({
       // imports (mount, Theme, styles.css, the runtime/react/devtools
       // subpaths) ever actually loaded.
       '/@': {
-        target: 'http://127.0.0.1:3000',
+        target: BACKEND,
         bypass(req) {
           if (/^\/@(vite|fs|id|react-refresh)\b/.test(req.url)) return req.url;
         },
       },
     },
   },
+  };
 });

@@ -10,22 +10,7 @@ image_alt: netget
 ---
 
 <div class="netget-hero" markdown="0">
-<div class="doc-svg" data-max="280px" markdown="0"><figure style="margin:0 auto 8px;max-width:280px">
-  <span class="netget-mark" role="img" aria-label="netget"></span>
-</figure></div>
-<style>
-.netget-hero .netget-mark {
-  display: block;
-  width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
-  aspect-ratio: 631 / 237;
-  color: inherit;
-  background-color: currentColor;
-  -webkit-mask: url("{{ '/assets/netget-mark.png' | relative_url }}") center / contain no-repeat;
-  mask: url("{{ '/assets/netget-mark.png' | relative_url }}") center / contain no-repeat;
-}
-</style>
+<div class="doc-svg" data-max="280px" markdown="0"><span class="netget-mark" role="img" aria-label="netget" style="display:block;width:100%;max-width:280px;margin:0 auto;aspect-ratio:631 / 237;color:inherit;background-color:currentColor;-webkit-mask:url('{{ '/assets/netget-mark.png' | relative_url }}') center / contain no-repeat;mask:url('{{ '/assets/netget-mark.png' | relative_url }}') center / contain no-repeat;mask-mode:alpha;"></span></div>
   <p style="margin-top:8px;opacity:.8;text-align:center;max-width:560px;margin-left:auto;margin-right:auto;">Listens on <strong>ports 80 and 443</strong> and routes every incoming request to the right place — a static folder, a port, or any HTTP service.</p>
 </div>
 

@@ -3,7 +3,10 @@ layout: gui-doc
 title: netget
 crumb: netget
 description: A Gateway To the Web. Listens on ports 80 and 443 and routes every incoming request.
-image: https://suign.github.io/assets/imgs/netget1.png
+image: https://neurons-me.github.io/netget/assets/netget-og.png
+image_width: 1200
+image_height: 630
+image_alt: netget
 ---
 
 <div class="netget-hero" markdown="0">

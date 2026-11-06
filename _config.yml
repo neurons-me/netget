@@ -2,7 +2,7 @@ title: netget
 description: A Gateway To the Web.
 url: https://neurons-me.github.io
 baseurl: "/netget"
-image: "https://suign.github.io/assets/imgs/netget1.png"
+image: "https://neurons-me.github.io/netget/assets/netget-og.png"
 
 remote_theme: neurons-me/neurons-me
 
@@ -42,7 +42,7 @@ exclude:
 me_theme:
   brand: netget
   favicon: "https://res.cloudinary.com/dkwnxf6gm/image/upload/v1760629064/neurons.me_b50f6a.png?v=brain"
-  social_image: "https://suign.github.io/assets/imgs/netget1.png"
+  social_image: "https://neurons-me.github.io/netget/assets/netget-og.png"
   nav:
     - label: All.This
       url: https://neurons-me.github.io/all.this/

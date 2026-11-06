@@ -51,8 +51,10 @@ itself — the mode has to be switched too; otherwise nginx keeps serving whiche
 - **`npm run build` still uses `this.gui`'s package, i.e. GUI's built `dist/`.** What a release contains is decided by
   that dist, not by GUI's source. **A passing build here does not show that recent GUI changes are in it**: rebuild GUI
   first (`npm run build` in `packages/GUI/Typescript`), then build here.
-- **One copy each of React, React Router, MUI and Emotion**, this app's own: `dedupe` and the aliases in
-  [`vite.config.js`](vite.config.js) pin them; in dev, `@mui/system` and `@emotion/cache` are pinned too.
+- **One copy each of React, React Router, MUI and Emotion**, this app's own, in dev and in the build: `dedupe` and the
+  aliases in [`vite.config.js`](vite.config.js) pin them, `@mui/system` and `@emotion/cache` included. (GUI's dist
+  imports `@mui/system` as an external; unpinned, the build took it from GUI's own install: a second `@mui/system`,
+  `@mui/styled-engine` and `@mui/utils`.)
 - **`NETGET_BACKEND`** points the dev server's API proxy elsewhere (default: the real backend, `http://127.0.0.1:3000`).
   Before anything in the browser can write, make sure it is not the real one.
 
@@ -77,6 +79,21 @@ authorizes: that is the backend's own tests.
 **React Router:** one version for this app and GUI, the major GUI declares (`react-router-dom` 7; `netget.gui`
 declares the same). The check asserts it.
 
+**A production build:** `npm run check:gui-source -- --build <dir>` serves a build (`vite preview`, the API proxied to
+the dead port and then to the test backend) and runs the same checks on it, plus: the copy of each shared package
+**in the bundle**, read from its sourcemaps, and that its GUI pages are today's GUI. Build it with `--sourcemap`, into a
+directory of its own, never the one nginx serves (`build.outDir` is that one), e.g.:
+
+```bash
+# GUI's library, into a temporary package (GUI's own dist/ is not touched)
+(cd <all.this>/packages/GUI/Typescript && npx vite build --outDir /tmp/gui-check/this.gui/dist --emptyOutDir)
+cp <all.this>/packages/GUI/Typescript/package.json /tmp/gui-check/this.gui/
+ln -s <all.this>/packages/GUI/Typescript/node_modules /tmp/gui-check/this.gui/node_modules
+# this app against it (node_modules/this.gui pointed at it for the build, then pointed back)
+npx vite build --outDir /tmp/gui-check/app --emptyOutDir --sourcemap
+npm run check:gui-source -- --build /tmp/gui-check/app
+```
+
 The browser stops every request and WebSocket outside the dev server (the dev server's own HMR socket aside) and counts
 them; none is sent.
 
@@ -86,13 +103,15 @@ It needs Playwright with Chromium, taken from `packages/GUI/Typescript`. For a n
 `package.json` is relative to `all.this`. It exits 1 on any `FAIL`. `KNOWN` lines are the
 gaps below.
 
-**Known gaps** (reported as `KNOWN` by the check):
+`KNOWN` is narrow: in dist mode, only the absence of a GUI page (`/GUI` and its pages) that GUI's committed `dist/`
+predates; in any mode, only `/users` and `/monad` offered disabled because they need a monad. A page error, a broken
+route, any other missing link or a duplicated package fails in every mode.
+
+**Known gaps:**
 - **`/domains` and `/logs` loaded directly on the dev server with no backend** go to the API proxy (the same paths).
   With the test backend they are covered: it answers a page load with the app, as nginx does.
 - **A page load signs out:** the session is not kept across a reload today, so a bookmarked `/logs` comes up signed out.
   The check asserts that it does so cleanly, not that it should.
-- **Dist mode bundles a second `@mui/system`** (GUI's dist imports it from GUI's own install) **and more than one
-  `@emotion/cache`**. Only dev pins them; the build was left as it was.
 
 ## Static (production-shaped) closure
 

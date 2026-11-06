@@ -71,10 +71,12 @@ export default defineConfig(({ command }) => {
       // exact same file, and therefore the exact same ThemeContext.
       { find: '@mui/material', replacement: path.resolve(__dirname, 'node_modules/@mui/material') },
       { find: '@mui/icons-material', replacement: path.resolve(__dirname, 'node_modules/@mui/icons-material') },
-      // GUI's source imports @mui/system directly: the copy this app's @mui/material uses, not GUI's own.
-      ...(guiSource ? [{ find: /^@mui\/system(?=\/|$)/, replacement: muiSystemDir() }] : []),
-      // and one @emotion/cache: @mui/styled-engine reached this app's copy while @emotion/react reached the hoisted one.
-      ...(guiSource ? [{ find: /^@emotion\/cache$/, replacement: emotionDir('cache') }] : []),
+      // @mui/system: the copy this app's @mui/material uses, for everyone. GUI imports it directly (its source) or as an
+      // external (its dist, which otherwise resolved it from GUI's own install: a second @mui/system, @mui/styled-engine
+      // and @mui/utils in the production bundle -- a second ThemeContext for every part that reads it).
+      { find: /^@mui\/system(?=\/|$)/, replacement: muiSystemDir() },
+      // and one @emotion/cache: @mui/styled-engine could reach this app's copy while @emotion/react reached a hoisted one.
+      { find: /^@emotion\/cache$/, replacement: emotionDir('cache') },
       // One copy of Emotion for everyone. This app declares it (so a clean
       // `npm install` here has it); on a machine where an older install hoisted
       // it to netget/Typescript's node_modules instead, that copy is used.

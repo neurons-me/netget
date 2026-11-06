@@ -33,7 +33,7 @@ const { chromium } = createRequire(path.join(GUI, 'package.json'))('playwright')
 const PORT = Number(process.env.CHECK_PORT || 5199);
 const DEAD_BACKEND = 'http://127.0.0.1:9';
 const MARK_FILE = path.join(GUI, 'src/runtime/addressAxis.ts');
-const SHARED = ['react', 'react-dom', 'react-router', 'react-router-dom', '@mui/material', '@mui/system', '@emotion/react', '@emotion/styled', '@emotion/cache'];
+const SHARED = ['react', 'react-dom', 'react-router', 'react-router-dom', '@mui/material', '@mui/system', '@mui/styled-engine', '@mui/utils', '@mui/private-theming', '@emotion/react', '@emotion/styled', '@emotion/cache'];
 
 // Every door renders the same shell (App.jsx); two doors are checked so both entry paths are covered.
 const SHELL_ROUTES = ['/', '/.me', '/users', '/blockchain', '/netget', '/monad', '/terms-and-conditions', '/privacy-policy', '/GUI', '/GUI/themes', '/GUI/themes/typography', '/GUI/layout'];
@@ -63,7 +63,49 @@ const SURFACES = [
   },
 ];
 
-const modes = process.argv.slice(2).filter((a) => a === 'source' || a === 'dist');
+const argv = process.argv.slice(2);
+// `--build <dir>`: check a production build of this app (served by `vite preview`) instead of the dev server.
+const BUILD_DIR = argv.includes('--build') ? path.resolve(argv[argv.indexOf('--build') + 1] || '') : null;
+const modes = BUILD_DIR ? ['build'] : argv.filter((a) => a === 'source' || a === 'dist');
+const GUI_VERSION = JSON.parse(fs.readFileSync(path.join(GUI, 'package.json'), 'utf8')).version;
+// What today's GUI shows on its own pages: a build or a dist that lacks it is not the current GUI.
+const CURRENT_GUI = { '/GUI': `.GUI ${GUI_VERSION}`, '/GUI/themes': 'GUI / Themes', '/GUI/layout': 'parts declared' };
+// KNOWN is narrow on purpose. Only these, and only as named here, are not failures:
+// - in dist mode, the absence of a page today's GUI has and GUI's committed dist/ predates (that dist is rebuilt
+//   separately);
+// - in any mode, a link offered disabled because its page needs a monad this check runs without.
+// Anything else missing, any page error, a broken route or a duplicated package fails, in every mode.
+const NEWER_THAN_DIST = new Set(['/GUI', '/GUI/themes', '/GUI/themes/typography', '/GUI/layout']);
+const NEEDS_A_LAYER = new Set(['/users', '/monad']);
+
+// The app as each mode serves it: the dev server, or `vite preview` of a production build.
+function startApp(mode, backend, { force = false } = {}) {
+  const env = { ...process.env, BROWSER: 'none', NETGET_BACKEND: backend };
+  if (mode === 'dist') env.THIS_GUI = 'dist';
+  else delete env.THIS_GUI;
+  const args = mode === 'build'
+    ? ['vite', 'preview', '--outDir', BUILD_DIR, '--port', String(PORT), '--strictPort']
+    : ['vite', '--port', String(PORT), '--strictPort', ...(force ? ['--force'] : [])];
+  return spawn('npx', args, { cwd: APP, env, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+// Which on-disk copy of each shared package a production bundle contains, from its sourcemaps.
+function bundleRoots(dir) {
+  const roots = {};
+  const guiDist = new Set();
+  const maps = fs.readdirSync(dir).filter((f) => f.endsWith('.map'));
+  for (const f of maps) {
+    const map = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    for (const src of map.sources) {
+      const abs = path.resolve(dir, map.sourceRoot || '', src);
+      const m = abs.match(/^(.*\/node_modules\/(@[^/]+\/[^/]+|[^/@][^/]*))\//);
+      if (m && SHARED.includes(m[2])) (roots[m[2]] ??= new Set()).add(m[1]);
+      const d = abs.match(/^(.*\/dist)\//);
+      if (d && /this\.gui|packages\/GUI/.test(d[1])) guiDist.add(d[1]);
+    }
+  }
+  return { roots, guiDist, maps: maps.length };
+}
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let failed = 0;
 const report = (status, name, info = '') => {
@@ -74,10 +116,7 @@ const verdict = (pass) => (pass ? 'PASS' : 'FAIL');
 
 async function checkMode(mode) {
   console.log(`\n== ${mode} ==`);
-  const env = { ...process.env, BROWSER: 'none', NETGET_BACKEND: DEAD_BACKEND };
-  if (mode === 'dist') env.THIS_GUI = 'dist';
-  else delete env.THIS_GUI;
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort', '--force'], { cwd: APP, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const vite = startApp(mode, DEAD_BACKEND, { force: true });
   let log = '';
   vite.stdout.on('data', (d) => (log += d));
   vite.stderr.on('data', (d) => (log += d));
@@ -86,7 +125,7 @@ async function checkMode(mode) {
   try {
     for (let i = 0; i < 80 && !log.includes('Local:'); i++) await wait(500);
     if (!log.includes('Local:')) throw new Error(`dev server did not start:\n${log}`);
-    report(verdict(log.includes('[this.gui] source:') === (mode === 'source')), 'dev server mode', mode);
+    report(verdict(mode === 'build' || log.includes('[this.gui] source:') === (mode === 'source')), mode === 'build' ? 'serving the production build' : 'dev server mode', mode === 'build' ? BUILD_DIR : mode);
 
     browser = await chromium.launch({ args: [`--host-resolver-rules=MAP local.cleaker 127.0.0.1`] });
     const urls = [];
@@ -111,6 +150,7 @@ async function checkMode(mode) {
         // Refused calls are expected (dead backend, aborted outside requests); anything else is a real error.
         if (m.type() === 'error' && !/Failed to load resource|ERR_FAILED|ECONNREFUSED|net::|status of 50\d|Failed to fetch/.test(m.text())) errors.push(m.text().split('\n')[0]);
       });
+      const predatesDist = new Set();
       const settle = async () => { await page.waitForLoadState('load'); await wait(1500); };
       const main = async () => (await page.evaluate(() => (document.querySelector('main') ?? document.body).innerText)).replace(/\s+/g, ' ').trim();
 
@@ -124,6 +164,31 @@ async function checkMode(mode) {
         const at = await page.evaluate(() => location.pathname);
         report(verdict(shown.length > 0 && at === route && errors.length === 0), `direct ${route}`,
           errors.length ? errors.slice(0, 2).join(' | ') : at !== route ? `ended at ${at}` : JSON.stringify(shown.slice(0, 60)));
+        if (CURRENT_GUI[route] && surface.name === 'namespace door') {
+          const has = shown.includes(CURRENT_GUI[route]);
+          const predates = !has && mode === 'dist' && NEWER_THAN_DIST.has(route);
+          if (predates) predatesDist.add(route);
+          report(has ? 'PASS' : predates ? 'KNOWN' : 'FAIL', `${route} is today's GUI`, has ? `"${CURRENT_GUI[route]}"` : `"${CURRENT_GUI[route]}" not shown${predates ? ' (this dist predates it)' : ''}`);
+        }
+      }
+      // Themes: the mode toggle changes the page's colors through the shared theme, and back.
+      if (surface.name === 'namespace door') {
+        await page.goto(`${surface.origin}/GUI/themes`);
+        await settle();
+        const toggle = page.locator('button[aria-label="toggle theme mode"]').first();
+        const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+        if (await toggle.count()) {
+          const before = await bg();
+          await toggle.click(); await wait(800);
+          const after = await bg();
+          await toggle.click(); await wait(800);
+          const restored = await bg();
+          report(verdict(before !== after && restored === before), 'theme mode toggles the page colors and back', `${before} -> ${after} -> ${restored}`);
+        } else {
+          // KNOWN only when the themes page itself was found to predate this dist above.
+          const predates = predatesDist.has('/GUI/themes');
+          report(predates ? 'KNOWN' : 'FAIL', 'theme mode toggles the page colors and back', `no theme mode toggle${predates ? ' (this dist predates the page)' : ''}`);
+        }
       }
       for (const route of surface.proxiedInDev) report('KNOWN', `${route} not covered`, 'the dev server proxies it to the API, and its link needs a backend that answers');
 
@@ -133,11 +198,14 @@ async function checkMode(mode) {
         await settle();
         const link = tab ? page.getByRole('tab', { name: tab }).first() : page.locator(`a[href="${to}"]`).first();
         if ((await link.count()) && (await link.getAttribute('aria-disabled')) === 'true') {
-          report('KNOWN', `navigate ${from} -> ${to} -> Back`, `the link is offered disabled: its page needs a layer this check runs without`);
+          report(NEEDS_A_LAYER.has(to) ? 'KNOWN' : 'FAIL', `navigate ${from} -> ${to} -> Back`, NEEDS_A_LAYER.has(to)
+            ? 'the link is offered disabled: its page needs a monad this check runs without'
+            : 'the link is offered disabled, and nothing says it should be');
           continue;
         }
         if (!(await link.count())) {
-          report(mode === 'dist' ? 'KNOWN' : 'FAIL', `navigate ${from} -> ${to} -> Back`, `no link to ${to} on ${from}${mode === 'dist' ? ' in this dist' : ''}`);
+          const predates = mode === 'dist' && NEWER_THAN_DIST.has(to) && NEWER_THAN_DIST.has(from);
+          report(predates ? 'KNOWN' : 'FAIL', `navigate ${from} -> ${to} -> Back`, `no link to ${to} on ${from}${predates ? ' (this dist predates both pages)' : ''}`);
           continue;
         }
         await page.evaluate(() => { window.__navMark = 'kept'; });
@@ -173,6 +241,17 @@ async function checkMode(mode) {
       await page.close();
     }
 
+    if (mode === 'build') {
+      const { roots: bundled, guiDist, maps } = bundleRoots(path.join(BUILD_DIR, 'assets'));
+      report(verdict(maps > 0), 'the build has sourcemaps to inspect', maps ? `${maps} maps` : 'build it with --sourcemap');
+      report(verdict(guiDist.size === 1), 'this.gui origin', [...guiDist].join(' + ') || 'no this.gui dist in the bundle');
+      const dup = Object.entries(bundled).filter(([, set]) => set.size > 1);
+      report(verdict(maps > 0 && dup.length === 0 && ['react', 'react-dom', 'react-router', '@mui/material', '@mui/system', '@emotion/react', '@emotion/cache'].every((k) => bundled[k])),
+        'one copy each of React, Router, MUI, Emotion in the bundle',
+        dup.length ? dup.map(([k, set]) => `${k}: ${[...set].join(' + ')}`).join('; ') : `${Object.keys(bundled).length} packages, one root each`);
+      console.log(`     requests outside the app, stopped by the browser (never sent): ${outside.length}${outside.length ? ` (${[...new Set(outside)].slice(0, 4).join(', ')})` : ''}`);
+      return;
+    }
     // Where this.gui came from, and one copy of each shared dependency.
     const fromSource = urls.filter((u) => u.includes('/packages/GUI/Typescript/src/') || u.includes('/packages/GUI/Typescript/index.ts')).length;
     const fromDist = urls.filter((u) => u.includes('/packages/GUI/Typescript/dist/')).length;
@@ -185,17 +264,10 @@ async function checkMode(mode) {
       }
     }
     const multi = Object.entries(roots).filter(([, s]) => s.size > 1);
-    const core = multi.filter(([k]) => !['@mui/system', '@emotion/cache'].includes(k));
     const fromGuiModules = urls.filter((u) => /packages\/GUI\/Typescript\/node_modules\/(react|react-dom|react-router|react-router-dom|@mui|@emotion)\//.test(u));
     const describe = (list) => list.map(([k, s]) => `${k}: ${[...s].map((r) => path.relative(ALL_THIS, r)).join(' + ')}`).join('; ');
-    if (mode === 'dist' && multi.length && !core.length && !fromGuiModules.length) {
-      // GUI's dist imports @mui/system from GUI's own install (it is external there), and @emotion/cache is reached
-      // from two installs. Only source mode pins them (vite.config.js); the build is left as it was (README).
-      report('KNOWN', 'one copy each of React, Router, MUI, Emotion', `dist duplicates ${describe(multi)}`);
-    } else {
-      report(verdict(multi.length === 0 && fromGuiModules.length === 0), 'one copy each of React, Router, MUI, Emotion',
-        multi.length ? describe(multi) : fromGuiModules.length ? fromGuiModules[0] : `${Object.keys(roots).length} packages, one root each`);
-    }
+    report(verdict(multi.length === 0 && fromGuiModules.length === 0), 'one copy each of React, Router, MUI, Emotion',
+      multi.length ? describe(multi) : fromGuiModules.length ? fromGuiModules[0] : `${Object.keys(roots).length} packages, one root each`);
 
     // One React Router for the app and GUI, the major GUI declares.
     const installed = ['react-router', 'react-router-dom'].map((p) => JSON.parse(fs.readFileSync(path.join(APP, 'node_modules', p, 'package.json'), 'utf8')).version);
@@ -222,10 +294,7 @@ async function checkWithBackend(mode) {
   console.log(`\n== ${mode}, with the test backend ==`);
   const origin = `http://127.0.0.1:${PORT}`;
   const backend = await startTestBackend({ appOrigin: origin });
-  const env = { ...process.env, BROWSER: 'none', NETGET_BACKEND: backend.origin };
-  if (mode === 'dist') env.THIS_GUI = 'dist';
-  else delete env.THIS_GUI;
-  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], { cwd: APP, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const vite = startApp(mode, backend.origin);
   let log = '';
   vite.stdout.on('data', (d) => (log += d));
   vite.stderr.on('data', (d) => (log += d));

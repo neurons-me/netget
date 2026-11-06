@@ -23,6 +23,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startTestBackend, DOMAIN_ROW, LOG_LINE } from './testBackend.mjs';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // ALL_THIS overrides it for a checkout of netget outside all.this (a worktree elsewhere).
@@ -94,6 +95,10 @@ async function checkMode(mode) {
       console.log(`  -- ${surface.name} (${surface.origin})`);
       const page = await browser.newPage();
       let errors = [];
+      // WebSockets are not covered by page.route: closed here, and counted, before they open.
+      // (the dev server's own HMR socket is let through).
+      const devHost = new URL(surface.origin).host;
+      await page.context().routeWebSocket((u) => u.host !== devHost, (ws) => { outside.push(`WS ${ws.url()}`); ws.close(); });
       await page.route('**/*', (route) => {
         const u = route.request().url();
         if (u.startsWith(surface.origin) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue();
@@ -101,10 +106,10 @@ async function checkMode(mode) {
         return route.abort();
       });
       page.on('request', (r) => urls.push(r.url()));
-      page.on('pageerror', (e) => errors.push(String(e)));
+      page.on('pageerror', (e) => errors.push(String(e).split('\n')[0]));
       page.on('console', (m) => {
         // Refused calls are expected (dead backend, aborted outside requests); anything else is a real error.
-        if (m.type() === 'error' && !/Failed to load resource|ERR_FAILED|ECONNREFUSED|net::|status of 50\d|Failed to fetch/.test(m.text())) errors.push(m.text());
+        if (m.type() === 'error' && !/Failed to load resource|ERR_FAILED|ECONNREFUSED|net::|status of 50\d|Failed to fetch/.test(m.text())) errors.push(m.text().split('\n')[0]);
       });
       const settle = async () => { await page.waitForLoadState('load'); await wait(1500); };
       const main = async () => (await page.evaluate(() => (document.querySelector('main') ?? document.body).innerText)).replace(/\s+/g, ' ').trim();
@@ -192,7 +197,14 @@ async function checkMode(mode) {
         multi.length ? describe(multi) : fromGuiModules.length ? fromGuiModules[0] : `${Object.keys(roots).length} packages, one root each`);
     }
 
-    console.log(`     requests outside the dev server, aborted by the browser (never sent): ${outside.length}`);
+    // One React Router for the app and GUI, the major GUI declares.
+    const installed = ['react-router', 'react-router-dom'].map((p) => JSON.parse(fs.readFileSync(path.join(APP, 'node_modules', p, 'package.json'), 'utf8')).version);
+    const guiRange = JSON.parse(fs.readFileSync(path.join(GUI, 'package.json'), 'utf8')).peerDependencies?.['react-router-dom'] || '';
+    const guiMajor = (guiRange.match(/(\d+)\./) || [])[1];
+    const majors = new Set(installed.map((v) => v.split('.')[0]));
+    report(verdict(majors.size === 1 && [...majors][0] === guiMajor && (roots['react-router']?.size ?? 0) <= 1 && (roots['react-router-dom']?.size ?? 0) <= 1),
+      'one React Router, the version GUI declares', `react-router ${installed[0]}, react-router-dom ${installed[1]}; GUI declares ${guiRange}`);
+    console.log(`     requests outside the dev server, stopped by the browser (never sent): ${outside.length}${outside.length ? ` (${[...new Set(outside)].slice(0, 4).join(", ")})` : ""}`);
     const refused = (log.match(/http proxy error/g) || []).length;
     console.log(`     API calls proxied to the dead backend ${DEAD_BACKEND} (refused): ${refused}`);
   } finally {
@@ -204,6 +216,165 @@ async function checkMode(mode) {
   }
 }
 
-for (const mode of modes.length ? modes : ['source', 'dist']) await checkMode(mode);
+// With the test backend (scripts/testBackend.mjs): Domains, Logs, a session and the permissions that follow from it.
+// The dev server proxies the API to that backend; the browser still aborts every request outside the dev server.
+async function checkWithBackend(mode) {
+  console.log(`\n== ${mode}, with the test backend ==`);
+  const origin = `http://127.0.0.1:${PORT}`;
+  const backend = await startTestBackend({ appOrigin: origin });
+  const env = { ...process.env, BROWSER: 'none', NETGET_BACKEND: backend.origin };
+  if (mode === 'dist') env.THIS_GUI = 'dist';
+  else delete env.THIS_GUI;
+  const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], { cwd: APP, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let log = '';
+  vite.stdout.on('data', (d) => (log += d));
+  vite.stderr.on('data', (d) => (log += d));
+  let browser;
+  const outside = [];
+  const warnings = new Set();
+  try {
+    for (let i = 0; i < 80 && !log.includes('Local:'); i++) await wait(500);
+    if (!log.includes('Local:')) throw new Error(`dev server did not start:\n${log}`);
+    browser = await chromium.launch();
+
+    const open = async () => {
+      const context = await browser.newContext();
+      // WebSockets are not covered by page.route: any but the dev server's own HMR socket is closed, and counted.
+      await context.routeWebSocket((u) => u.host !== new URL(origin).host, (ws) => { outside.push(`WS ${ws.url()}`); ws.close(); });
+      const page = await context.newPage();
+      const errors = [];
+      await page.route('**/*', (route) => {
+        const u = route.request().url();
+        if (u.startsWith(origin) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue();
+        outside.push(`${route.request().method()} ${u}`);
+        return route.abort();
+      });
+      page.on('pageerror', (e) => errors.push(String(e).split('\n')[0]));
+      page.on('console', (m) => {
+        if (m.type() !== 'error' || /Failed to load resource|status of 404|WebSocket|net::/.test(m.text())) return;
+        // React's development warnings (keys, props) are logged as errors; they are noted, not failures.
+        if (/^Warning: /.test(m.text())) warnings.add(m.text().split('\n')[0].replace(/%s/g, '').trim());
+        else errors.push(m.text().split('\n')[0]);
+      });
+      await page.goto(`${origin}/`);
+      await page.waitForLoadState('load');
+      await wait(2000);
+      return { context, page, errors };
+    };
+    const text = (page) => page.evaluate(() => document.body.innerText);
+    const offered = (page) => page.evaluate(() => Object.fromEntries(['/domains', '/logs'].map((href) => {
+      const a = document.querySelector(`a[href="${href}"]`);
+      return [href, a ? (a.getAttribute('aria-disabled') === 'true' ? 'disabled' : 'yes') : 'no'];
+    })));
+    const until = (page, fn, arg, timeout = 6000) => page.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
+    const signIn = async (page) => {
+      const way = page.getByText(/Open your \.me/i).first();
+      if (await way.count()) await way.click();
+      await until(page, () => !!document.querySelector('input[type=password]'));
+      await page.fill('input[type=text]:not([placeholder])', 'ana');
+      await page.fill('input[type=password]', 'secret-a');
+      await page.click('button:has-text(".me"):not([disabled])', { timeout: 5000 });
+      return until(page, () => /Sign out/i.test(document.body.innerText));
+    };
+    const offeredAfterAuth = async (page, expect) => {
+      await until(page, (e) => ['/domains', '/logs'].every((h) => {
+        const a = document.querySelector(`a[href="${h}"]`);
+        return (a ? (a.getAttribute('aria-disabled') === 'true' ? 'disabled' : 'yes') : 'no') === e[h];
+      }), expect, 6000);
+      return offered(page);
+    };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+    // 1. No session: neither is offered, and typing their routes does not show them.
+    {
+      backend.setScenario('none');
+      const { context, page, errors } = await open();
+      const o = await offered(page);
+      report(verdict(o['/domains'] !== 'yes' && o['/logs'] !== 'yes'), 'no session: Domains and Logs not offered', JSON.stringify(o));
+      for (const [route, marker] of [['/domains', DOMAIN_ROW.domain], ['/logs', LOG_LINE.path]]) {
+        await page.goto(`${origin}${route}`);
+        await wait(2500);
+        report(verdict(!(await text(page)).includes(marker) && errors.length === 0), `no session: ${route} typed directly is not shown`, errors.slice(0, 1).join(''));
+      }
+      await context.close();
+    }
+
+    // 2. The owner (recognized, with logs-read): both offered; their pages show the backend's data; navigation and Back.
+    {
+      backend.setScenario('owner');
+      const { context, page, errors } = await open();
+      report(verdict(await signIn(page)), 'owner: signs in through the selected link');
+      const o = await offeredAfterAuth(page, { '/domains': 'yes', '/logs': 'yes' });
+      report(verdict(same(o, { '/domains': 'yes', '/logs': 'yes' })), 'owner: Domains and Logs offered', JSON.stringify(o));
+      const start = await page.evaluate(() => location.pathname);
+      await page.evaluate(() => { window.__navMark = 'kept'; });
+      const steps = [];
+      for (const [route, marker] of [['/domains', DOMAIN_ROW.domain], ['/logs', LOG_LINE.path]]) {
+        errors.length = 0;
+        const link = page.locator(`a[href="${route}"]`).first();
+        if (!(await link.count())) { report('FAIL', `owner: ${route} by its link`, 'no link'); continue; }
+        await link.click();
+        const shown = await until(page, (m) => document.body.innerText.includes(m), marker);
+        steps.push(await page.evaluate(() => location.pathname));
+        report(verdict(shown && errors.length === 0), `owner: ${route} by its link shows the backend's data`, shown ? `"${marker}"` : errors.slice(0, 1).join('') || `"${marker}" not shown`);
+      }
+      errors.length = 0;
+      await page.goBack(); await wait(1200);
+      const back1 = await page.evaluate(() => [location.pathname, window.__navMark]);
+      await page.goBack(); await wait(1200);
+      const back2 = await page.evaluate(() => [location.pathname, window.__navMark]);
+      report(verdict(same(steps, ['/domains', '/logs']) && back1[0] === '/domains' && back2[0] === start && back1[1] === 'kept' && back2[1] === 'kept' && errors.length === 0),
+        `owner: ${start} -> /domains -> /logs, Back, Back (no reload)`, `${steps.join(' -> ')}, back to ${back1[0]}, ${back2[0]}${back2[1] ? '' : ' (reloaded)'}`);
+      // Sign out, reached inside the app (the card's page): what the session granted is no longer offered.
+      errors.length = 0;
+      const me = page.locator('a[href="/.me"]').first();
+      if (await me.count()) await me.click();
+      await until(page, () => /Sign out/i.test(document.body.innerText));
+      const out = page.getByText(/Sign out/i).first();
+      if (await out.count()) {
+        await out.click();
+        const after = await offeredAfterAuth(page, { '/domains': 'no', '/logs': 'no' });
+        report(verdict(after['/domains'] !== 'yes' && after['/logs'] !== 'yes'), 'owner: after Sign out, neither is offered', JSON.stringify(after));
+      } else report('FAIL', 'owner: after Sign out, neither is offered', `no Sign out control: ${(await text(page)).replace(/\s+/g, ' ').slice(0, 160)}`);
+      // A reload (a bookmarked /logs): the session is not kept across a page load today, so the page is not shown,
+      // and the app comes up with no error.
+      errors.length = 0;
+      await page.goto(`${origin}/logs`);
+      await wait(3000);
+      const shownAfterReload = (await text(page)).includes(LOG_LINE.path);
+      report(verdict(!shownAfterReload && errors.length === 0), 'owner: reload on /logs comes up signed out, Logs not shown', errors.slice(0, 1).join(''));
+      await context.close();
+    }
+
+    // 3. An admin without logs-read: Domains, not Logs. 4. Recognized but neither: nothing.
+    for (const [scenario, expect, name] of [
+      ['admin', { '/domains': 'yes', '/logs': 'no' }, 'admin without logs-read: Domains offered, Logs not'],
+      ['stranger', { '/domains': 'no', '/logs': 'no' }, 'signed in, not an admin: neither offered'],
+    ]) {
+      backend.setScenario(scenario);
+      const { context, page } = await open();
+      const signed = await signIn(page);
+      const o = await offeredAfterAuth(page, expect);
+      report(verdict(signed && same(o, expect)), name, JSON.stringify(o));
+      await context.close();
+    }
+
+    for (const w of warnings) console.log(`     note: React warned: ${w}`);
+    report(verdict(backend.writes.length === 0), 'no write reached the test backend', backend.writes.slice(0, 5).join(', '));
+    if (backend.unknown.length) console.log(`     asked of the test backend and not answered: ${[...new Set(backend.unknown)].join(', ')}`);
+    console.log(`     requests outside the dev server, stopped by the browser (never sent): ${outside.length}${outside.length ? ` (${[...new Set(outside)].slice(0, 4).join(', ')})` : ''}`);
+  } finally {
+    await browser?.close();
+    vite.kill('SIGTERM');
+    for (let i = 0; i < 20 && vite.exitCode === null; i++) await wait(200);
+    if (vite.exitCode === null) vite.kill('SIGKILL');
+    await backend.close();
+  }
+}
+
+for (const mode of modes.length ? modes : ['source', 'dist']) {
+  await checkMode(mode);
+  await checkWithBackend(mode);
+}
 console.log(failed ? `\n${failed} failed` : '\nno failures');
 process.exit(failed ? 1 : 0);

@@ -42,7 +42,7 @@
     "build-storybook": "storybook build -o storybook-static"
   },
   "dependencies": {
-    "react-router-dom": "^6.30.3"
+    "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@storybook/addon-docs": "^8.0.0",

@@ -66,18 +66,31 @@ aborted by the browser, so nothing reaches a real service. Through two doors of 
 - client-side navigation and Back;
 - in source mode, that a GUI source edit reaches the open page.
 
+Then it runs each mode again against **the test backend** ([`scripts/testBackend.mjs`](scripts/testBackend.mjs)), a
+stand-in for netget's backend and its monad with controlled answers: who `/check-auth` recognizes is a scenario (no
+session, owner with logs-read, admin without it, signed in but neither), signatures are not checked, and a write is
+answered, recorded and never applied (the check asserts there was none). Through the real sign-in and the real
+capability resolvers it checks that Domains and Logs are offered exactly to whom they should be, that their pages show
+the backend's data, navigation and Back across them, Sign out, and a reload. It does not prove what a real backend
+authorizes: that is the backend's own tests.
+
+**React Router:** one version for this app and GUI, the major GUI declares (`react-router-dom` 7; `netget.gui`
+declares the same). The check asserts it.
+
+The browser stops every request and WebSocket outside the dev server (the dev server's own HMR socket aside) and counts
+them; none is sent.
+
 It needs Playwright with Chromium, taken from `packages/GUI/Typescript`. For a netget checkout outside `all.this`, set
-`ALL_THIS` to the `all.this` directory (the dev server reads it too). It exits 1 on any `FAIL`. `KNOWN` lines are the
+`ALL_THIS` to the `all.this` directory (the dev server reads it too). Install such a checkout with
+`npm install --no-save --no-package-lock "this.gui@file:<all.this>/packages/GUI/Typescript"`: the `file:` path in
+`package.json` is relative to `all.this`. It exits 1 on any `FAIL`. `KNOWN` lines are the
 gaps below.
 
 **Known gaps** (reported as `KNOWN` by the check):
-- **React Router:** GUI declares `react-router-dom` 7, this app installs 6, and GUI resolves to this app's 6. One copy
-  avoids two router contexts, but it does not make the two APIs compatible. Every route above loads in both modes, and
-  navigation and Back pass in source mode (in dist mode, only where the dist being served has the links). Anything of
-  GUI's that uses a router API that exists only in 7 would break here.
-- **`/domains` and `/logs` are not covered by the check.** Loaded directly on the dev server, they go to the API proxy
-  (the same paths), not to the app; through nginx they serve the app. Their links appear only while the backend
-  answers, and the check runs with none.
+- **`/domains` and `/logs` loaded directly on the dev server with no backend** go to the API proxy (the same paths).
+  With the test backend they are covered: it answers a page load with the app, as nginx does.
+- **A page load signs out:** the session is not kept across a reload today, so a bookmarked `/logs` comes up signed out.
+  The check asserts that it does so cleanly, not that it should.
 - **Dist mode bundles a second `@mui/system`** (GUI's dist imports it from GUI's own install) **and more than one
   `@emotion/cache`**. Only dev pins them; the build was left as it was.
 

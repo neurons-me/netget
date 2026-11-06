@@ -153,6 +153,9 @@ export default defineConfig(({ command }) => {
       '/delete-domain':    BACKEND,
       '/provision-cert':   BACKEND,
       '/check-auth':       BACKEND,
+      // signedRequest.ts's fetchGatewayHostname(): the hostname a signed request is bound to. Without it here the dev
+      // server answered with index.html, and no session was ever recognized as the gateway's owner or an admin.
+      '/me/gateway':       BACKEND,
       '/explain':          BACKEND,
       '/inspect':          BACKEND,
       '/cleaker':          BACKEND,

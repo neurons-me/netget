@@ -161,8 +161,9 @@ const GATEWAY_RESOLVERS = createGatewayResolvers({
   deps: gatewayDeps,
 });
 
-// netget's brand in the bars: the same glyph its item has in the GUI document (GUI.document.json, `glyph:𓆣`).
-const NETGET_BRAND = { label: 'Netget', glyph: '𓆣' };
+// netget's brand in the bars: a patch cable -- netget is a router, a network patch bay (mount, point, change,
+// disconnect); the same icon its item has in the GUI document (GUI.document.json). 𓆣 is Beatle's (the crawler).
+const NETGET_BRAND = { label: 'Netget', icon: 'cable' };
 
 const resolveHere = (declared) => resolveEntry({ host: HOST_NAME, boot: PROVIDER_BOOT, declared, pathname: window.location.pathname });
 

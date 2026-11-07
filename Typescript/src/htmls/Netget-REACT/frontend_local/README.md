@@ -33,8 +33,9 @@ proves.
 ## Dev server
 
 ```bash
-npm run dev     # Vite dev server, default :5173
-npm run build   # → ../dist (i.e. src/htmls/Netget-REACT/dist)
+npm run dev             # this app's dev server (:5173), this.gui as a package (its build)
+npm run dev:gui-source  # the same, with this.gui compiled from GUI's source (for working on GUI inside this app)
+npm run build           # production build (build.outDir: the folder the main server serves -- see vite.config.js)
 ```
 
 `npm run dev` is what `mainServerFrontendMode: "dev"` points nginx at (`mainServerFrontendDevUrl`,
@@ -42,15 +43,22 @@ default `http://127.0.0.1:5173`). Running it does **not** make this visible at `
 itself — the mode has to be switched too; otherwise nginx keeps serving whichever build
 `local-dist`/`package-dist` currently point at.
 
-### `this.gui`: source in dev, dist in the build (deliberate)
+### Three ways of working, each with its own dev mode
 
-- **`npm run dev` compiles `this.gui` from GUI's source** (`packages/GUI/Typescript`), through
-  [`thisGuiSource.js`](thisGuiSource.js): `this.gui` and every subpath it exports resolve to source files, and GUI's own
-  private `@/...` paths resolve only for files inside GUI. A GUI edit shows here live (HMR), with no GUI build and no
-  publish. `THIS_GUI=dist npm run dev` serves GUI's built `dist/` instead, to compare.
-- **`npm run build` still uses `this.gui`'s package, i.e. GUI's built `dist/`.** What a release contains is decided by
-  that dist, not by GUI's source. **A passing build here does not show that recent GUI changes are in it**: rebuild GUI
-  first (`npm run build` in `packages/GUI/Typescript`), then build here.
+| Work | Where | Command |
+|---|---|---|
+| GUI on its own (components, themes, pages, its shell) | GUI's repo | Storybook and GUI's demo |
+| **This app** (its pages, Domains, Logs) | here | **`npm run dev`**: `this.gui` as a package, as any app consumes it |
+| GUI inside this app (seeing a GUI change with the whole stack) | here | `npm run dev:gui-source` (optional) |
+
+- **`npm run dev` and `npm run build` use `this.gui`'s package, i.e. GUI's built `dist/`.** This app is an app: it does
+  not compile GUI. A GUI change shows here after GUI is rebuilt (`npm run build` in `packages/GUI/Typescript`), or,
+  later, after a published version is installed -- what any other app would see. **A passing build here does not
+  show that recent GUI changes are in it**: rebuild GUI first.
+- **`npm run dev:gui-source`** (`THIS_GUI=source`) compiles `this.gui` from GUI's source (`packages/GUI/Typescript`),
+  through [`thisGuiSource.js`](thisGuiSource.js): `this.gui` and every subpath it exports resolve to source files, and
+  GUI's own private `@/...` paths resolve only for files inside GUI. A GUI edit shows here live (HMR), with no GUI
+  build and no publish. It is a tool for working on GUI, not this app's normal mode, and never what a build uses.
 - **One copy each of React, React Router, MUI and Emotion**, this app's own, in dev and in the build: `dedupe` and the
   aliases in [`vite.config.js`](vite.config.js) pin them, `@mui/system` and `@emotion/cache` included. (GUI's dist
   imports `@mui/system` as an external; unpinned, the build took it from GUI's own install: a second `@mui/system`,
@@ -59,7 +67,7 @@ itself — the mode has to be switched too; otherwise nginx keeps serving whiche
   Before anything in the browser can write, make sure it is not the real one.
 
 **Check:** `npm run check:gui-source` ([`scripts/check-gui-source.mjs`](scripts/check-gui-source.mjs)) starts the dev
-server in source mode and then in dist mode, with the API proxy on a dead port and every request outside the dev server
+server in source mode (`dev:gui-source`) and then in dist mode (`dev`), with the API proxy on a dead port and every request outside the dev server
 aborted by the browser, so nothing reaches a real service. Through two doors of the shell (`127.0.0.1`, and
 `local.cleaker` mapped to `127.0.0.1` inside that browser only), it checks:
 - where `this.gui` came from;

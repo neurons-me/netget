@@ -7,8 +7,8 @@
 // through a plugin that resolves them only for files inside GUI. The dev server compiles GUI the way GUI's own Vite
 // does, and HMR picks up its edits.
 //
-// Used by `vite` (serve) only: `vite build` keeps resolving `this.gui` through its package (dist), so what a
-// release contains does not change here. `THIS_GUI=dist npm run dev` also serves the dist, to compare.
+// Used only by `npm run dev:gui-source` (THIS_GUI=source): `npm run dev` and `vite build` resolve `this.gui` through
+// its package (dist), as any app does, so what a release contains does not change here.
 import fs from 'fs';
 import path from 'path';
 

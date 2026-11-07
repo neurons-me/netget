@@ -34,9 +34,15 @@ function muiSystemDir() {
 }
 
 export default defineConfig(({ command }) => {
-  // `vite` (serve) compiles this.gui from its source (thisGuiSource.js); `vite build` keeps its package (dist).
-  const guiSource = command === 'serve' && process.env.THIS_GUI !== 'dist' ? thisGuiSourceAliases(ALL_THIS) : null;
-  if (guiSource) console.log(`[this.gui] source: ${guiSource.guiRoot} (${guiSource.version}); THIS_GUI=dist serves the build`);
+  // This app consumes this.gui as a package, like any app: `npm run dev` and `vite build` use its build (dist).
+  // `npm run dev:gui-source` (THIS_GUI=source) compiles it from GUI's source instead (thisGuiSource.js): for working on
+  // GUI inside this app. GUI's own dev mode is Storybook and its demo, in GUI's repo.
+  const guiSource = command === 'serve' && process.env.THIS_GUI === 'source' ? thisGuiSourceAliases(ALL_THIS) : null;
+  if (command === 'serve') {
+    console.log(guiSource
+      ? `[this.gui] source: ${guiSource.guiRoot} (${guiSource.version}) -- GUI edits show live`
+      : '[this.gui] package: its build (dist); `npm run dev:gui-source` compiles GUI from source');
+  }
   return {
   plugins: [react(), ...(guiSource ? [guiSource.plugin] : [])],
 

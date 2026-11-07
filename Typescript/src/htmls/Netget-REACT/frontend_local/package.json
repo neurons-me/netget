@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:gui-source": "THIS_GUI=source vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

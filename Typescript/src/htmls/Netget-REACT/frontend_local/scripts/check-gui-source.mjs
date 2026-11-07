@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks this app's dev server against this.gui, in both modes (thisGuiSource.js):
-//   source  `vite` (default): this.gui compiled from packages/GUI/Typescript's source, edits live
-//   dist    `THIS_GUI=dist vite`: this.gui through its package (GUI's built dist/, what `vite build` uses)
+//   dist    `npm run dev` (this app's default): this.gui through its package (GUI's built dist/, what `vite build` uses)
+//   source  `npm run dev:gui-source` (THIS_GUI=source): this.gui compiled from packages/GUI/Typescript's source, live
 //
 // What it checks, per mode, through two doors of the same shell (App.jsx): 127.0.0.1 and local.cleaker:
 // - where this.gui came from (source modules vs dist files)
@@ -81,7 +81,7 @@ const NEEDS_A_LAYER = new Set(['/users', '/monad']);
 // The app as each mode serves it: the dev server, or `vite preview` of a production build.
 function startApp(mode, backend, { force = false } = {}) {
   const env = { ...process.env, BROWSER: 'none', NETGET_BACKEND: backend };
-  if (mode === 'dist') env.THIS_GUI = 'dist';
+  if (mode === 'source') env.THIS_GUI = 'source';
   else delete env.THIS_GUI;
   const args = mode === 'build'
     ? ['vite', 'preview', '--outDir', BUILD_DIR, '--port', String(PORT), '--strictPort']

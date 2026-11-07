@@ -161,6 +161,9 @@ const GATEWAY_RESOLVERS = createGatewayResolvers({
   deps: gatewayDeps,
 });
 
+// netget's brand in the bars: the same glyph its item has in the GUI document (GUI.document.json, `glyph:𓆣`).
+const NETGET_BRAND = { label: 'Netget', glyph: '𓆣' };
+
 const resolveHere = (declared) => resolveEntry({ host: HOST_NAME, boot: PROVIDER_BOOT, declared, pathname: window.location.pathname });
 
 function EntryApp() {
@@ -199,6 +202,9 @@ function EntryApp() {
       capabilities={GATEWAY_RESOLVERS}
       capabilityScope={gatewayScope}
       hideBarItems={entry.hideBarItems}
+      // netget's own mark (whose page this is), apart from the person's QR: the QR is the person's, the brand is netget's
+      // (this.gui Roles-and-Territories.md, "Two marks in the bars").
+      brand={NETGET_BRAND}
       semanticPath={entry.semanticPath}
     />
   );

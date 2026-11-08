@@ -1562,16 +1562,22 @@ ${proxyHeaders}
   // domains fall through to the first server block (mkcert/self-signed cert).
   const publicDomainBlocks = (() => {
     let domains: string[] = [];
+    let staticDomains = new Set<string>();
     try {
       const mapPath = getDomainMapPath();
       if (fs.existsSync(mapPath)) {
         const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
         domains = Object.keys(map.domains || {});
+        staticDomains = new Set(domains.filter((d) => map.domains[d]?.type === 'static'));
       }
     } catch { /* ignore */ }
 
     const registered = new Set(domains);
     return domains.map(domain => {
+      // A static folder is served by the main conf's default server (its Lua reads the folder from domain-map.json and
+      // picks the certificate by SNI). The block below would send it to surface_proxy.lua, which answers only monads, so
+      // the site would get "no content" instead of its files.
+      if (staticDomains.has(domain)) return '';
       const letsencryptLiveRoot = process.env.NETGET_LETSENCRYPT_LIVE_DIR || '/etc/letsencrypt/live';
       const liveDir = path.join(letsencryptLiveRoot, domain);
       const certPath = path.join(liveDir, 'fullchain.pem');

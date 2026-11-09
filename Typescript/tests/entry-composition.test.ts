@@ -31,6 +31,7 @@ for (const [host, boot] of [['cleaker.me', bothBoot], ['www.cleaker.me', bothBoo
   assert.equal(e.isMainServerDoor, false, `${host}: not the main server's door`);
   assert.equal(e.canonicalPath, null);
   assert.equal(e.semanticPath, '/');
+  assert.equal(e.brand, null, `${host}: the page IS the namespace, so no app brand (netget's) over it`);
   assert.equal(needsDeclaration({ host, boot }), false, `${host}: nothing to wait for, the monad already declared the namespace`);
 }
 
@@ -43,6 +44,7 @@ for (const [host, boot] of [['cleaker.me', bothBoot], ['www.cleaker.me', bothBoo
   assert.equal(e.namespaceSource, 'declared');
   assert.equal(e.semanticPath, '/netget');
   assert.deepEqual(e.hideBarItems, ['users', 'blockchain', 'url', 'dashboard']);
+  assert.equal(e.brand, 'netget', "netget.site is netget's app: its brand");
   assert.equal(needsDeclaration({ host: 'netget.site', boot: null }), true, 'nginx-served: it must ask the gateway which door this is');
   assert.equal(resolveEntry({ host: 'netget.site', boot: null, declared: declaredMain, pathname: '/netget' }).canonicalPath, '/', 'an old /netget link moves to /');
 }

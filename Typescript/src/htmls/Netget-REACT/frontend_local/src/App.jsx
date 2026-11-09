@@ -205,7 +205,7 @@ function EntryApp() {
       hideBarItems={entry.hideBarItems}
       // netget's own mark (whose page this is), apart from the person's QR: the QR is the person's, the brand is netget's
       // (this.gui Roles-and-Territories.md, "Two marks in the bars").
-      brand={NETGET_BRAND}
+      brand={entry.brand === 'netget' ? NETGET_BRAND : undefined}
       semanticPath={entry.semanticPath}
     />
   );

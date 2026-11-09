@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Not on this gateway · netget</title>
+    <style>
+      /* One page for every gateway screen (one tree): a plain message, and the person's QR from cleaker.js in the corner. */
+      :root { color-scheme: light dark; --bg: #f4f6f7; --fg: #0f1720; --muted: #5b6b78; --line: rgba(15,23,32,.12); --accent: #0b7a75; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0d1214; --fg: #e8eded; --muted: #98a7b3; --line: rgba(232,237,237,.14); --accent: #4fd1c5; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+        font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      main { width: min(36rem, 100%); padding: 2rem 1.25rem; }
+      .eyebrow { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 .35rem; }
+      h1 { font-size: 1.35rem; margin: 0 0 .75rem; font-weight: 650; }
+      p { margin: .4rem 0; color: var(--muted); }
+      code { font-family: ui-monospace, Menlo, monospace; color: var(--fg); overflow-wrap: anywhere; }
+      .actions { margin-top: 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+      .button { display: inline-block; padding: .45rem .9rem; border: 1px solid var(--line); border-radius: 8px; color: var(--accent);
+        text-decoration: none; font-weight: 600; background: transparent; }
+      .button-secondary { color: var(--fg); }
+    </style>
+  </head>
+  <body data-netget-state="unknown-host">
+    <!-- Served as-is by the main conf's default server (index.html and NetgetErrorCodeHandler.html in its root) for a host
+         this gateway has no route for. Static: no placeholders, the host is read from the address. Same page as every
+         other gateway screen, with cleaker.js. -->
+    <main>
+      <p class="eyebrow">netget gateway</p>
+      <h1><code id="host"></code> is not on this gateway</h1>
+      <p>No route for this address here. If it is yours, point its DNS at this gateway and add it with <code>netget</code>.</p>
+    </main>
+    <script>document.getElementById('host').textContent = location.hostname;</script>
+    <script src="https://cdn.jsdelivr.net/npm/this.gui@4.4.3/dist/cleaker.js" integrity="sha384-Um9li/v82/OE78Ni3DZ+gk9nkZCMW+tKndOE0BshBDa0rzCUAetKCxkE1dvEDhMz" crossorigin="anonymous" data-corner="top-right"></script>
+  </body>
+</html>

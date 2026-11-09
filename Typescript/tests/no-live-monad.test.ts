@@ -27,8 +27,9 @@ const html = fs.readFileSync(noMonadHtmlPath, 'utf8');
 for (const placeholder of ['{{HOST}}', '{{ROOTSPACE}}', '{{HINT}}', '{{ERROR}}', '{{HOST_JSON}}']) {
   assert.ok(html.includes(placeholder), `no-monad.html missing ${placeholder}`);
 }
-assert.match(html, /this\.gui\.umd\.js/);
-assert.match(html, /ns-assets\/styles\.css/);
+// One page for every gateway screen: cleaker.js (pinned, SRI), not a second copy of the GUI (this.gui.umd.js + React).
+assert.match(html, /this\.gui@4\.4\.3\/dist\/cleaker\.js" integrity="sha384-/);
+assert.doesNotMatch(html, /this\.gui\.umd\.js|vendor\/react|ns-assets/);
 
 const surfaceProxyPath = fileURLToPath(
   new URL('../src/modules/NetGetX/OpenResty/lua/handlers/surface_proxy.lua', import.meta.url)

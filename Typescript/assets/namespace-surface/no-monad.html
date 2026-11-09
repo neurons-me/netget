@@ -1,87 +1,40 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/png" href="/favicon.png" />
-  <title>{{HOST}} — NetGet</title>
-  <link rel="stylesheet" href="/ns-assets/styles.css" />
-  <link rel="stylesheet" href="/ns-assets/material-symbols.css" />
-  <script>window.__THIS_GUI_DISABLE_AUTOBOOT__ = true;</script>
-  <style>
-    .netget-no-monad-banner {
-      font-family: 'Roboto', sans-serif;
-      background: #141e1d;
-      color: #e0f0ef;
-      padding: 16px 24px;
-      border-bottom: 1px solid #1a2528;
-    }
-    .netget-no-monad-banner h1 {
-      color: #17bdcc;
-      font-size: 1.1em;
-      letter-spacing: 1px;
-      margin: 0 0 6px;
-    }
-    .netget-no-monad-banner .row { font-size: 0.85em; color: #8aacaa; margin: 2px 0; }
-    .netget-no-monad-banner .row strong { color: #e0f0ef; }
-    .netget-no-monad-banner .cmd {
-      display: inline-block;
-      margin-top: 8px;
-      background: #0b1416;
-      border: 1px solid #1a2528;
-      border-radius: 6px;
-      padding: 6px 12px;
-      color: #17bdcc;
-      font-family: 'Courier New', monospace;
-      font-size: 0.85em;
-    }
-  </style>
-</head>
-<body>
-  <div class="netget-no-monad-banner">
-    <h1>NO LIVE MONAD</h1>
-    <div class="row"><strong>Host:</strong> {{HOST}}</div>
-    <div class="row"><strong>Rootspace:</strong> {{ROOTSPACE}}</div>
-    <div class="row"><strong>Reason:</strong> {{ERROR}}</div>
-    <div class="row">{{HINT}}</div>
-    <span class="cmd">monads start local</span>
-  </div>
-  <div id="root"></div>
-
-  <script src="/vendor/react/react.production.min.js"></script>
-  <script src="/vendor/react-dom/react-dom.production.min.js"></script>
-  <script src="/ns-assets/this.gui.umd.js"></script>
-
-  <script>
-    (function () {
-      window.__NETGET_DATA__ = {
-        host: {{HOST_JSON}},
-        rootspace: {{ROOTSPACE_JSON}},
-        hint: {{HINT_JSON}},
-        error: {{ERROR_JSON}}
-      };
-
-      const GUI = window.GUI;
-      if (!GUI || typeof GUI.mount !== 'function') {
-        document.getElementById('root').innerHTML =
-          '<p style="font-family:monospace;padding:2rem;color:#98a7b3">GUI not ready</p>';
-        return;
-      }
-
-      const endpoint = window.location.origin;
-      const pathname = window.location.pathname.replace(/\/$/, '') || null;
-      const blockPath = pathname || undefined;
-
-      GUI.mount({
-        type: 'Namespace',
-        props: {
-          endpoint,
-          defaultTab: 'blocks',
-          tabs: ['blocks'],
-          ...(blockPath ? { blockPath } : {}),
-        }
-      }, document.getElementById('root'), { showUnknown: true });
-    })();
-  </script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{HOST}} · no live monad</title>
+    <style>
+      /* One page for every gateway screen (one tree): a plain message, and the person's QR from cleaker.js in the corner. */
+      :root { color-scheme: light dark; --bg: #f4f6f7; --fg: #0f1720; --muted: #5b6b78; --line: rgba(15,23,32,.12); --accent: #0b7a75; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0d1214; --fg: #e8eded; --muted: #98a7b3; --line: rgba(232,237,237,.14); --accent: #4fd1c5; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+        font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      main { width: min(36rem, 100%); padding: 2rem 1.25rem; }
+      .eyebrow { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 .35rem; }
+      h1 { font-size: 1.35rem; margin: 0 0 .75rem; font-weight: 650; }
+      p { margin: .4rem 0; color: var(--muted); }
+      code { font-family: ui-monospace, Menlo, monospace; color: var(--fg); overflow-wrap: anywhere; }
+      .actions { margin-top: 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+      .button { display: inline-block; padding: .45rem .9rem; border: 1px solid var(--line); border-radius: 8px; color: var(--accent);
+        text-decoration: none; font-weight: 600; background: transparent; }
+      .button-secondary { color: var(--fg); }
+    </style>
+  </head>
+  <body data-netget-state="no-live-monad">
+    <main>
+      <p class="eyebrow">netget gateway</p>
+      <h1>No live monad for <code>{{HOST}}</code></h1>
+      <p>Namespace <code>{{ROOTSPACE}}</code>: {{ERROR}}.</p>
+      <p>{{HINT}}</p>
+      <p id="retry-meta"></p>
+    </main>
+    <script>
+      window.__NETGET_DATA__ = { host: {{HOST_JSON}}, rootspace: {{ROOTSPACE_JSON}}, hint: {{HINT_JSON}}, error: {{ERROR_JSON}} };
+      (function () { var meta = document.getElementById('retry-meta'), left = 10;
+        (function tick() { if (left <= 0) { location.reload(); return; } meta.textContent = 'Retrying in ' + left + 's…'; left -= 1; setTimeout(tick, 1000); })(); })();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/this.gui@4.4.3/dist/cleaker.js" integrity="sha384-Um9li/v82/OE78Ni3DZ+gk9nkZCMW+tKndOE0BshBDa0rzCUAetKCxkE1dvEDhMz" crossorigin="anonymous" data-corner="top-right"></script>
+  </body>
 </html>

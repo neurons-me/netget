@@ -43,6 +43,8 @@ export function resolveEntry({ host, boot, declared, pathname }) {
       canonicalPath: null,
       semanticPath: '/',
       hideBarItems: ['url', 'dashboard'],
+      // The page IS the namespace (rule 1): its own interface, no app's brand over it. netget is one of its routes (/netget).
+      brand: null,
     };
   }
   const door = mainServerDoor({ host, declared, pathname });
@@ -58,6 +60,8 @@ export function resolveEntry({ host, boot, declared, pathname }) {
     // Dashboard and URL are not in the rail for now. The main server's own door is netget's app, not the namespace, so its
     // directory views (Users, Blockchain) are not this app's navigation either. Icons only: the pages and routes remain.
     hideBarItems: door.isMainServerDoor ? ['users', 'blockchain', 'url', 'dashboard'] : ['url', 'dashboard'],
+    // Any other door is netget's app (case 2): the app's brand, apart from the person's QR.
+    brand: 'netget',
   };
 }
 

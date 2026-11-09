@@ -17,6 +17,8 @@ const dataDir = path.join(tmp, 'netget-data');
 fs.mkdirSync(path.join(dataDir, 'runtime'), { recursive: true });
 process.env.NETGET_DATA_DIR = dataDir;
 process.env.NETGET_MONAD_NAMESPACE = 'gateway-test.me';
+// the gateway's own main server (its door), as the operator set it
+fs.writeFileSync(path.join(dataDir, 'xConfig.json'), JSON.stringify({ mainServerName: 'main-door.example' }));
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const modulePath = path.resolve(here, '../src/gateway/monadModule.mjs');
@@ -97,6 +99,14 @@ try {
 
   // A real gateway route, answered by the real router: no setup code exists in
   // the disposable data dir, so a code is refused (401), as JSON.
+  // The gateway's own main server reads this monad cross-origin (netget.site -> cleaker.me): allowed without listing it
+  // anywhere; a foreign origin still is not (2026-11-09: netget.site's page got 403 ORIGIN_NOT_ALLOWED).
+  const fromDoor = await post('/setup/verify-code', { code: 'nope' }, { origin: 'https://main-door.example' });
+  assert.notEqual(fromDoor.status, 403, 'the main server door is an allowed origin');
+  const fromElsewhere = await post('/setup/verify-code', { code: 'nope' }, { origin: 'https://evil.example' });
+  assert.equal(fromElsewhere.status, 403, 'a foreign origin is still refused');
+  assert.equal((await fromElsewhere.json()).error, 'ORIGIN_NOT_ALLOWED');
+
   const verify = await post('/setup/verify-code', { code: 'nope' });
   assert.equal(verify.status, 401);
   assert.equal((await verify.json()).ok, false);

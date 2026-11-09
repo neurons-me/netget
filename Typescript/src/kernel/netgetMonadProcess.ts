@@ -93,6 +93,12 @@ let _mainServerNameCache: string | null = null;
  * boot; safe to call again later if an operator changes mainServerName
  * (e.g. after running the mainServer CLI) to pick up the new value without
  * a restart. */
+/** The operator-set main server name (xConfig.mainServerName, e.g. netget.site) as loaded by loadGatewayRootNamespaceCache(),
+ * or null when none is set. */
+export function getMainServerName(): string | null {
+  return _mainServerNameCache;
+}
+
 export async function loadGatewayRootNamespaceCache(): Promise<void> {
   try {
     const xConfig = await loadOrCreateXConfig();

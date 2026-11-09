@@ -124,12 +124,15 @@ export async function mount(app, ctx) {
   if (env.SEED) env.NETGET_GATEWAY_SEED ||= env.SEED;
 
   const routers = await loadRouters();
-  const { loadGatewayRootNamespaceCache } = await import('../kernel/netgetMonadProcess.ts');
+  const { loadGatewayRootNamespaceCache, getMainServerName } = await import('../kernel/netgetMonadProcess.ts');
   await loadGatewayRootNamespaceCache();
 
   // The namespace this monad serves signs claims for the gateway from its own
   // pages (cleaker.me -> netget.site), so it may call the gateway cross-origin.
-  const own = parseHostList(env.ME_NAMESPACE);
+  // The gateway's own main server (netget.site) is its door: its page reads this monad cross-origin
+  // (netget.site -> cleaker.me/apps/netget), so it is allowed too, from xConfig, not from an env list.
+  const mainDoor = getMainServerName();
+  const own = [...parseHostList(env.ME_NAMESPACE), ...(mainDoor ? [mainDoor] : [])];
   const { resolveAdminSession } = await import('../modules/NetGetX/Auth/adminSession.ts');
   const { GatewayClaimsManager } = await import('../modules/NetGetX/Auth/GatewayClaimsManager.ts');
   mountGatewayRouters(app, routers, {

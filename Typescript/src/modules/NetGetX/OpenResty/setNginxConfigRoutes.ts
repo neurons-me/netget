@@ -1626,6 +1626,16 @@ server {
     set $netget_logs_path ${layout.logDir};
     access_log ${layout.logDir}/netget_access.log netget_access;
     error_log  ${layout.logDir}/netget_error.log warn;
+
+    # ACME HTTP-01 for this domain: certbot's webroot (getAcmeWebroot() = <data dir>/html), answered before any location of
+    # the app. Without it the app's try_files answered the challenge with its index.html and Let's Encrypt refused
+    # ("reader size limit exceeded"): netget.site's renewal failed from 2026-10-31 until a manual renewal on 2026-11-09.
+    location ^~ /.well-known/acme-challenge/ {
+        root ${xConfig}/html;
+        default_type "text/plain";
+        try_files $uri =404;
+        access_log off;
+    }
 ${domainLocations}
 }
 `;

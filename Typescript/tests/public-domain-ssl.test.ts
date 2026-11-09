@@ -47,6 +47,15 @@ assert.match(conf, new RegExp(`ssl_certificate_key\\s+${path.join(certDir, 'priv
 // Domain without a cert dir must NOT get a server block.
 assert.doesNotMatch(conf, /server_name no-cert\.example;/);
 
+// The domain's block answers ACME HTTP-01 from certbot's webroot (<data dir>/html), BEFORE any location of the app: without it
+// the app's try_files answered the challenge with its index.html and the renewal failed (netget.site, 2026-10-31 .. 11-09).
+const netgetBlock = conf.slice(conf.indexOf('server_name netget.site;'));
+const acme = netgetBlock.indexOf('location ^~ /.well-known/acme-challenge/ {');
+assert.ok(acme > 0, 'the domain block has an ACME challenge location');
+assert.ok(acme < netgetBlock.indexOf('location / {') || netgetBlock.indexOf('location / {') < 0, 'it comes before the app\'s location /');
+assert.match(netgetBlock.slice(acme, acme + 300), new RegExp(`root ${path.join(tmpDataDir, 'html').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`), 'root = getAcmeWebroot()');
+assert.match(netgetBlock.slice(acme, acme + 300), /try_files \$uri =404;/);
+
 // A static domain with a cert must NOT get a block that proxies it to surface_proxy.lua.
 assert.doesNotMatch(conf, /server_name static\.example;/);
 

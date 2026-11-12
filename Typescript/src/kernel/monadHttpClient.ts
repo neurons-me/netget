@@ -35,6 +35,28 @@ export class MonadHttpError extends Error {
   }
 }
 
+/**
+ * The internal token goes only to a monad on this machine. netget's own monad origin comes from configuration
+ * (NETGET_MONAD_ORIGIN, or the local process record), never from a request; this makes the boundary explicit anyway:
+ * an origin that is not loopback http(s) gets no token, and the requests below refuse redirects (fetch keeps custom
+ * headers across a cross-origin redirect), so the token cannot follow an answer somewhere else.
+ */
+export function isTrustedMonadOrigin(transportOrigin: string): boolean {
+  try {
+    const url = new URL(transportOrigin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (url.username || url.password) return false;
+    const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return host === '127.0.0.1' || host === '::1' || host === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
+function internalHeadersFor(transportOrigin: string): Record<string, string> {
+  return isTrustedMonadOrigin(transportOrigin) ? internalHeaders() : {};
+}
+
 function normalizePath(raw: string): string {
   return String(raw || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
 }
@@ -61,8 +83,9 @@ export async function writeToMonad<TValue = unknown>(
       host: ns,
       // The gateway's routing records (domains.*, domainIndex.*) are written only by the
       // machine's own callers: the monad refuses them without this credential.
-      ...internalHeaders(),
+      ...internalHeadersFor(transportOrigin),
     },
+    redirect: 'error',
     // operator:'-' is the real tombstone marker the semantic memory layer
     // understands (modules/monad's memoryStore.ts buildSemanticBranchTreeForNamespace
     // deletes the path from any later branch read when it sees this) — not a
@@ -113,7 +136,12 @@ export async function readFromMonad<TValue = unknown>(
       accept: 'application/json',
       'x-forwarded-host': ns,
       host: ns,
+      // The gateway's routing records (domains.*, domainIndex.*) are not published by the monad's generic reads: only
+      // the machine's own callers read them, with the same credential they write them with. netget applies its own
+      // policy to what it then shows (GET /domains: the public projection, or the full record for gateway:read).
+      ...internalHeadersFor(transportOrigin),
     },
+    redirect: 'error',
   });
 
   if (res.status === 404) {

@@ -162,6 +162,7 @@ try {
     admins: { [alice.identityHash]: true, [bob.identityHash]: true },
     grants: { [alice.identityHash]: ['gateway:read'], [bob.identityHash]: bobScopes },
     pubkeys: {}, usernames: { [alice.identityHash]: 'alice', [bob.identityHash]: 'bob' },
+    namespaces: { [alice.identityHash]: alice.namespace, [bob.identityHash]: bob.namespace },
   }, null, 2));
   writeClaims(['gateway:read']);
 

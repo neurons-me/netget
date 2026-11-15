@@ -59,13 +59,15 @@ export async function signInThrough(origin: string, who: TestAdmin): Promise<str
   return verified.json.sessionToken as string;
 }
 
-export function writeGatewayClaims(claimsPath: string, gatewayId: string, owner: string, grants: Record<string, string[]>) {
+/** `namespaces`: identityHash -> the namespace its gateway authority is anchored to (monad.ai's authority record). */
+export function writeGatewayClaims(claimsPath: string, gatewayId: string, owner: string, grants: Record<string, string[]>, namespaces: Record<string, string>) {
   const identities = Object.keys(grants);
   fs.mkdirSync(path.dirname(claimsPath), { recursive: true });
   fs.writeFileSync(claimsPath, JSON.stringify({
     gatewayId, owner,
     admins: Object.fromEntries(identities.map((i) => [i, true])),
     grants, pubkeys: {}, usernames: Object.fromEntries(identities.map((i) => [i, i])),
+    namespaces,
   }, null, 2));
 }
 

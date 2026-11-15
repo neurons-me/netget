@@ -194,6 +194,8 @@ try {
     grants: { [alice.identityHash]: ['gateway:read'] },
     pubkeys: {},
     usernames: { [alice.identityHash]: 'alice' },
+    // the namespace alice's gateway authority is anchored to (monad.ai's gateway-authority record carries it)
+    namespaces: { [alice.identityHash]: alice.namespace },
   }, null, 2), 'utf8');
 
   // ── 1. Key A, valid: challenge -> real signature -> session works ──────
@@ -301,6 +303,56 @@ try {
   // ── 6. Owner unchanged throughout the entire rotation. ──────────────────
   const finalClaims = new GatewayClaimsManager().read();
   assert.equal(finalClaims?.owner, alice.identityHash, 'owner must never change just from rotating which key signs for the same identity');
+
+  // ── 7. The SAME identityHash held by another namespace (a legitimately
+  // linked second namespace, with its own active key) is not the anchored
+  // one: no admin session. Authority is the identity as held by the
+  // namespace it is anchored to, never the bare identityHash.
+  {
+    const handle = 'alice-two';
+    const namespace = `${handle}.${rootNamespace}`;
+    const branchSeed = await deriveBranchProofSeed('alice-two-secret', handle);
+    const { privateKey, publicKey } = await importEd25519SigningKey(branchSeed);
+    const publicKeyRaw = Buffer.from(await crypto.subtle.exportKey('raw', publicKey)).toString('base64url');
+    const timestamp = Date.now();
+    const message = normalizeProofMessage({ identityHash: alice.identityHash, expression: handle, namespace, rootNamespace, challenge: null, timestamp });
+    const linkSignature = await alice.sign(normalizeProofMessage({ op: 'identity-link', identityHash: alice.identityHash, fromNamespace: alice.namespace, toNamespace: namespace, toPublicKey: publicKeyRaw, timestamp }));
+    const second = await post(origin, '/', {
+      operation: 'claim', namespace, identityHash: alice.identityHash,
+      proof: { message, signature: await signEd25519Proof(privateKey, message), publicKey: publicKeyRaw, timestamp },
+      link: { fromNamespace: alice.namespace, timestamp, signature: linkSignature },
+    });
+    assert.equal(second.status, 201, JSON.stringify(second.json));
+    const secondIdentity = { namespace, identityHash: alice.identityHash, sign: (m: string) => signEd25519Proof(privateKey, m) };
+    const keyC = await generateDeviceKey();
+    const keyCId = await registerFirstKeychainKey(origin, secondIdentity, keyC, 'second namespace key');
+    const challengeC = issueAdminSessionChallenge(alice.identityHash);
+    const verifyC = await verifyAdminSessionChallenge(alice.identityHash, namespace, keyCId, await keyC.sign(challengeC.challenge!));
+    assert.equal(verifyC.ok, false, 'a key of a non-anchored namespace must not mint an admin session');
+    assert.equal(verifyC.message, 'NAMESPACE_NOT_ANCHORED');
+  }
+
+  // ── 8. A live session dies as soon as the snapshot no longer anchors its
+  // namespace to that identity (e.g. the anchor moved, or the binding is
+  // missing) -- checked on every resolve, not only at issuance.
+  const tokenB = verifyB.sessionToken!;
+  {
+    const current = JSON.parse(fs.readFileSync(claimsPath, 'utf8'));
+    fs.writeFileSync(claimsPath, JSON.stringify({ ...current, namespaces: { [alice.identityHash]: `elsewhere.${rootNamespace}` } }, null, 2), 'utf8');
+    assert.equal(await resolveAdminSession(tokenB), null, 'a session must not survive its namespace losing the anchor');
+  }
+
+  // ── 9. A snapshot without the binding (the legacy local-ledger shape)
+  // authorizes no new session: fail closed, never fall back to the hash.
+  {
+    const current = JSON.parse(fs.readFileSync(claimsPath, 'utf8'));
+    delete current.namespaces;
+    fs.writeFileSync(claimsPath, JSON.stringify(current, null, 2), 'utf8');
+    const challengeD = issueAdminSessionChallenge(alice.identityHash);
+    const verifyD = await verifyAdminSessionChallenge(alice.identityHash, alice.namespace, keyBId, await keyB.sign(challengeD.challenge!));
+    assert.equal(verifyD.ok, false);
+    assert.equal(verifyD.message, 'GATEWAY_BINDING_MISSING');
+  }
 
   console.log('admin-session-live-keychain ok');
 } finally {

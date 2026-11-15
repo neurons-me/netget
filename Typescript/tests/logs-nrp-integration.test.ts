@@ -217,6 +217,7 @@ fs.writeFileSync(claimsPath, JSON.stringify({
   grants: { [ADMIN_IDENTITY]: ['gateway:read'] },
   pubkeys: {},
   usernames: { [ADMIN_IDENTITY]: 'logsadmin' },
+  namespaces: { [ADMIN_IDENTITY]: logsAdmin.namespace },
 }, null, 2), 'utf8');
 
 try {

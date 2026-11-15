@@ -117,7 +117,7 @@ try {
   const bob = await claimIdentityWithKey(monadOrigin, 'bob', 'bob-secret', 'localhost');
   writeGatewayClaims(getGatewayClaimsPath(), 'candidate-integration.local', alice.identityHash, {
     [alice.identityHash]: ['gateway:read', 'gateway:write'], [bob.identityHash]: ['gateway:read'],
-  });
+  }, { [alice.identityHash]: alice.namespace, [bob.identityHash]: bob.namespace });
   const signIn = async (who: typeof alice) => {
     const c = await raw(N, 'localhost', '/admin-session/challenge', { method: 'POST', body: { identityHash: who.identityHash } });
     assert.equal(c.json?.ok, true, `challenge: ${c.text.slice(0, 200)}`);

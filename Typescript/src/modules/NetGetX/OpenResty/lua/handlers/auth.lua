@@ -502,49 +502,15 @@ local function gateway_claims()
   }))
 end
 
-local function legacy_hash_auth(body)
-  local hash = tostring(body.identityHash or "")
-  if not is_valid_hash(hash) then
-    respond(ngx.HTTP_BAD_REQUEST, {
-      success = false,
-      error   = "INVALID_IDENTITY_HASH",
-      message = "identityHash must be a 64-char lowercase hex string.",
-    })
-    return
-  end
-
-  local claims = load_claims()
-  if not claims then
-    respond(ngx.HTTP_SERVICE_UNAVAILABLE, {
-      success = false,
-      error   = "GATEWAY_NOT_BOOTSTRAPPED",
-      message = "This gateway has no owner. Run `netget claim` to set one.",
-    })
-    return
-  end
-
-  local admins  = type(claims.admins)  == "table" and claims.admins  or {}
-  local pubkeys = type(claims.pubkeys) == "table" and claims.pubkeys or {}
-
-  if type(pubkeys[hash]) == "string" and pubkeys[hash] ~= "" then
-    respond(ngx.HTTP_UNAUTHORIZED, {
-      success = false,
-      error   = "PROOF_REQUIRED",
-      message = "This identity is anchored with an Ed25519 proof key.",
-    })
-    return
-  end
-
-  if admins[hash] ~= true then
-    respond(ngx.HTTP_UNAUTHORIZED, {
-      success = false,
-      error   = "IDENTITY_NOT_AUTHORISED",
-      message = "Identity not found in legacy gateway admins.",
-    })
-    return
-  end
-
-  issue_session(claims, hash, nil)
+-- An identityHash is public, so it never authenticates on its own: the old
+-- "legacy hash" path (no pubkey anchored -> answer isOwner/isAdmin for any
+-- caller who names an admin's hash) is gone. Every login needs a proof.
+local function refuse_proofless_auth()
+  respond(ngx.HTTP_UNAUTHORIZED, {
+    success = false,
+    error   = "PROOF_REQUIRED",
+    message = "An Ed25519 proof is required; an identityHash alone is not authentication.",
+  })
 end
 
 local function proof_auth(body)
@@ -633,7 +599,7 @@ local function me_auth()
     proof_auth(body)
     return
   end
-  legacy_hash_auth(body)
+  refuse_proofless_auth()
 end
 
 local function logout()

@@ -192,6 +192,17 @@ export interface GatewayClaimsSnapshot {
     usernames: Record<string, string>;
 
     /**
+     * Map of `identityHash → namespace` that identity is ANCHORED to on this gateway (monad.ai's
+     * `daemon.gateways.<id>.namespaces`, read back by {@link GatewayClaimsManager.materializeFromGatewayAuthority}).
+     *
+     * An identityHash is public: several claims may carry the same one (claims written before monad.ai bound an
+     * identityHash to its first claim). Gateway authority belongs to the identity AS HELD by this namespace only,
+     * so an admin session is issued and kept only for a key of this exact namespace. Absent on snapshots written
+     * by the legacy local-ledger paths: those snapshots authorize no admin session (fail closed).
+     */
+    namespaces?: Record<string, string>;
+
+    /**
      * SHA-256 of the canonical (sorted-keys) JSON of the payload fields.
      * Used by nginx Lua as a change-detection signal — identical to the
      * `domain-map.version` mechanism.
@@ -219,6 +230,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+export function normalizeAnchoredNamespace(value: string): string {
+    return String(value || '').trim().toLowerCase();
+}
+
+function readAnchoredNamespaces(input: unknown): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!isRecord(input)) return out;
+    for (const [identityHash, namespace] of Object.entries(input)) {
+        if (typeof namespace === 'string' && namespace.trim()) out[identityHash] = normalizeAnchoredNamespace(namespace);
+    }
+    return out;
+}
+
 function normalizeSnapshotPayload(
     snapshot: Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'>,
 ): Omit<GatewayClaimsSnapshot, 'version' | 'updatedAt'> {
@@ -229,6 +253,7 @@ function normalizeSnapshotPayload(
         grants: snapshot.grants ?? {},
         pubkeys: snapshot.pubkeys ?? {},
         usernames: snapshot.usernames ?? {},
+        ...(snapshot.namespaces ? { namespaces: snapshot.namespaces } : {}),
     };
 }
 
@@ -606,6 +631,7 @@ export class GatewayClaimsManager {
             grants?: Record<string, string[]>;
             pubkeys?: Record<string, string>;
             usernames?: Record<string, string>;
+            namespaces?: Record<string, string>;
         };
         let confirmed = false;
         let record: AuthorityRecord | null = null;
@@ -644,6 +670,7 @@ export class GatewayClaimsManager {
                 grants: (record.grants ?? {}) as Record<string, GatewayScope[]>,
                 pubkeys: rawPubkeys,
                 usernames: record.usernames ?? {},
+                namespaces: readAnchoredNamespaces(record.namespaces),
             })
             : GatewayClaimsManager.empty(this.gatewayId);
         this.write(snapshot);
@@ -751,6 +778,11 @@ export class GatewayClaimsManager {
      * Returns an empty array when the identity is unknown or has no explicit
      * grants — callers should treat an empty array as "no access".
      */
+    getAnchoredNamespace(identityHash: string): string | null {
+        const namespace = this.read()?.namespaces?.[identityHash];
+        return typeof namespace === 'string' && namespace.trim() ? normalizeAnchoredNamespace(namespace) : null;
+    }
+
     getScopes(identityHash: string): GatewayScope[] {
         return this.read()?.grants[identityHash] ?? [];
     }

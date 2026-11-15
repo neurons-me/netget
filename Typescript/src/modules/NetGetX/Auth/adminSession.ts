@@ -38,7 +38,7 @@
 
 import crypto from 'crypto';
 import { fetchKeychainKey, verifyEd25519SignatureFromPem } from './keychainKeyVerification.js';
-import { GatewayClaimsManager } from './GatewayClaimsManager.js';
+import { GatewayClaimsManager, normalizeAnchoredNamespace } from './GatewayClaimsManager.js';
 import { resolveSurface } from '../../../kernel/topologyResolver.js';
 
 const CHALLENGE_TTL_MS = 2 * 60 * 1000;
@@ -62,6 +62,20 @@ interface AdminSessionRecord {
   namespace: string;
   keyId: string;
   expiresAt: number;
+}
+
+/**
+ * Gateway authority belongs to an identity AS HELD by the namespace it is anchored to (the snapshot's `namespaces`,
+ * from monad.ai's gateway-authority record) -- never to a bare identityHash, which is public and which an older
+ * duplicate claim may also carry. So the signing key must belong to that exact namespace, checked at issuance and on
+ * every resolve. A snapshot without the binding authorizes nothing; it is NOT refreshed from here, because these
+ * calls are reachable before authentication and the refresh source would be chosen by the caller's namespace.
+ */
+function anchoredNamespaceCheck(claims: GatewayClaimsManager, identityHash: string, namespace: string): string | null {
+  const anchored = claims.getAnchoredNamespace(identityHash);
+  if (!anchored) return 'GATEWAY_BINDING_MISSING';
+  if (anchored !== normalizeAnchoredNamespace(namespace)) return 'NAMESPACE_NOT_ANCHORED';
+  return null;
 }
 
 const pendingChallenges = new Map<string, PendingChallenge>();
@@ -170,6 +184,9 @@ export async function verifyAdminSessionChallenge(
     }
   }
 
+  const notAnchored = anchoredNamespaceCheck(claims, id, namespace);
+  if (notAnchored) return { ok: false, message: notAnchored };
+
   const surface = await resolveSurface({ namespace });
   if (!surface) return { ok: false, message: 'NAMESPACE_SURFACE_NOT_FOUND' };
 
@@ -198,13 +215,14 @@ export interface ResolvedAdminSession {
 }
 
 /**
- * Re-checks THREE things fresh on every call, never trusting what was
+ * Re-checks FOUR things fresh on every call, never trusting what was
  * true at issuance: the session's own TTL, the signing key's CURRENT
  * live authorization (fetchKeychainKey again — a session outlives its
  * own key being revoked by exactly zero requests), and isAdmin()/
  * getScopes() against the current claims snapshot (an admin revoked
  * after issuing a session loses access on the very next request, not
- * only once the session's TTL runs out).
+ * only once the session's TTL runs out), and that the session's namespace
+ * is still the one this identity is anchored to (anchoredNamespaceCheck).
  */
 export async function resolveAdminSession(token: string, claims: GatewayClaimsManager = new GatewayClaimsManager()): Promise<ResolvedAdminSession | null> {
   const t = String(token || '').trim();
@@ -216,6 +234,10 @@ export async function resolveAdminSession(token: string, claims: GatewayClaimsMa
     return null;
   }
   if (!claims.isAdmin(record.identityHash)) return null;
+  if (anchoredNamespaceCheck(claims, record.identityHash, record.namespace)) {
+    sessions.delete(t);
+    return null;
+  }
 
   const surface = await resolveSurface({ namespace: record.namespace });
   if (!surface) {
@@ -223,9 +245,10 @@ export async function resolveAdminSession(token: string, claims: GatewayClaimsMa
     return null;
   }
   const keychainKey = await fetchKeychainKey(surface.url, record.namespace, record.keyId);
-  if (!keychainKey || keychainKey.authorization !== 'active') {
-    // The signing key was revoked (or vanished) since this session was
-    // issued -- the session dies with it, immediately, not at its TTL.
+  if (!keychainKey || keychainKey.authorization !== 'active' || keychainKey.claimIdentityHash !== record.identityHash) {
+    // The signing key was revoked (or vanished), or its namespace's claim no
+    // longer carries this identity, since this session was issued -- the
+    // session dies with it, immediately, not at its TTL.
     sessions.delete(t);
     return null;
   }

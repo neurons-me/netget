@@ -98,7 +98,8 @@ try {
   const alice = await claimIdentityWithKey(monadOrigin, 'alice', 'alice-secret', be.namespace);
   const bob = await claimIdentityWithKey(monadOrigin, 'bob', 'bob-secret', be.namespace);
   const claimsPath = getGatewayClaimsPath();
-  const grant = (bob: string[]) => writeGatewayClaims(claimsPath, 'nginx-fronted-gate.local', alice.identityHash, { [alice.identityHash]: ['gateway:read'], [bob_id]: bob });
+  const grant = (bob: string[]) => writeGatewayClaims(claimsPath, 'nginx-fronted-gate.local', alice.identityHash, { [alice.identityHash]: ['gateway:read'], [bob_id]: bob }, { [alice.identityHash]: alice.namespace, [bob_id]: bobNamespace });
+  const bobNamespace = bob.namespace;
   const bob_id = bob.identityHash;
   grant(['gateway:read']);
 

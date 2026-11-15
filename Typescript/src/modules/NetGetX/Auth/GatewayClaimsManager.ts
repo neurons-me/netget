@@ -230,6 +230,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** monad.ai's `GET /api/v1/gateway/:id/authority` record, as far as this cache reads it. */
+type GatewayAuthorityRecordView = {
+    owner?: string | null;
+    admins?: Record<string, true>;
+    grants?: Record<string, string[]>;
+    pubkeys?: Record<string, string>;
+    usernames?: Record<string, string>;
+    namespaces?: Record<string, string>;
+};
+
 export function normalizeAnchoredNamespace(value: string): string {
     return String(value || '').trim().toLowerCase();
 }
@@ -624,57 +634,82 @@ export class GatewayClaimsManager {
      * background reconciliation loop, both out of scope here.
      */
     async materializeFromGatewayAuthority(surfaceUrl: string): Promise<GatewayClaimsSnapshot> {
-        const url = `${surfaceUrl.replace(/\/+$/, '')}/api/v1/gateway/${encodeURIComponent(this.gatewayId)}/authority`;
-        type AuthorityRecord = {
-            owner?: string | null;
-            admins?: Record<string, true>;
-            grants?: Record<string, string[]>;
-            pubkeys?: Record<string, string>;
-            usernames?: Record<string, string>;
-            namespaces?: Record<string, string>;
-        };
-        let confirmed = false;
-        let record: AuthorityRecord | null = null;
-        try {
-            const res = await fetch(url);
-            if (res.ok) {
-                const body = await res.json().catch(() => null) as { ok?: boolean; record?: AuthorityRecord | null } | null;
-                if (body?.ok === true) {
-                    confirmed = true;
-                    record = body.record ?? null;
-                }
-            }
-        } catch {
-            confirmed = false;
-        }
-
-        if (!confirmed) {
+        const fetched = await this.fetchGatewayAuthority(surfaceUrl);
+        if (!fetched.confirmed) {
             return this.read() ?? GatewayClaimsManager.empty(this.gatewayId);
         }
+        const snapshot = this.snapshotFromAuthorityRecord(fetched.record);
+        this.write(snapshot);
+        return snapshot;
+    }
 
+    /**
+     * The operator's checked refresh of this cache (the deploy kit's step after
+     * an upgrade): unlike {@link materializeFromGatewayAuthority}, it writes
+     * NOTHING unless the canonical record is confirmed, has an owner, and binds
+     * every admin to a namespace; it refuses an owner different from the cached
+     * one unless `acceptOwnerChange` (a transfer materializes on its own, so a
+     * change seen here is a signal, not routine); and it reads the file back.
+     * `surfaceUrl` must be the configured monad that holds this gateway's
+     * authority -- the caller decides that, never a namespace a request named.
+     */
+    async refreshFromGatewayAuthority(
+        surfaceUrl: string,
+        options: { acceptOwnerChange?: boolean } = {},
+    ): Promise<{ ok: true; snapshot: GatewayClaimsSnapshot; previous: GatewayClaimsSnapshot | null } | { ok: false; error: string }> {
+        const previous = this.read();
+        const fetched = await this.fetchGatewayAuthority(surfaceUrl);
+        if (!fetched.confirmed) return { ok: false, error: 'AUTHORITY_UNCONFIRMED' };
+        const record = fetched.record;
+        if (!record?.owner) return { ok: false, error: 'AUTHORITY_HAS_NO_OWNER' };
+        const anchored = readAnchoredNamespaces(record.namespaces);
+        const identities = new Set<string>([record.owner, ...Object.keys(record.admins ?? {})]);
+        for (const identityHash of identities) {
+            if (!anchored[identityHash]) return { ok: false, error: 'AUTHORITY_BINDING_INCOMPLETE' };
+        }
+        if (previous?.owner && previous.owner !== record.owner && !options.acceptOwnerChange) {
+            return { ok: false, error: 'OWNER_CHANGED' };
+        }
+        const snapshot = this.snapshotFromAuthorityRecord(record);
+        this.write(snapshot);
+        const written = this.read();
+        if (!written || written.version !== snapshot.version) return { ok: false, error: 'WRITE_NOT_CONFIRMED' };
+        return { ok: true, snapshot: written, previous };
+    }
+
+    private async fetchGatewayAuthority(surfaceUrl: string): Promise<{ confirmed: boolean; record: GatewayAuthorityRecordView | null }> {
+        const url = `${surfaceUrl.replace(/\/+$/, '')}/api/v1/gateway/${encodeURIComponent(this.gatewayId)}/authority`;
+        try {
+            const res = await fetch(url);
+            if (!res.ok) return { confirmed: false, record: null };
+            const body = await res.json().catch(() => null) as { ok?: boolean; record?: GatewayAuthorityRecordView | null } | null;
+            if (body?.ok !== true) return { confirmed: false, record: null };
+            return { confirmed: true, record: body.record ?? null };
+        } catch {
+            return { confirmed: false, record: null };
+        }
+    }
+
+    private snapshotFromAuthorityRecord(record: GatewayAuthorityRecordView | null): GatewayClaimsSnapshot {
+        if (!record?.owner) return GatewayClaimsManager.empty(this.gatewayId);
         // monad.ai stores gateway-authority pubkeys as PEM (its own keychain
         // convention); this snapshot's own pubkeys map has always been raw
         // base64url (see GatewayClaimsSnapshot's own doc comment) — convert
         // here rather than changing that established local contract.
         const rawPubkeys: Record<string, string> = {};
-        for (const [identityHash, pem] of Object.entries(record?.pubkeys ?? {})) {
+        for (const [identityHash, pem] of Object.entries(record.pubkeys ?? {})) {
             const raw = pemToRawEd25519PublicKeyBase64Url(pem);
             if (raw) rawPubkeys[identityHash] = raw;
         }
-
-        const snapshot = record?.owner
-            ? materializeSnapshot({
-                gatewayId: this.gatewayId,
-                owner: record.owner,
-                admins: record.admins ?? {},
-                grants: (record.grants ?? {}) as Record<string, GatewayScope[]>,
-                pubkeys: rawPubkeys,
-                usernames: record.usernames ?? {},
-                namespaces: readAnchoredNamespaces(record.namespaces),
-            })
-            : GatewayClaimsManager.empty(this.gatewayId);
-        this.write(snapshot);
-        return snapshot;
+        return materializeSnapshot({
+            gatewayId: this.gatewayId,
+            owner: record.owner,
+            admins: record.admins ?? {},
+            grants: (record.grants ?? {}) as Record<string, GatewayScope[]>,
+            pubkeys: rawPubkeys,
+            usernames: record.usernames ?? {},
+            namespaces: readAnchoredNamespaces(record.namespaces),
+        });
     }
 
     async reset(): Promise<void> {

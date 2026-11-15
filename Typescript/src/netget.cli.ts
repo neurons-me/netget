@@ -978,6 +978,28 @@ program
     }
   });
 
+program
+  .command('gateway-claims-refresh')
+  .description("Rebuild gateway-claims.json from this gateway's own monad (checked; writes nothing unless the canonical record is complete)")
+  .option('--origin <url>', "netget's monad origin (loopback only); default: NETGET_MONAD_ORIGIN, else the running netget monad")
+  .option('--accept-owner-change', 'accept an owner different from the cached one')
+  .action(async (opts: { origin?: string; acceptOwnerChange?: boolean }) => {
+    try {
+      const { resolveGatewayAuthorityOrigin, refreshGatewayClaims } = await import('./modules/NetGetX/Auth/gatewayClaimsRefresh.ts');
+      const origin = await resolveGatewayAuthorityOrigin(opts.origin);
+      const result = await refreshGatewayClaims(origin, { acceptOwnerChange: opts.acceptOwnerChange === true });
+      if (!result.ok) {
+        console.error(chalk.red(`\n  gateway-claims.json NOT changed: ${result.error}\n`));
+        process.exit(1);
+      }
+      for (const line of result.summary) console.log(`  ${line}`);
+      process.exit(0);
+    } catch (err: any) {
+      console.error(chalk.red(`\n  gateway-claims-refresh failed: ${err.message}\n`));
+      process.exit(1);
+    }
+  });
+
 // xConfig.mainServerName is overloaded (see netgetMonadProcess.ts's own
 // comment on the same ambiguity): it can hold a local mesh surface name
 // picked for namespace-fallback purposes, where a local.* value is a

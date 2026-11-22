@@ -81,8 +81,7 @@ const LEFT = {
   dashboard: { label: 'Dashboard', to: '/home', icon: 'dashboard', placement: 'end' },
   domains: { label: 'Domains', to: '/domains', icon: 'language', requires: ADMIN, placement: 'end' },
   logs: { label: 'Logs', to: '/logs', icon: 'article', requires: LOGS, placement: 'end' },
-  // the monad.ai orb, the same one the Monad surface draws (not a generic chip icon)
-  monad: { label: 'Monad', to: '/monad', icon: 'orb:monad', placement: 'end' },
+  // No Monad item: the GUI's left bar dropped the monad orb (GUI a13ef0da). The /monad page stays, reached by its route.
 };
 
 const CONTENT = {

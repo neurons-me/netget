@@ -3,14 +3,107 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>local.netget</title>
+    <title>netget</title>
     <link rel="icon" href="/neurons.me.png" />
     <link rel="stylesheet" href="/material-symbols.css" />
-    <script type="module" crossorigin src="/assets/index-BL5m9_di.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-D8LRAN51.css">
+    <style>
+      html, body, #gui-root { margin: 0; min-height: 100vh; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="gui-root"></div>
+    <script src="/vendor/react/react.production.min.js"></script>
+    <script src="/vendor/react-dom/react-dom.production.min.js"></script>
+    <script src="/ns-assets/this.gui.umd.js"></script>
+    <script>
+      (function () {
+        var root = document.getElementById('gui-root');
+        var GUI = window.GUI;
+        var React = window.React;
+        if (!root) return;
+        if (!GUI || typeof GUI.mount !== 'function' || !React || typeof React.createElement !== 'function') {
+          root.textContent = 'This page could not load .GUI.';
+          return;
+        }
+        window.__THIS_GUI_DISABLE_AUTOBOOT__ = true;
+        // Public address of this page only — not a name, not a secret.
+        var qrValue = window.location.origin + '/';
+        var Hero = GUI.Molecules && GUI.Molecules.Hero;
+        var Stack = GUI.Molecules && GUI.Molecules.Stack;
+        if (!Hero || !Stack || !GUI.FloatingMark || !GUI.SiteBrand || !GUI.BarBrandCell || !GUI.QrBadge) {
+          root.textContent = 'This page could not load .GUI.';
+          return;
+        }
+
+        var identity = React.createElement(
+          GUI.BarBrandCell,
+          {
+            component: 'button',
+            type: 'button',
+            title: 'your .me',
+            'data-gui-node-id': 'GUI.window.layout.marks.identity',
+            sx: { width: 48, height: 48, minWidth: 48, flex: 'none' }
+          },
+          React.createElement(GUI.QrBadge, {
+            value: qrValue,
+            clickFlip: false,
+            hoverFlip: false,
+            cursor: 'pointer'
+          })
+        );
+
+        // Inert: opens nothing, does not touch a .me or show keys.
+        function onKeysClick(event) {
+          if (event && event.preventDefault) event.preventDefault();
+        }
+
+        var storyCopy = "This app's views are its own: they render here, in the content area, and follow the theme. The namespace's routes (Users, Blockchain, Netget, Monad) open over this view, in its place, and close back to it. Keys lives in the identity card (the QR.me in the corner) once you are signed in.";
+
+        var home = React.createElement(
+          Hero,
+          { height: '100vh', mode: 'left', padding: { xs: 3, md: 8 }, contentMaxWidth: 680 },
+          React.createElement(
+            Stack,
+            { spacing: 2, alignItems: 'flex-start' },
+            React.createElement(GUI.Typography, { variant: 'h3', component: 'h1' }, 'A site with .GUI'),
+            React.createElement(GUI.Typography, { variant: 'body1' }, storyCopy),
+            React.createElement(GUI.Typography, { variant: 'body1' }, 'This page is the netget app.')
+          )
+        );
+
+        // Site brand in the corner opposite the QR (top bar is closed), same as the story.
+        var brandMark = React.createElement(
+          GUI.FloatingMark,
+          { corner: 'top-right' },
+          React.createElement(GUI.SiteBrand, { label: 'netget', href: '#', floating: true })
+        );
+
+        try {
+          GUI.mount({
+            type: 'Theme',
+            props: {},
+            children: [
+              {
+                type: 'Layout',
+                props: {
+                  TopBar: false,
+                  LeftBar: {
+                    initialView: 'expanded',
+                    brand: identity,
+                    elements: [
+                      { type: 'link', props: { label: 'Keys', icon: 'key', onClick: onKeysClick } }
+                    ]
+                  }
+                },
+                children: [home]
+              },
+              brandMark
+            ]
+          }, root);
+        } catch (err) {
+          root.textContent = 'This page could not load .GUI.';
+        }
+      })();
+    </script>
   </body>
 </html>
-

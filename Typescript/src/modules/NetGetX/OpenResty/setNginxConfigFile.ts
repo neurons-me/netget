@@ -24,6 +24,45 @@ export function buildNginxConfigContent(layout: OpenRestyLayout = detectOpenRest
     const gatewayStatusTemplatePath = path.join(fileURLToPath(new URL('../../../htmls/GatewayStatus.html', import.meta.url)));
     const noMonadTemplatePath = path.join(fileURLToPath(new URL('../../../../assets/namespace-surface/no-monad.html', import.meta.url)));
 
+    // Assets for the State 1 .GUI landing on the default server (unknown
+    // hosts such as *.localhost). Paths are resolved from this file so a
+    // regenerate does not depend on a stale release tree. /ns-assets/this.gui.umd.js
+    // is the current this.gui bundle (QrBadge, Layout, Theme); other /ns-assets/
+    // files (styles, material symbols) come from the namespace-surface assets dir.
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const allThisRoot = path.resolve(thisDir, '../../../../../../..');
+    const guiUmdPath = path.join(allThisRoot, 'packages/GUI/Typescript/dist/this.gui.umd.js');
+    const reactUmdDir = path.join(allThisRoot, 'packages/GUI/Typescript/node_modules/react/umd');
+    const reactDomUmdDir = path.join(allThisRoot, 'packages/GUI/Typescript/node_modules/react-dom/umd');
+    const namespaceSurfaceAssetsDir = path.resolve(thisDir, '../../../../assets/namespace-surface/assets');
+    const posix = (value: string) => value.replaceAll('\\', '/');
+    const landingAssetLocations = [
+        fs.existsSync(guiUmdPath) ? `
+    location = /ns-assets/this.gui.umd.js {
+        alias ${posix(guiUmdPath)};
+        access_log off;
+        add_header Cache-Control "no-store";
+    }` : '',
+        fs.existsSync(namespaceSurfaceAssetsDir) ? `
+    location /ns-assets/ {
+        alias ${posix(namespaceSurfaceAssetsDir)}/;
+        access_log off;
+        add_header Cache-Control "no-store";
+    }` : '',
+        fs.existsSync(reactUmdDir) ? `
+    location /vendor/react/ {
+        alias ${posix(reactUmdDir)}/;
+        expires 1d;
+        access_log off;
+    }` : '',
+        fs.existsSync(reactDomUmdDir) ? `
+    location /vendor/react-dom/ {
+        alias ${posix(reactDomUmdDir)}/;
+        expires 1d;
+        access_log off;
+    }` : '',
+    ].filter(Boolean).join('\n');
+
     // mainServerName drives State 1 (NOT_CONFIGURED). Empty/unset → no public
     // domain has been set up yet via `netget` CLI → Main Server → Set public domain.
     let mainServerName = '';
@@ -159,6 +198,7 @@ http {
             if not tpl then return nil end
             local out = tpl
             out = out:gsub("{{STATE}}", tostring(state))
+            out = out:gsub("{{HOST_JSON}}", (cjson.encode(host or "")))
             out = out:gsub("{{HOST}}", host or "")
             out = out:gsub("{{TARGET}}", target or "")
             out = out:gsub("{{PUBLIC_IP}}", _G.GATEWAY_PUBLIC_IP or "")
@@ -198,6 +238,7 @@ http {
             try_files $uri =404;
             access_log off;
         }
+${landingAssetLocations}
 
         location / {
             # State 1 (NOT_CONFIGURED): if no public main domain has been set

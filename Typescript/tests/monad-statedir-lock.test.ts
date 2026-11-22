@@ -30,6 +30,10 @@ import { pidsWithEnv, killAll, listeningPortsOf } from './helpers/processHygiene
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'statedir-lock-home-'));
 process.env.HOME = tmpHome;
 process.env.MONADS_HOME = path.join(tmpHome, '.monad', 'monads');
+// The monads started here inherit this environment. Without this they report to http://127.0.0.1 -- the machine's REAL
+// gateway -- and a run left dead entries in ~/.get/runtime/apps.json (2026-11-21).
+process.env.MONAD_NETGET_DISABLED = '1';
+delete process.env.NETGET_LOCAL;
 
 const { startMonadProcess, getMonadStatus, deleteMonadProcess } = await import('monad.ai');
 

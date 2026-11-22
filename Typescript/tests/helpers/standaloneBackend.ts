@@ -88,6 +88,9 @@ export async function startDisposableStandalone(options: { env?: Record<string, 
     NETGET_MONAD_NAME: monadName,
     ...(options.defaultNamespace ? {} : { NETGET_MONAD_NAMESPACE: marker }),
     NETGET_MAIN_SERVER_RECONCILE_MS: '0',
+    // The monad this backend starts must not report to the machine's gateway: unset, a monad registers with
+    // http://127.0.0.1, i.e. the REAL local netget, and a run left dead entries in ~/.get/runtime/apps.json (2026-11-21).
+    MONAD_NETGET_DISABLED: '1',
     PORT: String(port),
     NODE_ENV: 'test',
     ...(options.env ?? {}),

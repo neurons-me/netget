@@ -1,17 +1,19 @@
 // What ONE entry composes, from the context that was resolved. Pure: no React, no window, no network.
 //
 // The page used to pick between two apps by the hostname (providerBoot.js frontendRole: a namespace's own hosts got the bare
-// Namespace landing, every other host got the Cleaker shell with netget's document), and later still composed two DIFFERENT documents
-// by door. Now every door mounts the same shell with the SAME document. The address contributes CONTEXT only:
+// Namespace landing, every other host got the Cleaker shell with netget's document). Now every door mounts the SAME entry
+// (`<Cleaker>`). What it renders depends on where you are in the tree:
 //
-//   * which namespace the monad or the gateway declared, and where it is reached (resolveEntry),
-//   * how this door presents itself (which rail icons it leaves out, which node its position label points at).
+//   * the root (a namespace's own door) is the namespace itself: the same shell as Storybook example 1, with only
+//     the GUI document. The address contributes which namespace and where it is reached (resolveEntry).
+//   * a gateway door (netget.site, localhost, …) is netget's app: the same `<Cleaker>` with NETGET_DOCUMENT and
+//     its pages on top of the GUI document, and how that door presents itself (rail icons left out, the node its
+//     position label points at).
 //
-// What the app OFFERS is declared once, in NETGET_DOCUMENT. What a person can USE is decided by the shell from the SELECTED link and
-// the permissions it grants: Domains and Logs declare `requires: { capability }` (gateway:admin, gateway:logs), resolved for the selected
-// gateway with the session through the selected link (session/gatewayCapabilities.js). So an administrator reaches them from any door
-// that points at a gateway she administers, and nobody does merely by having signed in or by the door they came through. The gateway
-// still authorizes every request.
+// What netget OFFERS on a gateway door is declared once, in NETGET_DOCUMENT. What a person can USE is decided by the
+// shell from the SELECTED link and the permissions it grants: Domains and Logs declare `requires: { capability }`
+// (gateway:admin, gateway:logs), resolved for the selected gateway with the session through the selected link
+// (session/gatewayCapabilities.js). The gateway still authorizes every request.
 //
 //   namespace  a namespace's own door (cleaker.me, www, a handle): the monad handed this page its namespace.
 //   gateway    any other door (netget.site, localhost, whatever nginx serves statically).
@@ -42,7 +44,6 @@ export function resolveEntry({ host, boot, declared, pathname }) {
       isMainServerDoor: false,
       canonicalPath: null,
       semanticPath: '/',
-      hideBarItems: ['url', 'dashboard'],
       // The page IS the namespace (rule 1): its own interface, no app's brand over it. netget is one of its routes (/netget).
       brand: null,
     };

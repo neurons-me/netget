@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 
-// ONE entry for every door. The page mounts the same shell (`<Cleaker>`) with the SAME document at cleaker.me, at www and handles, at
-// netget.site and at localhost; what differs is the CONTEXT that was resolved, never a second app (or a second document) chosen by the
+// ONE entry for every door. The page mounts the same shell (`<Cleaker>`) at cleaker.me, at www and handles, at
+// netget.site and at localhost; what it renders depends on where you are in the tree, never a second app chosen by the
 // hostname. This test pins:
 //
 //   * namespace / transport come from what the monad (boot) or the gateway (/main-server-namespace) declared;
 //     the address bar is only a draft when nothing declared them
-//   * how a door presents itself (rail icons left out, the node its position label points at)
-//   * the one document: what the app offers is the same everywhere, and each part declares what it NEEDS from the selected
-//     link (Monad nothing; Domains `gateway:admin`; Logs `gateway:logs`). Signing in is not what unlocks them, and neither is the door.
+//   * the root (a namespace door) carries no netget document, rail policy, or app brand — the GUI document alone
+//   * a gateway door presents netget's app (rail icons left out, the node its position label points at, NETGET_DOCUMENT)
+//   * what netget offers on a gateway door, and what each part NEEDS from the selected link (Domains `gateway:admin`;
+//     Logs `gateway:logs`). Signing in is not what unlocks them, and neither is the door.
 //     The resolvers are covered by gateway-capabilities.test.ts; the server still authorizes every request.
 //
 // (frontendRole itself is unchanged and covered by frontend-provider-boot.test.ts.)
@@ -32,6 +33,7 @@ for (const [host, boot] of [['cleaker.me', bothBoot], ['www.cleaker.me', bothBoo
   assert.equal(e.canonicalPath, null);
   assert.equal(e.semanticPath, '/');
   assert.equal(e.brand, null, `${host}: the page IS the namespace, so no app brand (netget's) over it`);
+  assert.equal('hideBarItems' in e, false, `${host}: the namespace door does not carry netget rail policy`);
   assert.equal(needsDeclaration({ host, boot }), false, `${host}: nothing to wait for, the monad already declared the namespace`);
 }
 
@@ -68,28 +70,27 @@ assert.equal(resolveEntry({ host: 'local.host', boot: null, declared: null, path
   assert.deepEqual(viaBoot, viaBootAndDeclared, 'what the gateway declares does not change what the monad already said');
 }
 
-// ── ONE document, whatever the door ────────────────────────────────────────────────────────────────────────────────
+// ── NETGET_DOCUMENT is what a gateway door adds; resolveEntry itself never carries a document ──────────────────────
 const leftIds = (doc: any) => Object.keys(doc.GUI.children.bars.children.left.children);
 const contentIds = (doc: any) => Object.keys(doc.GUI.children.content.children);
 const left = (id: string) => NETGET_DOCUMENT.GUI.children.bars.children.left.children[id];
 const content = (id: string) => NETGET_DOCUMENT.GUI.children.content.children[id];
 
-assert.deepEqual(leftIds(NETGET_DOCUMENT), ['dashboard', 'domains', 'logs', 'monad']);
+assert.deepEqual(leftIds(NETGET_DOCUMENT), ['dashboard', 'domains', 'logs']);
 assert.deepEqual(contentIds(NETGET_DOCUMENT).sort(), ['apps', 'dashboard', 'domains', 'logs', 'monad', 'privacy', 'terms']);
-assert.equal(typeof (entryModule as any).netgetDocumentFor, 'undefined', 'there is no document per kind of door any more');
+assert.equal(typeof (entryModule as any).netgetDocumentFor, 'undefined', 'there is no document picker on resolveEntry');
 assert.equal(ENTRY_KINDS.includes('namespace') && ENTRY_KINDS.includes('gateway'), true);
-for (const kind of ['namespace', 'gateway']) assert.equal('document' in resolveEntry({ host: 'localhost', boot: null, declared: null, pathname: '/' }), false, `${kind}: the resolved entry carries no document`);
+assert.equal('document' in resolveEntry({ host: 'localhost', boot: null, declared: null, pathname: '/' }), false, 'the resolved entry carries no document');
+assert.equal('document' in resolveEntry({ host: 'cleaker.me', boot: bothBoot, declared: null, pathname: '/' }), false, 'a namespace door also carries no document');
 
-// What the app offers is the same everywhere; what each part NEEDS is declared on the part, from the selected link
-assert.equal(left('monad').requires, undefined, 'Monad needs nothing from the link');
-assert.equal(left('monad').icon, 'orb:monad');
-assert.equal(content('monad').needs, 'monad', 'the shell dims it when the monad behind the link is off');
+// What netget offers on a gateway door, and what each part NEEDS, is declared on the part
+assert.equal(content('monad').needs, 'monad', 'the shell dims /monad when the monad behind the link is off');
+assert.equal(left('dashboard').requires, undefined, 'dashboard is public information');
 assert.deepEqual(left('domains').requires, { capability: 'gateway:admin' }, 'Domains: the selected gateway recognizes who is signed in as an administrator');
 assert.deepEqual(content('domains').requires, left('domains').requires, 'the page behind /domains asks for what its link asks for');
 assert.deepEqual(left('logs').requires, { capability: 'gateway:logs' }, 'Logs: the explicit logs-read grant, not "administrator"');
 assert.deepEqual(content('logs').requires, left('logs').requires);
 assert.notEqual(left('domains').requires.capability, left('logs').requires.capability, 'different permissions are different capabilities');
-for (const id of ['dashboard', 'monad']) assert.equal(left(id).requires, undefined, `${id} is public information`);
 // a session is no longer what unlocks them
 for (const id of ['domains', 'logs']) assert.notEqual(left(id).requires, 'session', `${id}: signing in is not enough`);
 assert.equal(content('domains').needs, 'both');
@@ -105,8 +106,12 @@ const app = fs.readFileSync(path.resolve('src/htmls/Netget-REACT/frontend_local/
 assert.equal((app.match(/<Cleaker\b/g) || []).length, 1, 'one shell, mounted once');
 assert.ok(!/<Namespace\b/.test(app), 'the bare Namespace landing is not mounted by this app any more');
 assert.ok(!/ROLE\s*===\s*['"](cleaker|gateway)['"]/.test(app), 'no branch between a "cleaker" app and a "gateway" app');
-assert.ok(/resolveEntry\(/.test(app) && /document=\{NETGET_DOCUMENT\}/.test(app), 'the one document is mounted whatever the door');
-assert.ok(/capabilities=\{GATEWAY_RESOLVERS\}/.test(app) && /capabilityScope=\{gatewayScope\}/.test(app), 'the resolvers and the selected gateway\'s scope reach the shell');
-assert.ok(!/const NETGET_DOCUMENT\b/.test(app), 'the document is not a constant declared for one door');
+assert.ok(/resolveEntry\(/.test(app), 'the one entry is resolved, then mounted');
+assert.ok(/namespaceDoor/.test(app) && /entry\.kind === 'namespace'/.test(app), 'the same Cleaker is given only data on a namespace door');
+assert.ok(/document=\{namespaceDoor \? undefined : NETGET_DOCUMENT\}/.test(app), 'NETGET_DOCUMENT is only passed on a gateway door');
+assert.ok(/pages=\{namespaceDoor \? undefined : NETGET_PAGES\}/.test(app), 'netget pages are only passed on a gateway door');
+assert.ok(/hideBarItems=\{namespaceDoor \? undefined : entry.hideBarItems\}/.test(app), 'netget rail policy is only passed on a gateway door');
+assert.ok(/capabilities=\{namespaceDoor \? undefined : GATEWAY_RESOLVERS\}/.test(app), 'gateway resolvers are only passed on a gateway door');
+assert.ok(!/const NETGET_DOCUMENT\b/.test(app), 'the document is not redeclared in App.jsx');
 
 console.log('entry-composition: ok');

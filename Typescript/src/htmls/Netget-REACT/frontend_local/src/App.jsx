@@ -138,10 +138,12 @@ const NETGET_PAGES = {
 };
 
 // ONE entry for every door. The page mounts the Cleaker shell -- one Layout, one session (Cleaker mounts the
-// SeedSessionProvider, nothing above it may) -- and netget's views are declared into its document. The address bar does not
-// pick an app: it contributes CONTEXT. Which namespace this page links to, and where it is reached, is what the monad that
-// served the page said (a namespace's own door) or what the gateway declares (/main-server-namespace); only when neither
-// did, the hostname is a draft of it (see session/entryContext.js for what each context composes).
+// SeedSessionProvider, nothing above it may). The address bar does not pick an app: it contributes CONTEXT. Which
+// namespace this page links to, and where it is reached, is what the monad that served the page said (a namespace's
+// own door) or what the gateway declares (/main-server-namespace); only when neither did, the hostname is a draft of
+// it (see session/entryContext.js). At the root (kind namespace) that shell is the namespace itself, like Storybook
+// example 1: no netget document, pages, or rail policy. On a gateway door, netget's views are declared into the same
+// shell.
 const HOST_NAME = typeof window !== 'undefined' ? window.location.hostname : '';
 const PROVIDER_BOOT = readProviderBoot();
 
@@ -192,19 +194,20 @@ function EntryApp() {
     return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
   }, [asks]);
   if (entry === undefined) return null;
+  const namespaceDoor = entry.kind === 'namespace';
   const shell = (
     <Cleaker
       namespace={entry.namespace || HOST_NAME}
       namespaceSource={entry.namespaceSource}
       transport={netgetMonadTransportOrigin()}
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-      document={NETGET_DOCUMENT}
-      pages={NETGET_PAGES}
-      capabilities={GATEWAY_RESOLVERS}
-      capabilityScope={gatewayScope}
-      hideBarItems={entry.hideBarItems}
+      document={namespaceDoor ? undefined : NETGET_DOCUMENT}
+      pages={namespaceDoor ? undefined : NETGET_PAGES}
+      capabilities={namespaceDoor ? undefined : GATEWAY_RESOLVERS}
+      capabilityScope={namespaceDoor ? undefined : gatewayScope}
+      hideBarItems={namespaceDoor ? undefined : entry.hideBarItems}
       // netget's own mark (whose page this is), apart from the person's QR: the QR is the person's, the brand is netget's
-      // (this.gui Roles-and-Territories.md, "Two marks in the bars").
+      // (this.gui Roles-and-Territories.md, "Two marks in the bars"). A namespace door has no app brand.
       brand={entry.brand === 'netget' ? NETGET_BRAND : undefined}
       semanticPath={entry.semanticPath}
     />

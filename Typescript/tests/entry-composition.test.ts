@@ -6,11 +6,12 @@ import assert from 'node:assert/strict';
 //
 //   * namespace / transport come from what the monad (boot) or the gateway (/main-server-namespace) declared;
 //     the address bar is only a draft when nothing declared them
-//   * the root (a namespace door) carries no netget document, rail policy, or app brand — the GUI document alone
-//   * a gateway door presents netget's app (rail icons left out, the node its position label points at, NETGET_DOCUMENT)
-//   * what netget offers on a gateway door, and what each part NEEDS from the selected link (Domains `gateway:admin`;
+//   * the door never decides access: resolveEntry only says which namespace and where the entrance is
+//   * NETGET_DOCUMENT is the gateway branch at /netget; App.jsx offers it to the owner (gateway:admin) at that pointer,
+//     and the visitor sees the namespace itself (Storybook example 1), on every door
+//   * what netget offers on that branch, and what each part NEEDS from the selected link (Domains `gateway:admin`;
 //     Logs `gateway:logs`). Signing in is not what unlocks them, and neither is the door.
-//     The resolvers are covered by gateway-capabilities.test.ts; the server still authorizes every request.
+//     The resolvers are covered by gateway-capabilities.test.ts; offerGatewayDocument is covered below; the server still authorizes every request.
 //
 // (frontendRole itself is unchanged and covered by frontend-provider-boot.test.ts.)
 const entryModule = await import('../src/htmls/Netget-REACT/frontend_local/src/session/entryContext.js');
@@ -70,7 +71,7 @@ assert.equal(resolveEntry({ host: 'local.host', boot: null, declared: null, path
   assert.deepEqual(viaBoot, viaBootAndDeclared, 'what the gateway declares does not change what the monad already said');
 }
 
-// ── NETGET_DOCUMENT is what a gateway door adds; resolveEntry itself never carries a document ──────────────────────
+// ── NETGET_DOCUMENT is the /netget branch; resolveEntry itself never carries a document ───────────────────────────
 const leftIds = (doc: any) => Object.keys(doc.GUI.children.bars.children.left.children);
 const contentIds = (doc: any) => Object.keys(doc.GUI.children.content.children);
 const left = (id: string) => NETGET_DOCUMENT.GUI.children.bars.children.left.children[id];
@@ -107,11 +108,35 @@ assert.equal((app.match(/<Cleaker\b/g) || []).length, 1, 'one shell, mounted onc
 assert.ok(!/<Namespace\b/.test(app), 'the bare Namespace landing is not mounted by this app any more');
 assert.ok(!/ROLE\s*===\s*['"](cleaker|gateway)['"]/.test(app), 'no branch between a "cleaker" app and a "gateway" app');
 assert.ok(/resolveEntry\(/.test(app), 'the one entry is resolved, then mounted');
-assert.ok(/namespaceDoor/.test(app) && /entry\.kind === 'namespace'/.test(app), 'the same Cleaker is given only data on a namespace door');
-assert.ok(/document=\{namespaceDoor \? undefined : NETGET_DOCUMENT\}/.test(app), 'NETGET_DOCUMENT is only passed on a gateway door');
-assert.ok(/pages=\{namespaceDoor \? undefined : NETGET_PAGES\}/.test(app), 'netget pages are only passed on a gateway door');
-assert.ok(/hideBarItems=\{namespaceDoor \? undefined : entry.hideBarItems\}/.test(app), 'netget rail policy is only passed on a gateway door');
-assert.ok(/capabilities=\{namespaceDoor \? undefined : GATEWAY_RESOLVERS\}/.test(app), 'gateway resolvers are only passed on a gateway door');
+assert.ok(/offerDocument/.test(app) && /offerGatewayDocument/.test(app), 'the document is offered by pointer and who you are, not by door kind');
+assert.ok(!/namespaceDoor/.test(app) && !/entry\.kind === 'namespace'/.test(app), 'the door kind does not decide whether the document is passed');
+assert.ok(/document=\{NETGET_DOCUMENT\}/.test(app), 'NETGET_DOCUMENT is given to Cleaker; offering it is offerDocument');
+assert.ok(/pages=\{NETGET_PAGES\}/.test(app), 'netget pages are given to Cleaker; offering them follows the document');
+assert.ok(/hideBarItems=\{entry.hideBarItems\}/.test(app), 'rail policy is whatever the entry carries, offered with the document');
+assert.ok(/capabilities=\{GATEWAY_RESOLVERS\}/.test(app), 'gateway resolvers reach the shell; offering follows the document');
+assert.ok(/mapRootToNetget=\{offered\}/.test(app), 'the main-server URL map (/=/netget) is only on for an owner, so a visitor at netget.site sees the namespace');
 assert.ok(!/const NETGET_DOCUMENT\b/.test(app), 'the document is not redeclared in App.jsx');
+
+// Pointer + who you are: offerGatewayDocument (the check Cleaker runs inside the session)
+import { atGatewayPointer, offerGatewayDocument, GATEWAY_BRANCH_ROUTES } from '../src/htmls/Netget-REACT/frontend_local/src/session/offerGatewayDocument.js';
+
+const nsEntry = resolveEntry({ host: 'cleaker.me', boot: bothBoot, declared: declaredMain, pathname: '/' });
+const handleEntry = resolveEntry({ host: 'jabellae.cleaker.me', boot: handleBoot, declared: declaredMain, pathname: '/' });
+const mainEntry = resolveEntry({ host: 'netget.site', boot: null, declared: declaredMain, pathname: '/' });
+assert.equal(atGatewayPointer({ entry: nsEntry, pathname: '/' }), false, 'the namespace root is not the /netget pointer');
+assert.equal(atGatewayPointer({ entry: handleEntry, pathname: '/' }), false, 'a handle root is not the /netget pointer');
+assert.equal(atGatewayPointer({ entry: handleEntry, pathname: '/netget' }), true, 'a handle at /netget is the pointer');
+assert.equal(atGatewayPointer({ entry: nsEntry, pathname: '/domains' }), true, 'Domains is on the gateway branch');
+assert.equal(atGatewayPointer({ entry: mainEntry, pathname: '/' }), true, 'netget.site enters at /netget, including at /');
+assert.ok(GATEWAY_BRANCH_ROUTES.includes('/netget') && GATEWAY_BRANCH_ROUTES.includes('/domains'));
+
+const ownerResolvers = { 'gateway:admin': async () => true };
+const visitorResolvers = { 'gateway:admin': async () => false };
+assert.equal(await offerGatewayDocument({ session: { authenticated: true }, entry: mainEntry, pathname: '/', resolvers: ownerResolvers }), true, 'the owner on netget.site is offered the document');
+assert.equal(await offerGatewayDocument({ session: { authenticated: false }, entry: mainEntry, pathname: '/', resolvers: visitorResolvers }), false, 'the visitor on netget.site is not offered the document');
+assert.equal(await offerGatewayDocument({ session: { authenticated: true }, entry: handleEntry, pathname: '/', resolvers: ownerResolvers }), false, 'the owner at a handle root is not offered the document (that is the namespace itself)');
+assert.equal(await offerGatewayDocument({ session: { authenticated: true }, entry: handleEntry, pathname: '/netget', resolvers: ownerResolvers }), true, 'the owner at a handle /netget is offered the document');
+assert.equal(await offerGatewayDocument({ session: { authenticated: false }, entry: nsEntry, pathname: '/netget', resolvers: visitorResolvers }), false, 'the visitor at /netget is not offered the document');
+assert.equal(await offerGatewayDocument({ session: { authenticated: true }, entry: nsEntry, pathname: '/netget', resolvers: { 'gateway:admin': async () => { throw new Error('no'); } } }), false, 'a failed check fails closed');
 
 console.log('entry-composition: ok');

@@ -18,14 +18,16 @@ const clean = (p) => {
   return s.length > 1 ? s.replace(/\/+$/, '') || '/' : s || '/';
 };
 
-// address-bar path -> route the GUI renders
-export function doorUrlToRoute(pathname) {
+// address-bar path -> route the GUI renders.
+// `mapRootToNetget` (default true): the main-server door's "/" is /netget. The visitor is not
+// offered the gateway panel, so App passes false and "/" stays the namespace itself.
+export function doorUrlToRoute(pathname, { mapRootToNetget } = { mapRootToNetget: true }) {
   const p = clean(pathname);
-  return p === '/' ? DOOR_ENTRY_ROUTE : p;
+  return mapRootToNetget !== false && p === '/' ? DOOR_ENTRY_ROUTE : p;
 }
 
 // route the GUI names -> address-bar path
-export function doorRouteToUrl(route) {
+export function doorRouteToUrl(route, { mapRootToNetget } = { mapRootToNetget: true }) {
   const p = clean(route);
-  return p === DOOR_ENTRY_ROUTE ? '/' : p;
+  return mapRootToNetget !== false && p === DOOR_ENTRY_ROUTE ? '/' : p;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import { LauncherPopoverProvider, MonadNamespaceCard } from 'this.gui';
 import { SeedSessionProvider, HostSurface, Cleaker, Me } from 'this.gui/react';
@@ -15,6 +15,7 @@ import { resolveEntry, needsDeclaration, NETGET_DOCUMENT } from './session/entry
 import { createGatewayResolvers } from './session/gatewayCapabilities.js';
 import { gatewayDeps, browserStorage } from './session/gatewayCapabilitiesDefaults.js';
 import { useGatewayScope } from './session/useGatewayScope.js';
+import { offerGatewayDocument } from './session/offerGatewayDocument.js';
 import DoorRouter from './session/DoorRouter.jsx';
 
 // Home/Domains/Logs are plain components that take no props, so they never
@@ -141,9 +142,11 @@ const NETGET_PAGES = {
 // SeedSessionProvider, nothing above it may). The address bar does not pick an app: it contributes CONTEXT. Which
 // namespace this page links to, and where it is reached, is what the monad that served the page said (a namespace's
 // own door) or what the gateway declares (/main-server-namespace); only when neither did, the hostname is a draft of
-// it (see session/entryContext.js). At the root (kind namespace) that shell is the namespace itself, like Storybook
-// example 1: no netget document, pages, or rail policy. On a gateway door, netget's views are declared into the same
-// shell.
+// it (see session/entryContext.js).
+//
+// The door does not decide what is offered. The visitor sees the namespace itself (Storybook example 1). The owner,
+// at the /netget pointer (netget.site enters there; on a handle or the root, the /netget path), is offered
+// NETGET_DOCUMENT — the gateway panel. Ownership is the existing gateway:admin check, not a new one.
 const HOST_NAME = typeof window !== 'undefined' ? window.location.hostname : '';
 const PROVIDER_BOOT = readProviderBoot();
 
@@ -167,11 +170,33 @@ const GATEWAY_RESOLVERS = createGatewayResolvers({
 // disconnect); the same icon its item has in the GUI document (GUI.document.json). 𓆣 is Beatle's (the crawler).
 const NETGET_BRAND = { label: 'Netget', icon: 'cable' };
 
+
+// The address-bar path, including pushState/replaceState (the shell's links do not fire popstate).
+function usePagePath() {
+  const [path, setPath] = useState(() => (typeof window === 'undefined' ? '/' : window.location.pathname));
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const sync = () => setPath(window.location.pathname);
+    const { pushState, replaceState } = window.history;
+    window.history.pushState = function pushStatePatched(...args) { const result = pushState.apply(this, args); sync(); return result; };
+    window.history.replaceState = function replaceStatePatched(...args) { const result = replaceState.apply(this, args); sync(); return result; };
+    window.addEventListener('popstate', sync);
+    return () => {
+      window.history.pushState = pushState;
+      window.history.replaceState = replaceState;
+      window.removeEventListener('popstate', sync);
+    };
+  }, []);
+  return path;
+}
+
 const resolveHere = (declared) => resolveEntry({ host: HOST_NAME, boot: PROVIDER_BOOT, declared, pathname: window.location.pathname });
 
 function EntryApp() {
   // Which gateway is selected and which admin session is stored for it: the scope the shell resolves capabilities for.
   const gatewayScope = useGatewayScope();
+  const pathname = usePagePath();
+  const [offered, setOffered] = useState(false);
   // A namespace door was already told its namespace by the monad: nothing to ask. Any other door asks the gateway which door
   // it is. undefined = still asking; otherwise the resolved entry.
   const asks = needsDeclaration({ host: HOST_NAME, boot: PROVIDER_BOOT });
@@ -193,21 +218,32 @@ function EntryApp() {
     });
     return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
   }, [asks]);
+  const offerDocument = useCallback((ctx) => {
+    if (!entry) return false;
+    return offerGatewayDocument({
+      session: ctx.session,
+      entry,
+      pathname,
+      resolvers: GATEWAY_RESOLVERS,
+      scope: gatewayScope,
+    });
+  }, [entry, pathname, gatewayScope]);
   if (entry === undefined) return null;
-  const namespaceDoor = entry.kind === 'namespace';
   const shell = (
     <Cleaker
       namespace={entry.namespace || HOST_NAME}
       namespaceSource={entry.namespaceSource}
       transport={netgetMonadTransportOrigin()}
       resolveSeedFromCredentials={resolveNetgetSeedFromCredentials}
-      document={namespaceDoor ? undefined : NETGET_DOCUMENT}
-      pages={namespaceDoor ? undefined : NETGET_PAGES}
-      capabilities={namespaceDoor ? undefined : GATEWAY_RESOLVERS}
-      capabilityScope={namespaceDoor ? undefined : gatewayScope}
-      hideBarItems={namespaceDoor ? undefined : entry.hideBarItems}
+      document={NETGET_DOCUMENT}
+      pages={NETGET_PAGES}
+      capabilities={GATEWAY_RESOLVERS}
+      capabilityScope={gatewayScope}
+      hideBarItems={entry.hideBarItems}
+      offerDocument={offerDocument}
+      onOfferDocument={setOffered}
       // netget's own mark (whose page this is), apart from the person's QR: the QR is the person's, the brand is netget's
-      // (this.gui Roles-and-Territories.md, "Two marks in the bars"). A namespace door has no app brand.
+      // (this.gui Roles-and-Territories.md, "Two marks in the bars"). Offered only with the gateway document.
       brand={entry.brand === 'netget' ? NETGET_BRAND : undefined}
       semanticPath={entry.semanticPath}
     />
@@ -215,7 +251,7 @@ function EntryApp() {
   return (
     <LauncherPopoverProvider>
       <Me>
-        {entry.isMainServerDoor ? <DoorRouter>{shell}</DoorRouter> : shell}
+        {entry.isMainServerDoor ? <DoorRouter mapRootToNetget={offered}>{shell}</DoorRouter> : shell}
       </Me>
     </LauncherPopoverProvider>
   );

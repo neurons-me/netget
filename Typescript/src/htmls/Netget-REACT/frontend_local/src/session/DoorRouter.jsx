@@ -9,7 +9,7 @@ function readLocation() {
   return { pathname, search, hash };
 }
 
-export default function DoorRouter({ children }) {
+export default function DoorRouter({ children, mapRootToNetget = true }) {
   const [loc, setLoc] = useState(readLocation);
   useEffect(() => {
     const on = () => setLoc(readLocation());
@@ -19,7 +19,7 @@ export default function DoorRouter({ children }) {
   const navigator = useMemo(() => {
     const toUrl = (to) => {
       const t = typeof to === 'string' ? parsePath(to) : to || {};
-      return `${doorRouteToUrl(t.pathname || '/')}${t.search || ''}${t.hash || ''}`;
+      return `${doorRouteToUrl(t.pathname || '/', { mapRootToNetget })}${t.search || ''}${t.hash || ''}`;
     };
     return {
       createHref: toUrl,
@@ -27,10 +27,10 @@ export default function DoorRouter({ children }) {
       push: (to, state) => { window.history.pushState(state ?? null, '', toUrl(to)); setLoc(readLocation()); },
       replace: (to, state) => { window.history.replaceState(state ?? null, '', toUrl(to)); setLoc(readLocation()); },
     };
-  }, []);
+  }, [mapRootToNetget]);
   const location = useMemo(
-    () => ({ pathname: doorUrlToRoute(loc.pathname), search: loc.search, hash: loc.hash, state: window.history.state ?? null, key: 'door' }),
-    [loc],
+    () => ({ pathname: doorUrlToRoute(loc.pathname, { mapRootToNetget }), search: loc.search, hash: loc.hash, state: window.history.state ?? null, key: 'door' }),
+    [loc, mapRootToNetget],
   );
   return <Router location={location} navigationType="POP" navigator={navigator}>{children}</Router>;
 }

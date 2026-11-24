@@ -29,5 +29,11 @@ for (const route of ['/netget', '/domains', '/logs', '/monad', '/home', '/users'
 }
 // no route is ever written as "/netget/netget", and no path is ever invented
 assert.notEqual(doorRouteToUrl('/netget'), '/netget');
+
+// A visitor is not offered the gateway panel: "/" stays the namespace itself.
+assert.equal(doorUrlToRoute('/', { mapRootToNetget: false }), '/', 'visitor: the door root is the namespace');
+assert.equal(doorRouteToUrl('/netget', { mapRootToNetget: false }), '/netget', 'visitor: a /netget link is written as /netget');
+assert.equal(doorUrlToRoute('/', { mapRootToNetget: true }), '/netget', 'owner: the door root is the /netget pointer');
+
 for (const route of ['/', '/netget', '/domains']) assert.ok(!doorRouteToUrl(route).includes('.me'), `no ".me" path for ${route}`);
 console.log('frontend-door-routes: ok');

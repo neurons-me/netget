@@ -42,6 +42,10 @@ export const PUBLIC_ROUTES = new Set([
   // has no monad in front, answers by forwarding.
   'POST /explain',
   'POST /inspect',
+  // Facebook connect: public App ID and the POST-only code exchange.
+  // The exchange still checks an exact redirect allowlist and a limited JSON body.
+  'GET /oauth/facebook/app',
+  'POST /oauth/facebook/exchange',
 ]);
 
 // Routes that verify their own request and must stay reachable without a session.

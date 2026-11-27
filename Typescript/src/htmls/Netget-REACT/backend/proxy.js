@@ -14,6 +14,7 @@ import gatewayAdminRoutes from './routes/gatewayAdmin.js';
 import { guardAsync, jsonErrorHandler } from './guardAsync.js';
 import { startNetgetMonad, stopNetgetMonad, loadGatewayRootNamespaceCache, getGatewayRootNamespace } from '../../../kernel/netgetMonadProcess.ts';
 import { mountGatewayRouters } from '../../../gateway/monadModule.mjs';
+import { createFacebookRouter } from '../../../gateway/facebookRoutes.ts';
 import { resolveAdminSession } from '../../../modules/NetGetX/Auth/adminSession.ts';
 import { GatewayClaimsManager } from '../../../modules/NetGetX/Auth/GatewayClaimsManager.ts';
 
@@ -64,6 +65,7 @@ app.use(cors({
 // guardAsync edits each router in place, so the gate reads the route table from the very routers it protects.
 const gatewayRouters = [
     setupSessionRoutes, localNetgetRoutes, openRestyInstallRoutes, adminSessionRoutes, gatewayAdminRoutes,
+    createFacebookRouter(),
 ].map(guardAsync);
 mountGatewayRouters(app, gatewayRouters, {
     // The standalone has no monad in front: it answers /explain and /inspect itself, so none of the paths is delegated.

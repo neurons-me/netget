@@ -107,6 +107,10 @@ async function loadRouters() {
     if (typeof loaded.default !== 'function') throw new Error(`${file} exports no router`);
     routers.push(loaded.default);
   }
+  // Facebook OAuth lives next to the exchange module, not in the legacy routes folder.
+  const facebook = await import('./facebookRoutes.ts');
+  if (typeof facebook.default !== 'function') throw new Error('facebookRoutes.ts exports no router');
+  routers.push(facebook.default);
   return routers;
 }
 

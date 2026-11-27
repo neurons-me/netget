@@ -44,6 +44,8 @@ assert.equal(classifyRoute('GET', '/main-server-namespace'), 'public');
 assert.equal(classifyRoute('POST', '/setup/claim'), 'own');
 assert.equal(classifyRoute('POST', '/admin-session/verify'), 'own');
 assert.equal(classifyRoute('GET', '/logs'), 'own');
+assert.equal(classifyRoute('GET', '/oauth/facebook/app'), 'public');
+assert.equal(classifyRoute('POST', '/oauth/facebook/exchange'), 'public');
 for (const [m, p] of [['POST', '/add-domain'], ['POST', '/openresty-stop'], ['POST', '/__gateway/claim'], ['POST', '/apps/report'], ['POST', '/domains/metadata'], ['GET', '/some-route-added-later'], ['POST', '/domains']]) {
   assert.equal(classifyRoute(m, p), 'trusted', `${m} ${p} is trusted unless listed as public`);
 }
